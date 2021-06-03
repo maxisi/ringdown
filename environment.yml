@@ -1,0 +1,25 @@
+name: gwtones
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - arviz
+  - astropy
+  - corner
+  - h5py
+  - ipython
+  - jupyterlab
+  - lalsuite
+  - matplotlib
+  - numpy
+  - pandas
+  - pip
+  - pystan
+  - python=3
+  - scipy
+  - seaborn
+  - numexpr
+  - pip:
+    - qnm
+  - parse
+  - dask
