@@ -3,8 +3,6 @@ import scipy.signal as sig
 import lal
 import scipy.linalg as sl
 import pandas as pd
-from collections import namedtuple
-import pkg_resources
 
 # def get_raw_time_ifo(tgps, raw_time, duration=None, ds=None):
 #     ds = ds or 1

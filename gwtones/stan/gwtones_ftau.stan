@@ -6,17 +6,21 @@ functions {
 }
 
 data {
+  int nobs;
   int nsamp;
   int nmode;
 
-  real t0;
-  vector[nsamp] times;
-  vector[nsamp] strain;
-  matrix[nsamp,nsamp] L;
+  real t0[nobs];
+  vector[nsamp] times[nobs];
+  vector[nsamp] strain[nobs];
+  matrix[nsamp,nsamp] L[nobs];
 
   /* Priors on f and tau are flat */
   real f_min;
   real f_max;
+  real gamma_min;
+  real gamma_max;
+
 
   real A_max;
 
@@ -24,11 +28,8 @@ data {
 }
 
 transformed data {
-  real tstep = times[2]-times[1];
-  real T = times[nsamp]-times[1];
-
-  real gamma_min = 2/T;
-  real gamma_max = 0.5/tstep;
+  real tstep = times[1][2]-times[1][1];
+  real T = times[1][nsamp]-times[1][1];
 
   real logit_offsets[nmode];
 
@@ -50,8 +51,8 @@ transformed parameters {
   real gamma_logjac;
   vector[nmode] A;
   vector[nmode] phi0;
-  vector[nsamp] h_det_mode[nmode];
-  vector[nsamp] h_det;
+  vector[nsamp] h_det_mode[nobs,nmode];
+  vector[nsamp] h_det[nobs];
 
   for (i in 1:nmode) {
     phi0[i] = atan2(Ay[i], Ax[i]);
@@ -75,10 +76,12 @@ transformed parameters {
     gamma_logjac = sum(ljs);
   }
 
-  h_det = rep_vector(0.0, nsamp);
-  for (j in 1:nmode) {
-    h_det_mode[j] = rd(times - t0, f[j], gamma[j], Ax[j], Ay[j]);
-    h_det = h_det + h_det_mode[j];
+  for (i in 1:nobs) {
+    h_det[i] = rep_vector(0.0, nsamp);
+    for (j in 1:nmode) {
+      h_det_mode[i, j] = rd(times - t0[i], f[j], gamma[j], Ax[j], Ay[j]);
+      h_det[i] = h_det[i] + h_det_mode[i,j];
+    }
   }
 }
 
@@ -96,10 +99,13 @@ model {
   target += -sum(log(gamma));
 
   if ( only_prior == 0 ) {
-      strain ~ multi_normal_cholesky(h_det, L);
+      for (i in 1:nobs) {
+        strain[i] ~ multi_normal_cholesky(h_det[i], L[i]);
+      }
   }
 }
 
 generated quantities {
   vector[nmode] tau = 1.0 ./ gamma;
+  vector[nmode] Q = pi()* f .* tau;
 }
