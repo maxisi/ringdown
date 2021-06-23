@@ -4,6 +4,7 @@ from . import qnms
 import lal
 from collections import namedtuple
 import pkg_resources
+import arviz as az
 
 # def get_raw_time_ifo(tgps, raw_time, duration=None, ds=None):
 #     ds = ds or 1
@@ -16,7 +17,6 @@ Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 
 MODELS = ['ftau', 'kerr']
 
-# TODO: might be better to subclass this
 class Fit(object):
 
     _compiled_models = {}
@@ -28,6 +28,8 @@ class Fit(object):
         self.antenna_patterns = {}
         self.target = Target(None, None, None, None)
         self.model = model.lower() if model is not None else model
+        self.result = None
+        self.prior = None
         try:
             # if modes is integer, interpret as number of modes
             self._nmodes = int(modes)
@@ -36,6 +38,8 @@ class Fit(object):
             # otherwise, assume it's mode index list
             self.modes = qnms.construct_mode_list(modes)
             self._nmodes = None
+        self._duration = None
+        self._nanalyze = None
         # assume rest of kwargs are to be passed to stan_data (e.g. prior)
         self._model_input = kws
         
@@ -74,13 +78,7 @@ class Fit(object):
     def sky(self):
         return (self.target.ra, self.target.dec, self.target.psi)
 
-    # # this can be generalized for charged bhs based on model name
-    # def _get_mode(self, i):
-    #     index = self.modes[i]
-    #     if index not in self._modes:
-    #         self._modes[index] = qnms.KerrMode(index)
-    #     return self._modes[index]
-
+    # this can be generalized for charged bhs based on model name
     @property
     def spectral_coefficients(self):
         f_coeffs = []
@@ -98,6 +96,45 @@ class Fit(object):
         for i, d in self.data.items():
             data[i] = d.iloc[i0s[i]:i0s[i] + self.n_analyze]
         return data
+
+    @property
+    def _model_specific_defaults(self):
+        default = {'A_max': None}
+        if self.model == 'ftau':
+            # TODO: set default priors based on sampling rate and duration
+            default.update(dict(
+                f_max=None,
+                f_min=None,
+                gamma_max=None,
+                gamma_min=None,
+            ))
+        elif self.model == 'kerr':
+            f_coeff, g_coeff = self.spectral_coefficients
+            default.update(dict(
+                f_coeffs=f_coeff,
+                f_coeffs=g_coeff,
+                perturb_f=zeros(self.nmodes or 1),
+                perturb_tau=zeros(self.nmodes or 1),
+                df_max=0.9,
+                dtau_max=0.9,
+                chi_min=0,
+                chi_max=0.99,
+            ))
+        return default
+
+    @property
+    def valid_model_options(self):
+        return list(self._model_specific_defaults.keys())
+
+    # TODO: warn or fail if self.results is not None?
+    def update_prior(**kws):
+        valid_keys = self.valid_model_options
+        for k, v in kws.items():
+            if k in valid_keys:
+                self._model_input[k] = v
+            else:
+                raise ValueError('{} is not a valid model argument.'
+                                 'Valid options are: {}'.format(k, valid_keys)
 
     @property
     def model_input(self):
@@ -122,21 +159,38 @@ class Fit(object):
             only_prior=0,
         )
 
-        if self.model == 'ftau':
-            # TODO: set default priors based on sampling rate and duration
-            pass
-        elif self.model == 'kerr':
-            stan_data.update(dict(
-                perturb_f=zeros(self.nmodes),
-                perturb_tau=zeros(self.nmodes),
-                df_max=0.9,
-                dtau_max=0.9,
-                chi_min=0,
-                chi_max=0.99,
-            ))
-
+        stan_data.update(self._model_specific_defaults)
         stan_data.update(self._model_input)
+
+        for k, v in stan_data.items():
+            if v is None:
+                raise ValueError('please specify {}'.format(k))
         return stan_data
+
+    def run(self, prior=False, **kws):
+        # get model input
+        stan_data = self.model_input
+        stan_data['only_prior'] = int(prior)
+        # get sampler settings
+        n = kws.pop('thin', 1)
+        n_chains = kws.pop('n_chains', 4)
+        n_jobs = kws.pop('n_jobs', n_chains)
+        n_iter = kws.pop('n_iter', 2000*n)
+        stan_kws = {
+            'iter': n_iter,
+            'thin': n,
+            'init': (kws.pop('init_dict', None),)*n_chains,
+            'n_jobs': n_jobs,
+            'chains': n_chains,
+        }
+        stan_kws.update(kws)
+        # run model and store
+        print('Running {}'.format(self.model))
+        result = self._model.sampling(data=self.model_input, **stan_kws)
+        if prior:
+            self.prior = az.convert_to_inference_data(result)
+        else:
+            self.result = az.convert_to_inference_data(result)
 
     def add_data(self, data, time=None, ifo=None, acf=None):
         if not isinstance(data, Data):
@@ -200,6 +254,14 @@ class Fit(object):
         elif n_analyze:
             self._nanalyze = int(n_analyze)
 
+    # TODO: warn or fail if self.results is not None?
+    def update_target(self, **kws):
+        target = dict(**self.target)
+        target.update(dict(k=getattr(self,k) for k in
+                       ['duration', 'n_analyze', 'antenna_patterns']))
+        target.update(kws)
+        self.set_target(**target)
+    
     @property
     def duration(self):
         if self._nanalyze and not self._duration:
@@ -242,3 +304,35 @@ class Fit(object):
             return min([len(d.iloc[i0s[i]:]) for i, d in self.data.items()])
         else:
             return self._n_analyze
+
+# ##################################################################
+# TODO: go through following functions and see what's worth keeping
+
+
+DEF_KEYS = ('M', 'chi', 'A', 'ellip', 'theta', 'phi0', 'df', 'dtau')
+
+def get_neff(fit, keys=DEF_KEYS, **kws):
+    keys = [k for k in keys if k in fit.posterior]
+    kws['relative'] = kws.get('relative', True)
+    # compute effective number of samples for each parameter
+    esss = az.stats.diagnostics.ess(fit, var_names=list(keys), **kws)
+    # find minimum number of effective samples for this fit
+    return min([min(atleast_1d(esss[k])) for k in keys])
+
+def get_thin(*args, **kwargs):
+    return int(round(1/get_neff(*args, **kwargs)))
+
+def get_neff_dict(all_fits, **kws):
+    neffs = {k: [] for k in all_fits}
+    for i, fits in all_fits.items():
+        for j, fit in fits.items():
+            neffs[i].append(get_neff(fit, **kws))
+    return neffs
+
+def get_thin_dict(all_fits, **kws):
+    thins = {k: [] for k in all_fits}
+    for i, fits in all_fits.items():
+        for j, fit in fits.items():
+            thins[i].append(get_thin(fit, **kws))
+    return thins
+
