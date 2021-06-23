@@ -21,16 +21,28 @@ class Fit(object):
 
     _compiled_models = {}
 
-    def __init__(self, model=None, modes=None):
+    def __init__(self, model=None, modes=None, **kws):
         self.data = {}
         self.acfs = {}
         self.start_times = {}
         self.antenna_patterns = {}
         self.target = Target(None, None, None, None)
         self.model = model.lower() if model is not None else model
-        self.modes = qnms.construct_mode_list(modes)
-        self._modes = {}
+        try:
+            # if modes is integer, interpret as number of modes
+            self._nmodes = int(modes)
+            self.modes = None
+        except TypeError:
+            # otherwise, assume it's mode index list
+            self.modes = qnms.construct_mode_list(modes)
+            self._nmodes = None
+        # assume rest of kwargs are to be passed to stan_data (e.g. prior)
+        self._model_input = kws
         
+    @property
+    def nmodes(self):
+        return self._nmodes or len(self.modes)
+
     @property
     def _model(self):
         if self.model is None:
@@ -50,23 +62,37 @@ class Fit(object):
             raise ValueError('unrecognized model %r' % self.model)
         return model
 
-    # this can be generalized for charged bhs based on model name
-    def _get_mode(self, i):
-        index = self.modes[i]
-        if index not in self._modes:
-            self._modes[index] = qnms.KerrMode(index)
-        return self._modes[index]
+    # # this can be generalized for charged bhs based on model name
+    # def _get_mode(self, i):
+    #     index = self.modes[i]
+    #     if index not in self._modes:
+    #         self._modes[index] = qnms.KerrMode(index)
+    #     return self._modes[index]
 
     @property
-    def coeffs(self):
+    def spectral_coefficients(self):
         f_coeffs = []
         g_coeffs = []
         for i in range(len(self.modes)):
-            coeffs = self._get_mode(i).coefficients
+            coeffs = qnms.KerrMode(i).coefficients
             f_coeffs.append(coeffs[0])
             g_coeffs.append(coeffs[1])
         return array(f_coeffs), array(g_coeffs)
         
+    @property
+    def model_input(self):
+        if not self.acfs:
+            print('WARNING: computing ACFs with default settings.')
+            self.compute_acfs()
+
+        stan_data = dict(
+            nmode=self.nmodes,
+            nobs=len(self.data),
+            times=[d.time for d in self.data.values()],
+            strain=list(self.data.values()),
+            L=[acf.cholesky for acf in self.acfs.values()],  # must check if acfs populated
+        )
+
     @property
     def ifos(self):
         return list(self.data.keys())
@@ -93,7 +119,7 @@ class Fit(object):
         # if shared, compute a single ACF
         acf = self.data[ifos[0]].get_acf(**kws) if shared else None
         for ifo in ifos:
-            acf[ifo] = self.data[ifo].get_acf(**kws) if acf is None else acf
+            self.acfs[ifo] = acf if shared else self.data[ifo].get_acf(**kws)
 
     def set_tone_sequence(self, nmode, p=1, s=-2, l=2, m=2):
         """ Set fit modes to be a sequence of overtones.
