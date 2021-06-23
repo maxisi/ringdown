@@ -69,12 +69,14 @@ data {
   matrix[nsamp,nsamp] L[nobs];
 
   /* Priors on m and chi are flat */
-  real MMin;
-  real MMax;
+  real M_min;
+  real M_max;
+  real chi_min;
+  real chi_max;
 
   vector[2] FpFc[nobs];
 
-  real Amax;
+  real A_max;
 
   real dt_min;
   real dt_max;
@@ -90,8 +92,8 @@ data {
 }
 
 parameters {
-  real<lower=MMin, upper=MMax> M;
-  real<lower=0, upper=0.99> chi;
+  real<lower=M_min, upper=M_max> M;
+  real<lower=chi_min, upper=chi_max> chi;
 
   vector[nmode] Ap_x;
   vector[nmode] Ap_y;
