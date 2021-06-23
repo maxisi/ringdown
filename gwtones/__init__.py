@@ -4,8 +4,7 @@ from .kde_contour import *
 from pylab import *
 from . import qnms
 from . import data
-from . import stats
-from . import sampling
+from . import fit
 
 # ############################################################################
 # rcParams

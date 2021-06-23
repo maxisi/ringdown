@@ -112,11 +112,13 @@ class Fit(object):
             f_coeff, g_coeff = self.spectral_coefficients
             default.update(dict(
                 f_coeffs=f_coeff,
-                f_coeffs=g_coeff,
+                g_coeffs=g_coeff,
                 perturb_f=zeros(self.nmodes or 1),
                 perturb_tau=zeros(self.nmodes or 1),
                 df_max=0.9,
                 dtau_max=0.9,
+                M_min=None,
+                M_max=None,
                 chi_min=0,
                 chi_max=0.99,
             ))
@@ -134,7 +136,7 @@ class Fit(object):
                 self._model_input[k] = v
             else:
                 raise ValueError('{} is not a valid model argument.'
-                                 'Valid options are: {}'.format(k, valid_keys)
+                                 'Valid options are: {}'.format(k, valid_keys))
 
     @property
     def model_input(self):
@@ -257,8 +259,8 @@ class Fit(object):
     # TODO: warn or fail if self.results is not None?
     def update_target(self, **kws):
         target = dict(**self.target)
-        target.update(dict(k=getattr(self,k) for k in
-                       ['duration', 'n_analyze', 'antenna_patterns']))
+        target.update({k: getattr(self,k) for k in
+                       ['duration', 'n_analyze', 'antenna_patterns']})
         target.update(kws)
         self.set_target(**target)
     
@@ -269,7 +271,7 @@ class Fit(object):
                 return self._nanalyze*self.data[self.ifos[0]].delta_t
             else:
                 print("Add data to compute duration (n_analyze = {})".format(
-                      self._nanalyze)
+                      self._nanalyze))
                 return None
         else:
             return self._duration
@@ -296,7 +298,7 @@ class Fit(object):
                 return int(round(self._duration/dt))
             else:
                 print("Add data to compute n_analyze (duration = {})".format(
-                      self._duration)
+                      self._duration))
                 return None
         elif self.data and self.has_target:
             # set n_analyze to fit shortest data set
