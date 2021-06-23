@@ -1,36 +1,78 @@
 from pylab import *
 import qnm
 import lal
+from collections import namedtuple
 
 T_MSUN = lal.MSUN_SI * lal.G_SI / lal.C_SI**3
 
+ModeIndex = namedtuple('ModeIndex', ['p', 's', 'l', 'm', 'n'])
+
+def construct_mode_list(modes):
+    if modes is None:
+        modes = []
+    mode_list = []
+    for (p, s, l, m, n) in modes:
+        mode_list.append(ModeIndex(p, s, l, m, n))
+    return mode_list
+
+
+# TODO: maybe this should be an attribute of a Mode object
+class KerrMode(object):
+
+    _cache = {}
+
+    def __init__(self, *args):
+        if len(args) == 1:
+            args = args[0]
+        self.index = ModeIndex(*args)
+
+    @property
+    def coefficients(self):
+        if self.index not in self._cache:
+            self._cache[self.index] = self.compute_coefficients(self.index)
+        return self._cache[self.index]
+
+    @staticmethod
+    def compute_coefficients(mode, n_chi=1000, **kws):
+        p, s, l, m, n = mode
+        chis = linspace(0, 1, n_chi)[:-1]
+        M = column_stack((log1p(-chis), ones_like(chis), chis, chis**2,
+                          chis**3, chis**4))
+
+        q = qnm.modes_cache(s, l, p*abs(m), n)
+        f = sign(m)*array([q(c)[0].real for c in chis])/(2*pi)
+        g = array([abs(q(c)[0].imag) for c in chis])
+
+        coeff_f = np.linalg.lstsq(M, f, rcond=None, **kws)[0]
+        coeff_g = np.linalg.lstsq(M, g, rcond=None, **kws)[0]
+        return coeff_f, coeff_g
+
+    def __call__(self, *args, **kwargs):
+        f, tau = self.ftau(*args, **kwargs)
+        return 2*pi*f - 1j/tau
+
+    def ftau(self, chi, m_msun=None, approx=False):
+        if approx:
+            c = (log1p(-chi), ones_like(chi), chi, chi**2, chi**3, chi**4)
+            f, g = [dot(coeff, c) for coeff in self.coefficients]
+        else:
+            p, s, l, m, n = self.index
+            q = qnm.modes_cache(s, l, p*abs(m), n)
+            def omega(c):
+                return q(c)[0]
+            f = sign(m)*vectorize(omega)(chi).real/(2*pi)
+            g = abs(vectorize(omega)(chi).imag)
+        if m_msun:
+           f /= (m_msun * T_MSUN)
+           g /= (m_msun * T_MSUN)
+            
+        return f, 1/g
+
+
+# ##################################################
+# OLD
+
 # reference values
-REFLSTSQR = {
-    0: {
-        'A': array([1.11029226])*1E-21,
-        'phi0': [0.04992418],
-    },
-    1: {
-        'A': array([2.21960765, 2.54166205])*1E-21,
-        'phi0': [-0.74096361, 1.83572294],
-    },
-    2: {
-        # 'A': [2.29276816, 4.74034966, 2.48456137],
-        'A': array([2.5, 5, 2.5])*1E-21,
-        'phi0': [-1.1400821, 1.22669085, -2.31598923]
-    }
-}
-
-REF150914 = {
-    'A': [4.16155615e-21, 5.66277487e-21],
-    'phi0': [-0.93908037,  1.79189372],
-}
-
-REFDEF = {
-    'A': array([2.29276816, 4.74034966, 2.48456137])*1E-21,
-    'phi0': array([-0.93908037, 1.79189372, -2.31598923]),
-}
-
 
 def get_ftau(M, chi, n, l=2, m=2):
     q22 = qnm.modes_cache(-2, l, m, n)

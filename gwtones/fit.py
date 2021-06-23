@@ -1,5 +1,6 @@
 from pylab import *
 from .data import *
+from . import qnms
 import lal
 from collections import namedtuple
 import pkg_resources
@@ -15,17 +16,20 @@ Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 
 MODELS = ['ftau', 'kerr']
 
+# TODO: might be better to subclass this
 class Fit(object):
 
     _compiled_models = {}
 
-    def __init__(self, model=None):
+    def __init__(self, model=None, modes=None):
         self.data = {}
         self.acfs = {}
         self.start_times = {}
         self.antenna_patterns = {}
         self.target = Target(None, None, None, None)
         self.model = model.lower() if model is not None else model
+        self.modes = qnms.construct_mode_list(modes)
+        self._modes = {}
         
     @property
     def _model(self):
@@ -46,6 +50,23 @@ class Fit(object):
             raise ValueError('unrecognized model %r' % self.model)
         return model
 
+    # this can be generalized for charged bhs based on model name
+    def _get_mode(self, i):
+        index = self.modes[i]
+        if index not in self._modes:
+            self._modes[index] = qnms.KerrMode(index)
+        return self._modes[index]
+
+    @property
+    def coeffs(self):
+        f_coeffs = []
+        g_coeffs = []
+        for i in range(len(self.modes)):
+            coeffs = self._get_mode(i).coefficients
+            f_coeffs.append(coeffs[0])
+            g_coeffs.append(coeffs[1])
+        return array(f_coeffs), array(g_coeffs)
+        
     @property
     def ifos(self):
         return list(self.data.keys())
@@ -54,10 +75,13 @@ class Fit(object):
     def t0(self):
         return self.target.t0
         
+    @property
+    def sky(self):
+        return (self.target.ra, self.target.dec, self.target.psi)
+        
     def add_data(self, data, time=None, ifo=None, acf=None):
         if not isinstance(data, Data):
-            data = Data(data, index=getattr(data, 'time', time),
-                        ifo=ifo)
+            data = Data(data, index=getattr(data, 'time', time), ifo=ifo)
         self.data[data.ifo] = data
         if acf is not None:
             self.acfs[ifo] = acf
@@ -71,18 +95,43 @@ class Fit(object):
         for ifo in ifos:
             acf[ifo] = self.data[ifo].get_acf(**kws) if acf is None else acf
 
-    def set_target(self, t0, ra=None, dec=None, psi=None):
+    def set_tone_sequence(self, nmode, p=1, s=-2, l=2, m=2):
+        """ Set fit modes to be a sequence of overtones.
+        """
+        self.modes = qnms.construct_mode_list([(p, s, l, m, n) for n in range(nmode)])
+        
+    def set_target(self, t0, ra=None, dec=None, psi=None, delays=None,
+                   antenna_patterns=None):
+        """ Establish truncation target, stored to `self.target`.
+
+        Arguments
+        ---------
+        t0: float
+            target time (at geocenter for a detector network)
+        ra: float
+            source right ascension
+        dec: float
+            source declination
+        delays: dict
+            dictionary with delayes from geocenter for each detector, as would
+            be computed by `lal.TimeDelayFromEarthCenter` (optional)
+        antenna_patterns: dict
+            dictionary with tuples for plus and cross antenna patterns for 
+            each detector {ifo: (Fp, Fc)} (optional)
+        """
         tgps = lal.LIGOTimeGPS(t0)
         gmst = lal.GreenwichMeanSiderealTime(tgps)
+        delays = delays or {}
+        antenna_patterns = antenna_patterns or {}
         for ifo, data in self.data.items():
             if ifo is None:
                 dt_ifo = 0
             else:
-                dt_ifo = lal.TimeDelayFromEarthCenter(data.detector.location,
-                                                      ra, dec, tgps)
-                self.antenna_patterns[ifo] = lal.ComputeDetAMResponse(
-                    data.detector.response, ra, dec, psi, gmst
-                )
+                det = data.detector
+                dt_ifo = delays.get(ifo,
+                    lal.TimeDelayFromEarthCenter(det.location, ra, dec, tgps))
+                self.antenna_patterns[ifo] = antenna_patterns.get(ifo,
+                    lal.ComputeDetAMResponse(det.response, ra, dec, psi, gmst))
             self.start_times[ifo] = t0 + dt_ifo
         self.target = Target(t0, ra, dec, psi)
     
