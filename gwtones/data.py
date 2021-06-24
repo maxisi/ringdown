@@ -37,7 +37,7 @@ def condition(raw_data, raw_time=None, flow=None, fhigh=None, ds=None,
     # Decimate
     if ds and ds > 1:
         if scipy_dec:
-            cond_data = sig.decimate(cond_data, ds, zero_phase=True)
+            cond_data = sig.decimate(cond_data, ds, 60, ftype='fir', zero_phase=True)
         else:
             cond_data = cond_data[::ds]
         if raw_time is not None:
@@ -124,7 +124,7 @@ class Data(TimeSeries):
 
     def condition(self, **kws):
         time, data = condition(self, self.index, **kws)
-        return Data(data, index=time)
+        return Data(data, index=time, ifo=self.ifo)
 
     def get_acf(self, **kws):
         return AutoCovariance.from_data(self, **kws)
@@ -205,9 +205,13 @@ class AutoCovariance(TimeSeries):
         return PowerSpectrum(psd, index=freq)
 
     @property
+    def matrix(self):
+        return sl.toeplitz(self)
+
+    @property
     def cholesky(self):
         if getattr(self, '_cholesky', None) is None:
-            self._cholesky = linalg.cholesky(sl.toeplitz(self))
+            self._cholesky = linalg.cholesky(self.matrix)
         return self._cholesky
 
     def compute_snr(self, x, y=None):

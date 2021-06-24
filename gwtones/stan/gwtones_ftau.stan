@@ -79,7 +79,7 @@ transformed parameters {
   for (i in 1:nobs) {
     h_det[i] = rep_vector(0.0, nsamp);
     for (j in 1:nmode) {
-      h_det_mode[i, j] = rd(times - t0[i], f[j], gamma[j], Ax[j], Ay[j]);
+      h_det_mode[i, j] = rd(times[i] - t0[i], f[j], gamma[j], Ax[j], Ay[j]);
       h_det[i] = h_det[i] + h_det_mode[i,j];
     }
   }

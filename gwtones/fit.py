@@ -15,7 +15,7 @@ import arviz as az
 
 Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 
-MODELS = ['ftau', 'kerr']
+MODELS = ('ftau', 'mchi')
 
 class Fit(object):
 
@@ -32,29 +32,34 @@ class Fit(object):
         self.prior = None
         try:
             # if modes is integer, interpret as number of modes
-            self._nmodes = int(modes)
+            self._n_modes = int(modes)
             self.modes = None
         except TypeError:
             # otherwise, assume it's mode index list
             self.modes = qnms.construct_mode_list(modes)
-            self._nmodes = None
+            self._n_modes = None
         self._duration = None
-        self._nanalyze = None
+        self._n_analyze = None
         # assume rest of kwargs are to be passed to stan_data (e.g. prior)
-        self._model_input = kws
+        self._prior_settings = kws
         
     @property
-    def nmodes(self):
-        return self._nmodes or len(self.modes)
+    def n_modes(self):
+        return self._n_modes or len(self.modes)
 
     @property
     def _model(self):
         if self.model is None:
             raise ValueError('you must specify a model')
-        elif self.model in self._compiled_models:
-            # look for model in cache
-            model = self._compiled_models[self.model]
-        elif self.model in MODELS:
+        elif self.model not in self._compiled_models:
+            if self.model in MODELS:
+                self.compile()
+            else:
+                raise ValueError('unrecognized model %r' % self.model)
+        return self._compiled_models[self.model]
+
+    def compile(self, force=False):
+        if force or self.model not in self._compiled_models:
             # compile model and cache in class variable
             code = pkg_resources.resource_string(__name__,
                 'stan/gwtones_{}.stan'.format(self.model)
@@ -62,9 +67,6 @@ class Fit(object):
             import pystan
             model = pystan.StanModel(model_code=code.decode("utf-8"))
             self._compiled_models[self.model] = model
-        else:
-            raise ValueError('unrecognized model %r' % self.model)
-        return model
 
     @property
     def ifos(self):
@@ -83,8 +85,8 @@ class Fit(object):
     def spectral_coefficients(self):
         f_coeffs = []
         g_coeffs = []
-        for i in range(len(self.modes)):
-            coeffs = qnms.KerrMode(i).coefficients
+        for mode in self.modes:
+            coeffs = qnms.KerrMode(mode).coefficients
             f_coeffs.append(coeffs[0])
             g_coeffs.append(coeffs[1])
         return array(f_coeffs), array(g_coeffs)
@@ -98,7 +100,7 @@ class Fit(object):
         return data
 
     @property
-    def _model_specific_defaults(self):
+    def _default_prior(self):
         default = {'A_max': None}
         if self.model == 'ftau':
             # TODO: set default priors based on sampling rate and duration
@@ -108,13 +110,10 @@ class Fit(object):
                 gamma_max=None,
                 gamma_min=None,
             ))
-        elif self.model == 'kerr':
-            f_coeff, g_coeff = self.spectral_coefficients
+        elif self.model == 'mchi':
             default.update(dict(
-                f_coeffs=f_coeff,
-                g_coeffs=g_coeff,
-                perturb_f=zeros(self.nmodes or 1),
-                perturb_tau=zeros(self.nmodes or 1),
+                perturb_f=zeros(self.n_modes or 1),
+                perturb_tau=zeros(self.n_modes or 1),
                 df_max=0.9,
                 dtau_max=0.9,
                 M_min=None,
@@ -125,15 +124,21 @@ class Fit(object):
         return default
 
     @property
+    def prior_settings(self):
+        prior = self._default_prior
+        prior.update(self._prior_settings)
+        return prior
+
+    @property
     def valid_model_options(self):
-        return list(self._model_specific_defaults.keys())
+        return list(self._default_prior.keys())
 
     # TODO: warn or fail if self.results is not None?
-    def update_prior(**kws):
+    def update_prior(self, **kws):
         valid_keys = self.valid_model_options
         for k, v in kws.items():
             if k in valid_keys:
-                self._model_input[k] = v
+                self._prior_settings[k] = v
             else:
                 raise ValueError('{} is not a valid model argument.'
                                  'Valid options are: {}'.format(k, valid_keys))
@@ -149,20 +154,27 @@ class Fit(object):
         stan_data = dict(
             # data related quantities
             nsamp=self.n_analyze,
-            nmode=self.nmodes,
-            nobs=len(self.data),
+            nmode=self.n_modes,
+            nobs=len(data_dict),
             t0=list(self.start_times.values()),
             times=[d.time for d in data_dict.values()],
-            strain=list(self.data_dict.values()),
-            L=[acf[:self.n_analyze].cholesky for acf in self.acfs.values()], 
+            strain=list(data_dict.values()),
+            L=[acf.iloc[:self.n_analyze].cholesky for acf in self.acfs.values()], 
+            FpFc = list(self.antenna_patterns.values()),
             # default priors
-            dt_min=1E-6,
+            dt_min=-1E-6,
             dt_max=1E-6,
             only_prior=0,
         )
 
-        stan_data.update(self._model_specific_defaults)
-        stan_data.update(self._model_input)
+        if self.model == 'mchi':
+            f_coeff, g_coeff = self.spectral_coefficients
+            stan_data.update(dict(
+                f_coeffs=f_coeff,
+                g_coeffs=g_coeff,
+        ))
+
+        stan_data.update(self.prior_settings)
 
         for k, v in stan_data.items():
             if v is None:
@@ -175,20 +187,20 @@ class Fit(object):
         stan_data['only_prior'] = int(prior)
         # get sampler settings
         n = kws.pop('thin', 1)
-        n_chains = kws.pop('n_chains', 4)
-        n_jobs = kws.pop('n_jobs', n_chains)
-        n_iter = kws.pop('n_iter', 2000*n)
+        chains = kws.pop('chains', 4)
+        n_jobs = kws.pop('n_jobs', chains)
+        n_iter = kws.pop('iter', 2000*n)
         stan_kws = {
             'iter': n_iter,
             'thin': n,
-            'init': (kws.pop('init_dict', None),)*n_chains,
+            'init': (kws.pop('init_dict', {}),)*chains,
             'n_jobs': n_jobs,
-            'chains': n_chains,
+            'chains': chains,
         }
         stan_kws.update(kws)
         # run model and store
         print('Running {}'.format(self.model))
-        result = self._model.sampling(data=self.model_input, **stan_kws)
+        result = self._model.sampling(data=stan_data, **stan_kws)
         if prior:
             self.prior = az.convert_to_inference_data(result)
         else:
@@ -199,9 +211,24 @@ class Fit(object):
             data = Data(data, index=getattr(data, 'time', time), ifo=ifo)
         self.data[data.ifo] = data
         if acf is not None:
-            self.acfs[ifo] = acf
+            self.acfs[data.ifo] = acf
 
     def compute_acfs(self, shared=False, ifos=None, **kws):
+        """Compute ACFs for all data sets in Fit.
+        
+        Arguments
+        ---------
+        shared: bool
+            specifices if all IFOs are to share a single ACF, in which case the
+            ACF is only computed once from the data of the first IFO (useful
+            for simulated data) (default False)
+        
+        ifos: list
+            specific set of IFOs for which to compute ACF, otherwise computes
+            it for all
+
+        extra kwargs are passed to ACF constructor
+        """
         ifos = self.ifos if ifos is None else ifos
         if len(ifos) == 0:
             raise ValueError("first add data")
@@ -214,7 +241,10 @@ class Fit(object):
         """ Set fit modes to be a sequence of overtones.
         """
         indexes = [(p, s, l, m, n) for n in range(nmode)]
-        self.modes = qnms.construct_mode_list(indexes)
+        self.set_modes(indexes)
+
+    def set_modes(self, modes):
+        self.modes = qnms.construct_mode_list(modes)
         
     def set_target(self, t0, ra=None, dec=None, psi=None, delays=None,
                    antenna_patterns=None, duration=None, n_analyze=None):
@@ -240,8 +270,10 @@ class Fit(object):
         delays = delays or {}
         antenna_patterns = antenna_patterns or {}
         for ifo, data in self.data.items():
-            if ifo is None:
+            # TODO: should we have an elliptical+ftau model?
+            if ifo is None or self.model=='ftau':
                 dt_ifo = 0
+                self.antenna_patterns[ifo] = (1, 1)
             else:
                 det = data.detector
                 dt_ifo = delays.get(ifo,
@@ -266,12 +298,12 @@ class Fit(object):
     
     @property
     def duration(self):
-        if self._nanalyze and not self._duration:
+        if self._n_analyze and not self._duration:
             if self.data:
-                return self._nanalyze*self.data[self.ifos[0]].delta_t
+                return self._n_analyze*self.data[self.ifos[0]].delta_t
             else:
                 print("Add data to compute duration (n_analyze = {})".format(
-                      self._nanalyze))
+                      self._n_analyze))
                 return None
         else:
             return self._duration
@@ -284,14 +316,14 @@ class Fit(object):
     def start_indices(self):
         i0_dict = {}
         if self.has_target:
-            for i, d in self.data.items():
+            for ifo, d in self.data.items():
                 t0 = self.start_times[ifo]
-                i0_dict[i] = argmin(abs(d.time - t0))
+                i0_dict[ifo] = argmin(abs(d.time - t0))
         return i0_dict
 
     @property
     def n_analyze(self):
-        if self._duration and not self._analyze:
+        if self._duration and not self._n_analyze:
             # set n_analyze based on specified duration in seconds
             if self.data:
                 dt = self.data[self.ifos[0]].delta_t

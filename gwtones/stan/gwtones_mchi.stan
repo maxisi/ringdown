@@ -4,7 +4,7 @@ functions {
     return dot_product(wh, mdivide_left_tri_low(L, d)) / sqrt(dot_self(wh));
   }
 
-  vector f_factors(real chi, int nmode) {
+  vector f_factors(real chi, int nmode, matrix f_coeffs) {
     /* return f's for first `nmode` modes */
     real log1mc = log1p(-chi);
 
@@ -16,7 +16,7 @@ functions {
     return f;
   }
 
-  vector g_factors(real chi, int nmode) {
+  vector g_factors(real chi, int nmode, matrix g_coeffs) {
     /* return g's for first `nmode` modes */
     real log1mc = log1p(-chi);
 
@@ -102,16 +102,16 @@ transformed parameters {
   vector[nmode] phic;
 
   for (i in 1:nmode) {
-    Ap[i] = Amax*sqrt(Ap_x[i]^2 + Ap_y[i]^2);
-    Ac[i] = Amax*sqrt(Ac_x[i]^2 + Ac_y[i]^2);
+    Ap[i] = A_max*sqrt(Ap_x[i]^2 + Ap_y[i]^2);
+    Ac[i] = A_max*sqrt(Ac_x[i]^2 + Ac_y[i]^2);
     phip[i] = atan2(Ap_y[i], Ap_x[i]);
     phic[i] = atan2(Ac_y[i], Ac_x[i]);
 
-    A[i] = 0.5*Amax*(sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) + sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2));
+    A[i] = 0.5*A_max*(sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) + sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2));
     ellip[i] = (sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) -  sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2))/( sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) +  sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2));
 
     # impose constraint on total amplitude
-    if (A[i] > 10*Amax) reject("A", i, " > Amax");
+    if (A[i] > 10*A_max) reject("A", i, " > A_max");
   }
 
   {
@@ -120,8 +120,8 @@ transformed parameters {
 
     real f0 = fref*mref/M;
 
-    f = f0*f_factors(chi, nmode) .* (1 + df .* perturb_f);
-    gamma = f0*g_factors(chi, nmode) ./ (1 + dtau .* perturb_tau);
+    f = f0*f_factors(chi, nmode, f_coeffs) .* (1 + df .* perturb_f);
+    gamma = f0*g_factors(chi, nmode, g_coeffs) ./ (1 + dtau .* perturb_tau);
   }
 
   for (i in 1:nmode-1) {
@@ -152,7 +152,7 @@ model {
   Ac_y ~ std_normal();
 
   for (i in 1:nmode) {
-    //target += -log(A[i]); // + 0.5*Ap[i]^2 / (0.25*Amax^2);
+    //target += -log(A[i]); // + 0.5*Ap[i]^2 / (0.25*A_max^2);
     target += 0.5*Ap_x[i]^2;
     target += 0.5*Ap_y[i]^2;
     target += 0.5*Ac_x[i]^2;
