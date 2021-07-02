@@ -37,10 +37,11 @@ _g_coeffs = [
     [-0.01888617,  1.20407042, -0.49651606,  1.04793870, -2.02319930,  0.88102107],
     [ 0.10530775,  1.43868390, -0.05621762, -1.38317450,  3.05769954, -2.25940348],
     [ 0.14280084,  1.69019137, -0.25210715, -0.67029321,  2.09513036, -1.8255968 ]
+]
 
 _COEFF_CACHE = {}
 for n, (fc, gc) in enumerate(zip(_f_coeffs, _g_coeffs)):
-    _COEFF_CACHE[ModeIndex(1, -2, 2, 2, n)] = (fg, gc)
+    _COEFF_CACHE[ModeIndex(1, -2, 2, 2, n)] = (fc, gc)
 
 
 # TODO: maybe this should be an attribute of a Mode object
