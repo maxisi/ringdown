@@ -49,16 +49,16 @@ class KerrMode(object):
 
     _cache = {}
 
-    def __init__(self, *args):
+    def __init__(self, *args, **kwargs):
         if len(args) == 1:
             args = args[0]
-        self.index = ModeIndex(*args)
+        self.index = ModeIndex(*args, **kwargs)
 
     @property
     def coefficients(self):
         i = self.index
         if i not in self._cache:
-            self._cache[i] = _COEFF_CACHE.get(i, self.compute_coefficients(i))
+            self._cache[i] = _COEFF_CACHE.get(i, None) or self.compute_coefficients(i)
         return self._cache[i]
 
     @staticmethod
