@@ -22,13 +22,17 @@ class Fit(object):
 
     _compiled_models = {}
 
-    def __init__(self, model=None, modes=None, **kws):
+    def __init__(self, model='mchi', modes=None, **kws):
         self.data = {}
         self.acfs = {}
         self.start_times = {}
         self.antenna_patterns = {}
         self.target = Target(None, None, None, None)
-        self.model = model.lower() if model is not None else model
+        if model.lower() in MODELS:
+            self.model = model.lower()
+        else:
+            raise ValueError('invalid model {:s}; options are {}'.format(model,
+                                                                         MODELS))
         self.result = None
         self.prior = None
         try:
@@ -185,6 +189,15 @@ class Fit(object):
     def copy(self):
         return copy.copy(self)
 
+    def condition_data(self, **kwargs):
+        new_data = {}
+        for k, d in self.data.items():
+            t0 = self.start_times[k]
+            new_data[k] = d.condition(t0=t0, **kwargs)
+
+        self.data = new_data
+        self.acfs = {} # Just to be sure that these stay consistent
+
     def run(self, prior=False, **kws):
         # get model input
         stan_data = self.model_input
@@ -199,7 +212,7 @@ class Fit(object):
             'thin': n,
             'init': (kws.pop('init_dict', {}),)*chains,
             'n_jobs': n_jobs,
-            'chains': chains,
+            'chains': chains
         }
         stan_kws.update(kws)
         # run model and store

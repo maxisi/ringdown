@@ -68,7 +68,7 @@ data {
   /* boolean arrays indicating whether to perturb n-th mode */
   vector[nmode] perturb_f;
   vector[nmode] perturb_tau;
-  
+
   int only_prior;
 }
 
@@ -110,8 +110,10 @@ transformed parameters {
     A[i] = 0.5*A_max*(sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) + sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2));
     ellip[i] = (sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) -  sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2))/( sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) +  sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2));
 
-    # impose constraint on total amplitude
-    if (A[i] > 10*A_max) reject("A", i, " > A_max");
+    if (only_prior) {
+      # impose constraint on total amplitude; otherwise we rely on the likelihood to cut it off.
+      if (A[i] > 10*A_max) reject("A", i, " > A_max");
+    }
   }
 
   {
