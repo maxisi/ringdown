@@ -1,3 +1,4 @@
+import copy
 from pylab import *
 from .data import *
 from . import qnms
@@ -42,7 +43,7 @@ class Fit(object):
         self._n_analyze = None
         # assume rest of kwargs are to be passed to stan_data (e.g. prior)
         self._prior_settings = kws
-        
+
     @property
     def n_modes(self):
         return self._n_modes or len(self.modes)
@@ -75,7 +76,7 @@ class Fit(object):
     @property
     def t0(self):
         return self.target.t0
-        
+
     @property
     def sky(self):
         return (self.target.ra, self.target.dec, self.target.psi)
@@ -159,7 +160,7 @@ class Fit(object):
             t0=list(self.start_times.values()),
             times=[d.time for d in data_dict.values()],
             strain=list(data_dict.values()),
-            L=[acf.iloc[:self.n_analyze].cholesky for acf in self.acfs.values()], 
+            L=[acf.iloc[:self.n_analyze].cholesky for acf in self.acfs.values()],
             FpFc = list(self.antenna_patterns.values()),
             # default priors
             dt_min=-1E-6,
@@ -180,6 +181,9 @@ class Fit(object):
             if v is None:
                 raise ValueError('please specify {}'.format(k))
         return stan_data
+
+    def copy(self):
+        return copy.copy(self)
 
     def run(self, prior=False, **kws):
         # get model input
@@ -215,14 +219,14 @@ class Fit(object):
 
     def compute_acfs(self, shared=False, ifos=None, **kws):
         """Compute ACFs for all data sets in Fit.
-        
+
         Arguments
         ---------
         shared: bool
             specifices if all IFOs are to share a single ACF, in which case the
             ACF is only computed once from the data of the first IFO (useful
             for simulated data) (default False)
-        
+
         ifos: list
             specific set of IFOs for which to compute ACF, otherwise computes
             it for all
@@ -245,7 +249,7 @@ class Fit(object):
 
     def set_modes(self, modes):
         self.modes = qnms.construct_mode_list(modes)
-        
+
     def set_target(self, t0, ra=None, dec=None, psi=None, delays=None,
                    antenna_patterns=None, duration=None, n_analyze=None):
         """ Establish truncation target, stored to `self.target`.
@@ -262,7 +266,7 @@ class Fit(object):
             dictionary with delayes from geocenter for each detector, as would
             be computed by `lal.TimeDelayFromEarthCenter` (optional)
         antenna_patterns: dict
-            dictionary with tuples for plus and cross antenna patterns for 
+            dictionary with tuples for plus and cross antenna patterns for
             each detector {ifo: (Fp, Fc)} (optional)
         """
         tgps = lal.LIGOTimeGPS(t0)
@@ -295,7 +299,7 @@ class Fit(object):
                        ['duration', 'n_analyze', 'antenna_patterns']})
         target.update(kws)
         self.set_target(**target)
-    
+
     @property
     def duration(self):
         if self._n_analyze and not self._duration:
@@ -307,7 +311,7 @@ class Fit(object):
                 return None
         else:
             return self._duration
-    
+
     @property
     def has_target(self):
         return self.target.t0 is not None
@@ -369,4 +373,3 @@ def get_thin_dict(all_fits, **kws):
         for j, fit in fits.items():
             thins[i].append(get_thin(fit, **kws))
     return thins
-
