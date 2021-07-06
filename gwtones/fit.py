@@ -207,13 +207,14 @@ class Fit(object):
         chains = kws.pop('chains', 4)
         n_jobs = kws.pop('n_jobs', chains)
         n_iter = kws.pop('iter', 2000*n)
+        metric = kws.pop('metric', 'dense_e')
         stan_kws = {
             'iter': n_iter,
             'thin': n,
             'init': (kws.pop('init_dict', {}),)*chains,
             'n_jobs': n_jobs,
             'chains': chains,
-            'control': {'metric': 'dense_e'}
+            'control': {'metric': metric}
         }
         stan_kws.update(kws)
         # run model and store
