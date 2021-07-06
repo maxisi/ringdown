@@ -212,8 +212,7 @@ class Fit(object):
             'thin': n,
             'init': (kws.pop('init_dict', {}),)*chains,
             'n_jobs': n_jobs,
-            'chains': chains,
-	    'control': {'metric': 'dense_e'}
+            'chains': chains
         }
         stan_kws.update(kws)
         # run model and store
@@ -356,6 +355,16 @@ class Fit(object):
             return min([len(d.iloc[i0s[i]:]) for i, d in self.data.items()])
         else:
             return self._n_analyze
+
+    def whiten(self, tseries_dict):
+        wtseries = {}
+
+        for ifo, ts in tseries_dict.items():
+            L = self.acfs[ifo].iloc[:self.n_analyze].cholesky
+
+            wtseries[ifo] = np.linalg.solve(L, ts)
+
+        return wtseries
 
 # ##################################################################
 # TODO: go through following functions and see what's worth keeping
