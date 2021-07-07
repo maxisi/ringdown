@@ -111,7 +111,7 @@ transformed parameters {
     ellip[i] = (sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) -  sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2))/( sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) +  sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2));
 
     if (only_prior) {
-      # impose constraint on total amplitude; otherwise we rely on the likelihood to cut it off.
+      // impose constraint on total amplitude; otherwise we rely on the likelihood to cut it off.
       if (A[i] > 10*A_max) reject("A", i, " > A_max");
     }
   }
