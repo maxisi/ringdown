@@ -18,7 +18,7 @@ def condition(raw_data, raw_time=None, flow=None, fhigh=None, ds=None,
         i = argmin(abs(raw_time - t0))
         raw_time = roll(raw_time, -(i % ds))
         raw_data = roll(raw_data, -(i % ds))
-        
+
     fny = 0.5/(raw_time[1] - raw_time[0])
     # Filter
     if flow and not fhigh:
@@ -33,11 +33,11 @@ def condition(raw_data, raw_time=None, flow=None, fhigh=None, ds=None,
         cond_data = sig.filtfilt(b, a, raw_data)
     else:
         cond_data = raw_data
-        
+
     # Decimate
     if ds and ds > 1:
         if scipy_dec:
-            cond_data = sig.decimate(cond_data, ds, 60, ftype='fir', zero_phase=True)
+            cond_data = sig.decimate(cond_data, ds, zero_phase=True)
         else:
             cond_data = cond_data[::ds]
         if raw_time is not None:
@@ -186,7 +186,7 @@ class AutoCovariance(TimeSeries):
                   method='td'):
         dt = getattr(d, 'delta_t', dt)
         n = n or len(d)
-        if method.lower() == 'td':    
+        if method.lower() == 'td':
             rho = sig.correlate(d, d)
             rho = ifftshift(rho)
             rho = rho[:n] / len(d)
