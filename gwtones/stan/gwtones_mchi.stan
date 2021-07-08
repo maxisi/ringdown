@@ -153,17 +153,17 @@ model {
   Ac_x ~ std_normal();
   Ac_y ~ std_normal();
 
-  for (i in 1:nmode) {
-    //target += -log(A[i]); // + 0.5*Ap[i]^2 / (0.25*A_max^2);
-    target += 0.5*Ap_x[i]^2;
-    target += 0.5*Ap_y[i]^2;
-    target += 0.5*Ac_x[i]^2;
-    target += 0.5*Ac_y[i]^2;
-    target += -3*log(A[i]) - log1m(ellip[i]^2);
-    /* go to flat in cosi */
-    // target += -2*log(abs(ellip[i])) + log(-1 + 1/sqrt(1-ellip[i]^2));
-    // target += log((-1 + 1/sqrt(1-ellip[i]^2))/ellip[i]^2);
-  }
+  // for (i in 1:nmode) {
+  //   //target += -log(A[i]); // + 0.5*Ap[i]^2 / (0.25*A_max^2);
+  //   target += 0.5*Ap_x[i]^2;
+  //   target += 0.5*Ap_y[i]^2;
+  //   target += 0.5*Ac_x[i]^2;
+  //   target += 0.5*Ac_y[i]^2;
+  //   target += -3*log(A[i]) - log1m(ellip[i]^2);
+  //   /* go to flat in cosi */
+  //   // target += -2*log(abs(ellip[i])) + log(-1 + 1/sqrt(1-ellip[i]^2));
+  //   // target += log((-1 + 1/sqrt(1-ellip[i]^2))/ellip[i]^2);
+  // }
   /* Flat prior on M, chi */
 
   /* Flat prior on the delta-fs. */
