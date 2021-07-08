@@ -125,6 +125,7 @@ class Fit(object):
                 M_max=None,
                 chi_min=0,
                 chi_max=0.99,
+                flat_A_ellip=1
             ))
         return default
 
