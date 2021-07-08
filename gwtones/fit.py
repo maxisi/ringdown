@@ -106,7 +106,7 @@ class Fit(object):
 
     @property
     def _default_prior(self):
-        default = {'A_max': None}
+        default = {'A_scale': None}
         if self.model == 'ftau':
             # TODO: set default priors based on sampling rate and duration
             default.update(dict(
@@ -124,8 +124,7 @@ class Fit(object):
                 M_min=None,
                 M_max=None,
                 chi_min=0,
-                chi_max=0.99,
-                flat_A_ellip=1
+                chi_max=0.99
             ))
         return default
 
@@ -169,8 +168,7 @@ class Fit(object):
             FpFc = list(self.antenna_patterns.values()),
             # default priors
             dt_min=-1E-6,
-            dt_max=1E-6,
-            only_prior=0,
+            dt_max=1E-6
         )
 
         if self.model == 'mchi':

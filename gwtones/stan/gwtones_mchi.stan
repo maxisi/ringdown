@@ -28,10 +28,12 @@ functions {
     return g;
   }
 
-  vector rd(vector t, real f, real gamma, real Ap, real Ac, real phip, real phic, real Fp, real Fc) {
+  vector rd(vector t, real f, real gamma, real Apx, real Apy, real Acx, real Acy, real Fp, real Fc) {
     int n = rows(t);
-    vector[n] p = Ap*exp(-gamma*t).*cos(2*pi()*f*t - phip);
-    vector[n] c = Ac*exp(-gamma*t).*cos(2*pi()*f*t - phic);
+    vector[n] ct = cos(2*pi()*f*t);
+    vector[n] st = sin(2*pi()*f*t);
+    vector[n] p = exp(-gamma*t).*(Apx*ct + Apy*st);
+    vector[n] c = exp(-gamma*t).*(Acx*ct + Apy*st);
     return Fp*p + Fc*c;
   }
 }
@@ -57,7 +59,7 @@ data {
   real chi_min;
   real chi_max;
 
-  real A_max;
+  real A_scale;
 
   real dt_min;
   real dt_max;
@@ -70,17 +72,16 @@ data {
   vector[nmode] perturb_tau;
 
   int only_prior;
-  int flat_A_ellip;
 }
 
 parameters {
   real<lower=M_min, upper=M_max> M;
   real<lower=chi_min, upper=chi_max> chi;
 
-  vector[nmode] Ap_x;
-  vector[nmode] Ap_y;
-  vector[nmode] Ac_x;
-  vector[nmode] Ac_y;
+  vector<lower=0>[nmode] A_unit;
+  vector<lower=-1, upper=1>[nmode] ellip;
+  vector<lower=-pi()/2, upper=pi()/2>[nmode] theta;
+  unit_vector[nmode] phi_vec;
 
   vector<lower=dt_min, upper=dt_max>[nobs-1] dts;
 
@@ -95,26 +96,51 @@ transformed parameters {
   vector[nsamp] h_det[nobs];
 
   vector[nmode] A;
-  vector[nmode] ellip;
+  vector[nmode] phi;
 
-  vector[nmode] Ap;
-  vector[nmode] Ac;
-  vector[nmode] phip;
-  vector[nmode] phic;
+  vector[nmode] Apx;
+  vector[nmode] Apy;
+  vector[nmode] Acx;
+  vector[nmode] Acy;
 
   for (i in 1:nmode) {
-    Ap[i] = A_max*sqrt(Ap_x[i]^2 + Ap_y[i]^2);
-    Ac[i] = A_max*sqrt(Ac_x[i]^2 + Ac_y[i]^2);
-    phip[i] = atan2(Ap_y[i], Ap_x[i]);
-    phic[i] = atan2(Ac_y[i], Ac_x[i]);
+    real sp;
+    real cp;
+    real st;
+    real ct;
+    real x;
+    real y;
 
-    A[i] = 0.5*A_max*(sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) + sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2));
-    ellip[i] = (sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) -  sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2))/( sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) +  sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2));
+    A[i] = A_scale*A_unit[i];
 
-    if (only_prior) {
-      // impose constraint on total amplitude; otherwise we rely on the likelihood to cut it off.
-      if (A[i] > 10*A_max) reject("A", i, " > A_max");
-    }
+    phi[i] = atan2(phi_vec[2], phi_vec[1]);
+    sp = phi_vec[2];
+    cp = phi_vec[1];
+
+    st = sin(theta[i]);
+    ct = cos(theta[i]);
+
+    x = ellip[i]*ct;
+    y = ellip[i]*st;
+
+    Apx[i] = A[i]*(ct*cp - y*sp);
+    Apy[i] = -A[i]*(y*cp + ct*sp);
+
+    Acx[i] = A[i]*(st*cp + x*sp);
+    Acy[i] = A[i]*(x*cp - st*sp);
+
+    // Ap[i] = A_max*sqrt(Ap_x[i]^2 + Ap_y[i]^2);
+    // Ac[i] = A_max*sqrt(Ac_x[i]^2 + Ac_y[i]^2);
+    // phip[i] = atan2(Ap_y[i], Ap_x[i]);
+    // phic[i] = atan2(Ac_y[i], Ac_x[i]);
+    //
+    // A[i] = 0.5*A_max*(sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) + sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2));
+    // ellip[i] = (sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) -  sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2))/( sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) +  sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2));
+    //
+    // if (only_prior) {
+    //   // impose constraint on total amplitude; otherwise we rely on the likelihood to cut it off.
+    //   if (A[i] > 10*A_max) reject("A", i, " > A_max");
+    // }
   }
 
   {
@@ -142,31 +168,15 @@ transformed parameters {
     }
 
     for (j in 1:nmode) {
-      h_det_mode[i, j] = rd(times[i] - torigin, f[j], gamma[j], Ap[j], Ac[j], phip[j], phic[j], FpFc[i][1], FpFc[i][2]);
+      h_det_mode[i, j] = rd(times[i] - torigin, f[j], gamma[j], Apx[j], Apy[j], Acx[j], Acy[j], FpFc[i][1], FpFc[i][2]);
       h_det[i] = h_det[i] + h_det_mode[i,j];
     }
   }
 }
 
 model {
-  Ap_x ~ std_normal();
-  Ap_y ~ std_normal();
-  Ac_x ~ std_normal();
-  Ac_y ~ std_normal();
-
-  if (flat_A_ellip > 0) {
-    for (i in 1:nmode) {
-      //target += -log(A[i]); // + 0.5*Ap[i]^2 / (0.25*A_max^2);
-      target += 0.5*Ap_x[i]^2;
-      target += 0.5*Ap_y[i]^2;
-      target += 0.5*Ac_x[i]^2;
-      target += 0.5*Ac_y[i]^2;
-      target += -3*log(A[i]) - log1m(ellip[i]^2);
-      /* go to flat in cosi */
-      // target += -2*log(abs(ellip[i])) + log(-1 + 1/sqrt(1-ellip[i]^2));
-      // target += log((-1 + 1/sqrt(1-ellip[i]^2))/ellip[i]^2);
-    }
-  }
+  A_unit ~ std_normal(); // So A ~ N(0, A_scale) with 0 <= A < Inf
+  // Flat prior on ellip, angles.
   /* Flat prior on M, chi */
 
   /* Flat prior on the delta-fs. */
@@ -181,20 +191,15 @@ model {
 
 generated quantities {
   vector[nmode] tau = 1.0 ./ gamma;
-  vector[nmode] Q = pi()* f .* tau;
+  vector[nmode] Q = pi() * f .* tau;
   vector[nmode] phiR;
   vector[nmode] phiL;
-  vector[nmode] phi;
-  vector[nmode] theta;
   //real net_snr;
   //vector[nobs] snr;
 
   for (i in 1:nmode) {
-    phiR[i] = atan2(-Ac_x[i] + Ap_y[i], Ac_y[i] + Ap_x[i]);
-    phiL[i] = atan2(-Ac_x[i] - Ap_y[i], -Ac_y[i] + Ap_x[i]);
-    theta[i] = -0.5*(phiR[i] + phiL[i]);
-    phi[i] = 0.5*(phiR[i] - phiL[i]);
-
+    phiR[i] = atan2(-Acx[i] + Apy[i], Acy[i] + Apx[i]);
+    phiL[i] = atan2(-Acx[i] - Apy[i], -Acy[i] + Apx[i]);
   }
 
   // for (i in 1:nobs) {
