@@ -1,4 +1,4 @@
-import copy
+import copy as cp
 from pylab import *
 from .data import *
 from . import qnms
@@ -188,7 +188,7 @@ class Fit(object):
         return stan_data
 
     def copy(self):
-        return copy.copy(self)
+        return cp.copy(self)
 
     def condition_data(self, **kwargs):
         new_data = {}
