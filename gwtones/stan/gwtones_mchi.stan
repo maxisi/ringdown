@@ -79,8 +79,8 @@ parameters {
   real<lower=chi_min, upper=chi_max> chi;
 
   vector<lower=0>[nmode] A_unit;
-  vector<lower=-1, upper=1>[nmode] ellip;
-  vector<lower=-pi()/2, upper=pi()/2>[nmode] theta;
+//  vector<lower=-1, upper=1>[nmode] ellip;
+//  vector<lower=-pi()/2, upper=pi()/2>[nmode] theta;
   unit_vector[nmode] phi_vec;
 
   vector<lower=dt_min, upper=dt_max>[nobs-1] dts;
@@ -90,6 +90,9 @@ parameters {
 }
 
 transformed parameters {
+  vector[nmode] ellip = rep_vector(-1.0, nmode);
+  vector[nmode] theta = rep_vector(0.0, nmode);
+
   vector[nmode] gamma;
   vector[nmode] f;
   vector[nsamp] h_det_mode[nobs,nmode];
@@ -124,10 +127,10 @@ transformed parameters {
     y = ellip[i]*st;
 
     Apx[i] = A[i]*(ct*cp - y*sp);
-    Apy[i] = -A[i]*(y*cp + ct*sp);
+    Apy[i] = A[i]*(ct*sp - y*cp);
 
-    Acx[i] = A[i]*(st*cp + x*sp);
-    Acy[i] = A[i]*(x*cp - st*sp);
+    Acx[i] = A[i]*(st*cp - x*sp);
+    Acy[i] = A[i]*(x*cp + st*sp);
 
     // Ap[i] = A_max*sqrt(Ap_x[i]^2 + Ap_y[i]^2);
     // Ac[i] = A_max*sqrt(Ac_x[i]^2 + Ac_y[i]^2);
