@@ -22,7 +22,7 @@ data {
   real gamma_max;
 
 
-  real A_max;
+  real A_scale;
 
   int only_prior;
 }
@@ -42,8 +42,8 @@ parameters {
   vector<lower=f_min, upper=f_max>[nmode] f;
   real gamma_raw[nmode];
 
-  vector<lower=-A_max,upper=A_max>[nmode] Ax;
-  vector<lower=-A_max,upper=A_max>[nmode] Ay;
+  vector<lower=-A_scale,upper=A_scale>[nmode] Ax;
+  vector<lower=-A_scale,upper=A_scale>[nmode] Ay;
 }
 
 transformed parameters {
