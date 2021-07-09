@@ -100,11 +100,15 @@ transformed parameters {
   vector[nmode] Acx;
   vector[nmode] Acy;
 
+  vector[nmode] A;
+
   for (i in 1:nmode) {
     Apx[i] = A_scale*Apx_unit[i];
     Apy[i] = A_scale*Apy_unit[i];
     Acx[i] = A_scale*Acx_unit[i];
     Acy[i] = A_scale*Acy_unit[i];
+
+    A[i] = 0.5*(sqrt((Acy[i] + Apx[i])^2 + (Acx[i] - Apy[i])^2) + sqrt((Acy[i] - Apx[i])^2 + (Acx[i] + Apy[i])^2));
   }
 
   {
@@ -139,10 +143,9 @@ transformed parameters {
 }
 
 model {
-  Apx_unit ~ std_normal(); // So A ~ N(0, A_scale) with 0 <= A < Inf
-  Apy_unit ~ std_normal();
-  Acx_unit ~ std_normal();
-  Acy_unit ~ std_normal();
+  /* Flat prior on A, uniform in angles, etc.   Since we sample in the quadratures, we have a factor of A^3 dA = d^4 A_quad. */
+  target += -3*sum(log(A));
+
   /* Flat prior on M, chi */
 
   /* Flat prior on the delta-fs, delta-taus. */
@@ -161,14 +164,12 @@ generated quantities {
   vector[nmode] phiR;
   vector[nmode] phiL;
 
-  vector[nmode] A;
   vector[nmode] ellip;
 
   for (i in 1:nmode) {
     phiR[i] = atan2(-Acx[i] + Apy[i], Acy[i] + Apx[i]);
     phiL[i] = atan2(-Acx[i] - Apy[i], -Acy[i] + Apx[i]);
 
-    A[i] = 0.5*(sqrt((Acy[i] + Apx[i])^2 + (Acx[i] - Apy[i])^2) + sqrt((Acy[i] - Apx[i])^2 + (Acx[i] + Apy[i])^2));
     ellip[i] = (sqrt((Acy[i] + Apx[i])^2 + (Acx[i] - Apy[i])^2) -  sqrt((Acy[i] - Apx[i])^2 + (Acx[i] + Apy[i])^2))/( sqrt((Acy[i] + Apx[i])^2 + (Acx[i] - Apy[i])^2) +  sqrt((Acy[i] - Apx[i])^2 + (Acx[i] + Apy[i])^2));
   }
 }
