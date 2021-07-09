@@ -78,10 +78,10 @@ parameters {
   real<lower=M_min, upper=M_max> M;
   real<lower=chi_min, upper=chi_max> chi;
 
-  vector<lower=0>[nmode] A_unit;
-  // vector<lower=-1, upper=1>[nmode] ellip;
-  // vector<lower=-pi()/2, upper=pi()/2>[nmode] theta;
-  unit_vector[2] phi_vec[nmode];
+  vector[nmode] Apx_unit;
+  vector[nmode] Apy_unit;
+  vector[nmode] Acx_unit;
+  vector[nmode] Acy_unit;
 
   vector<lower=dt_min, upper=dt_max>[nobs-1] dts;
 
@@ -90,15 +90,10 @@ parameters {
 }
 
 transformed parameters {
-  vector[nmode] ellip = rep_vector(-1.0, nmode);
-  vector[nmode] theta = rep_vector(0.0, nmode);
   vector[nmode] gamma;
   vector[nmode] f;
   vector[nsamp] h_det_mode[nobs,nmode];
   vector[nsamp] h_det[nobs];
-
-  vector[nmode] A;
-  vector[nmode] phi;
 
   vector[nmode] Apx;
   vector[nmode] Apy;
@@ -106,43 +101,10 @@ transformed parameters {
   vector[nmode] Acy;
 
   for (i in 1:nmode) {
-    real sp;
-    real cp;
-    real st;
-    real ct;
-    real x;
-    real y;
-
-    A[i] = A_scale*A_unit[i];
-
-    phi[i] = atan2(phi_vec[i][2], phi_vec[i][1]);
-    sp = phi_vec[i][2];
-    cp = phi_vec[i][1];
-
-    st = sin(theta[i]);
-    ct = cos(theta[i]);
-
-    x = ellip[i]*ct;
-    y = ellip[i]*st;
-
-    Apx[i] = A[i]*(ct*cp + y*sp);
-    Apy[i] = A[i]*(ct*sp - y*cp);
-
-    Acx[i] = A[i]*(st*cp - x*sp);
-    Acy[i] = A[i]*(x*cp + st*sp);
-
-    // Ap[i] = A_max*sqrt(Ap_x[i]^2 + Ap_y[i]^2);
-    // Ac[i] = A_max*sqrt(Ac_x[i]^2 + Ac_y[i]^2);
-    // phip[i] = atan2(Ap_y[i], Ap_x[i]);
-    // phic[i] = atan2(Ac_y[i], Ac_x[i]);
-    //
-    // A[i] = 0.5*A_max*(sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) + sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2));
-    // ellip[i] = (sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) -  sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2))/( sqrt((Ac_y[i] + Ap_x[i])^2 + (Ac_x[i] - Ap_y[i])^2) +  sqrt((Ac_y[i] - Ap_x[i])^2 + (Ac_x[i] + Ap_y[i])^2));
-    //
-    // if (only_prior) {
-    //   // impose constraint on total amplitude; otherwise we rely on the likelihood to cut it off.
-    //   if (A[i] > 10*A_max) reject("A", i, " > A_max");
-    // }
+    Apx[i] = A_scale*Apx_unit[i];
+    Apy[i] = A_scale*Apy_unit[i];
+    Acx[i] = A_scale*Acx_unit[i];
+    Acy[i] = A_scale*Acy_unit[i];
   }
 
   {
@@ -177,11 +139,13 @@ transformed parameters {
 }
 
 model {
-  A_unit ~ std_normal(); // So A ~ N(0, A_scale) with 0 <= A < Inf
-  // Flat prior on ellip, angles.
+  Apx_unit ~ std_normal(); // So A ~ N(0, A_scale) with 0 <= A < Inf
+  Apy_unit ~ std_normal();
+  Acx_unit ~ std_normal();
+  Acy_unit ~ std_normal();
   /* Flat prior on M, chi */
 
-  /* Flat prior on the delta-fs. */
+  /* Flat prior on the delta-fs, delta-taus. */
 
   /* Likelihood */
   if ( only_prior == 0 ) {
@@ -196,16 +160,15 @@ generated quantities {
   vector[nmode] Q = pi() * f .* tau;
   vector[nmode] phiR;
   vector[nmode] phiL;
-  //real net_snr;
-  //vector[nobs] snr;
+
+  vector[nmode] A;
+  vector[nmode] ellip;
 
   for (i in 1:nmode) {
     phiR[i] = atan2(-Acx[i] + Apy[i], Acy[i] + Apx[i]);
     phiL[i] = atan2(-Acx[i] - Apy[i], -Acy[i] + Apx[i]);
-  }
 
-  // for (i in 1:nobs) {
-  //   snr[i] = get_snr(h_det[i], strain[i], L[i], nsamp);
-  // }
-  // net_snr = sqrt(dot_self(snr));
+    A[i] = 0.5*A_scale*(sqrt((Acy[i] + Apx[i])^2 + (Acx[i] - Apy[i])^2) + sqrt((Acy[i] - Apx[i])^2 + (Acx[i] + Apy[i])^2));
+    ellip[i] = (sqrt((Acy[i] + Apx[i])^2 + (Acx[i] - Apy[i])^2) -  sqrt((Acy[i] - Apx[i])^2 + (Acx[i] + Apy[i])^2))/( sqrt((Acy[i] + Apx[i])^2 + (Acx[i] - Apy[i])^2) +  sqrt((Acy[i] - Apx[i])^2 + (Acx[i] + Apy[i])^2));
+  }
 }
