@@ -33,7 +33,7 @@ functions {
     vector[n] ct = cos(2*pi()*f*t);
     vector[n] st = sin(2*pi()*f*t);
     vector[n] p = exp(-gamma*t).*(Apx*ct + Apy*st);
-    vector[n] c = exp(-gamma*t).*(Acx*ct + Apy*st);
+    vector[n] c = exp(-gamma*t).*(Acx*ct + Acy*st);
     return Fp*p + Fc*c;
   }
 }
@@ -79,9 +79,9 @@ parameters {
   real<lower=chi_min, upper=chi_max> chi;
 
   vector<lower=0>[nmode] A_unit;
-//  vector<lower=-1, upper=1>[nmode] ellip;
-//  vector<lower=-pi()/2, upper=pi()/2>[nmode] theta;
-  unit_vector[nmode] phi_vec;
+  vector<lower=-1, upper=1>[nmode] ellip;
+  vector<lower=-pi()/2, upper=pi()/2>[nmode] theta;
+  unit_vector[2] phi_vec[nmode];
 
   vector<lower=dt_min, upper=dt_max>[nobs-1] dts;
 
@@ -90,9 +90,6 @@ parameters {
 }
 
 transformed parameters {
-  vector[nmode] ellip = rep_vector(-1.0, nmode);
-  vector[nmode] theta = rep_vector(0.0, nmode);
-
   vector[nmode] gamma;
   vector[nmode] f;
   vector[nsamp] h_det_mode[nobs,nmode];
@@ -116,9 +113,9 @@ transformed parameters {
 
     A[i] = A_scale*A_unit[i];
 
-    phi[i] = atan2(phi_vec[2], phi_vec[1]);
-    sp = phi_vec[2];
-    cp = phi_vec[1];
+    phi[i] = atan2(phi_vec[i][2], phi_vec[i][1]);
+    sp = phi_vec[i][2];
+    cp = phi_vec[i][1];
 
     st = sin(theta[i]);
     ct = cos(theta[i]);
@@ -126,7 +123,7 @@ transformed parameters {
     x = ellip[i]*ct;
     y = ellip[i]*st;
 
-    Apx[i] = A[i]*(ct*cp - y*sp);
+    Apx[i] = A[i]*(ct*cp + y*sp);
     Apy[i] = A[i]*(ct*sp - y*cp);
 
     Acx[i] = A[i]*(st*cp - x*sp);
