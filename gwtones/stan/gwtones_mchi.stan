@@ -79,8 +79,8 @@ parameters {
   real<lower=chi_min, upper=chi_max> chi;
 
   vector<lower=0>[nmode] A_unit;
-  vector<lower=-1, upper=1>[nmode] ellip;
-  vector<lower=-pi()/2, upper=pi()/2>[nmode] theta;
+  // vector<lower=-1, upper=1>[nmode] ellip;
+  // vector<lower=-pi()/2, upper=pi()/2>[nmode] theta;
   unit_vector[2] phi_vec[nmode];
 
   vector<lower=dt_min, upper=dt_max>[nobs-1] dts;
@@ -90,6 +90,8 @@ parameters {
 }
 
 transformed parameters {
+  vector[nmode] ellip = rep_vector(-1.0, nmode);
+  vector[nmode] theta = rep_vector(0.0, nmode);
   vector[nmode] gamma;
   vector[nmode] f;
   vector[nsamp] h_det_mode[nobs,nmode];
