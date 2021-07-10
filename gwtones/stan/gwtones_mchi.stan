@@ -147,7 +147,7 @@ model {
   /* Amplitude prior */
   if (Gaussian_in_A) {
     /* Gaussian prior on A, uniform in angles, etc.   Since we sample in the quadratures, we have a factor of A^3 dA = d^4 A_quad. */
-    target += -3*sum(log(A)) - 0.5*(A/A_scale)*(A/A_scale);
+    target += -3*sum(log(A)) - 0.5*dot_product((A/A_scale), (A/A_scale));
   } else {
     Apx_unit ~ std_normal();
     Apy_unit ~ std_normal();
