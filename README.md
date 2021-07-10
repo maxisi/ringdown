@@ -1,5 +1,7 @@
 # gwtones
 
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/maxisi/gwtones/HEAD)
+
 Bayesian analysis of black hole ringdowns.  The original paper that inspired this code package is [Isi, et al. (2019)](https://arxiv.org/abs/1905.00869); a full description of the code and method can be found in [Isi & Farr (2021)](XXX).
 
 ## Installation
@@ -28,7 +30,7 @@ pip install gwtones
 
 will leave the shell in an environment that includes `jupyterlab` ready to explore the `gwtones` package.  
 
-The `environment.yml` file enables running `gwtones` in JupyterHub services like [MyBinder](https://mybinder.org/) by pointing MyBinder at this repository.  (Don't forget to `pip install gwtones` after the binder activates!)
+The `environment.yml` file enables running `gwtones` in JupyterHub services like [MyBinder](https://mybinder.org/) by pointing MyBinder at this repository or clicking the button at the top of this README.  (Don't forget to `pip install gwtones` after the binder activates!)
 
 ## Examples of Use
 
