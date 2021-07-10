@@ -12,16 +12,15 @@ setup(name='gwtones',
       packages=['gwtones'],
       package_data={'gwtones': ['stan/*.stan']},
       install_requires=[
-            'numpy',
-            'scipy',
-            'matplotlib',
-            'lalsuite',
-            'pandas',
+            'Cython>=0.22',
             'arviz',
+            'h5py',
+            'lalsuite',
+            'matplotlib',
+            'numpy',
+            'pandas',
             'pystan>=2,<3',
-            'Cython>=0.22'
-            'seaborn',
             'qnm',
-            'h5py'
-      ]
+            'scipy',
+            'seaborn']
      )
