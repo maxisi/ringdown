@@ -71,6 +71,7 @@ data {
   vector[nmode] perturb_f;
   vector[nmode] perturb_tau;
 
+  int Gaussian_in_A;
   int only_prior;
 }
 
@@ -143,8 +144,16 @@ transformed parameters {
 }
 
 model {
-  /* Flat prior on A, uniform in angles, etc.   Since we sample in the quadratures, we have a factor of A^3 dA = d^4 A_quad. */
-  target += -3*sum(log(A));
+  /* Amplitude prior */
+  if (Gaussian_in_A) {
+    /* Gaussian prior on A, uniform in angles, etc.   Since we sample in the quadratures, we have a factor of A^3 dA = d^4 A_quad. */
+    target += -3*sum(log(A)) - 0.5*(A/A_scale)*(A/A_scale);
+  } else {
+    Apx_unit ~ std_normal();
+    Apy_unit ~ std_normal();
+    Acx_unit ~ std_normal();
+    Acy_unit ~ std_normal();
+  }
 
   /* Flat prior on M, chi */
 

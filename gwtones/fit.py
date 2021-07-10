@@ -124,7 +124,8 @@ class Fit(object):
                 M_min=None,
                 M_max=None,
                 chi_min=0,
-                chi_max=0.99
+                chi_max=0.99,
+                Gaussian_in_A=0
             ))
         return default
 
