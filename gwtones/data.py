@@ -12,7 +12,7 @@ import pandas as pd
 #     return roll(raw_time, -(i % ds))[m]
 
 def condition(raw_data, raw_time=None, flow=None, fhigh=None, ds=None,
-              scipy_dec=True, remove_mean=True, t0=None, decimate_kws=None):
+              scipy_dec=True, remove_mean=True, t0=None, decimate_kws=None, trim=0.25):
     decimate_kws = decimate_kws or {}
 
     if t0 is not None:
@@ -46,6 +46,13 @@ def condition(raw_data, raw_time=None, flow=None, fhigh=None, ds=None,
             cond_time = raw_time[::ds]
     elif raw_time is not None:
         cond_time = raw_time
+
+    N = len(cond_data)
+    istart = int(round(trim*N))
+    iend = int(round((1-trim)*N))
+
+    cond_time = cond_time[istart:iend]
+    cond_data = cond_data[istart:iend]
 
     if remove_mean:
         cond_data -= mean(cond_data)
