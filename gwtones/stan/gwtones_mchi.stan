@@ -118,8 +118,8 @@ transformed parameters {
 
     real f0 = fref*mref/M;
 
-    f = f0*f_factors(chi, nmode, f_coeffs) .* (1 + df .* perturb_f);
-    gamma = f0*g_factors(chi, nmode, g_coeffs) ./ (1 + dtau .* perturb_tau);
+    f = f0*f_factors(chi, nmode, f_coeffs) .* exp(df .* perturb_f);
+    gamma = f0*g_factors(chi, nmode, g_coeffs) .* exp(-dtau .* perturb_tau);
   }
 
   for (i in 1:nmode-1) {
