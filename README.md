@@ -1,2 +1,48 @@
 # gwtones
-Bayesian analysis of black hole ringdowns.
+
+Bayesian analysis of black hole ringdowns.  The original paper that inspired this code package is [Isi, et al. (2019)](https://arxiv.org/abs/1905.00869); a full description of the code and method can be found in [Isi & Farr (2021)](XXX).
+
+## Installation
+
+This package is pip installable:
+
+```shell
+pip install gwtones
+```
+
+For the latest and greatest version, you can install directly from the git repo:
+
+```shell
+pip install git+https://github.com/maxisi/gwtones.git
+```
+
+### Complete Environments
+
+A complete [conda](https://docs.conda.io/en/latest/) environment that includes all the prerequisites (and more!) to install `gwtones` can be found in  `environment.yml` in the current directory:
+
+```shell
+conda env create -f environment.yml
+conda activate gwtones
+pip install gwtones
+```
+
+will leave the shell in an environment that includes `jupyterlab` ready to explore the `gwtones` package.  
+
+The `environment.yml` file enables running `gwtones` in JupyterHub services like [MyBinder](https://mybinder.org/) by pointing MyBinder at this repository.  (Don't forget to `pip install gwtones` after the binder activates!)
+
+## Examples of Use
+
+See the `examples` directory for Jupyter notebooks that give examples of using the package.  In particular, `examples/GW150914.ipynb` demonstrates an analysis of the ringdown in GW150914 and uses the fundamental (2,2) mode and first overtone to constrain the Kerr-ness of the post-merger spacetime, much like [Isi, et al. (2019)](https://arxiv.org/abs/1905.00869).
+
+## Citations
+
+We ask that scientific users of this code cite [Isi & Farr (2021)](XXX):
+
+```bibtex
+@article{Isi:2021,
+    author = "Isi, Max and Farr, Will M.",
+    title = "{Analyzing black hole ringdowns}",
+    journal = "arXiv e-prints",
+    year = "2021"
+}
+```
