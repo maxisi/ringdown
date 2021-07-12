@@ -2,6 +2,9 @@
 
 from setuptools import setup, find_packages
 
+with open("README.md", "r", encoding="utf-8") as fh:
+    long_description = fh.read()
+
 setup(name='ringdown',
       version='0.1',
       description='Bayesian analysis of black hole ringdowns.',
