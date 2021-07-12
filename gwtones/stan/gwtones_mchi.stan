@@ -71,7 +71,7 @@ data {
   vector[nmode] perturb_f;
   vector[nmode] perturb_tau;
 
-  int Gaussian_in_A;
+  int flat_A_ellip;
   int only_prior;
 }
 
@@ -102,6 +102,7 @@ transformed parameters {
   vector[nmode] Acy;
 
   vector[nmode] A;
+  vector[nmode] ellip;
 
   for (i in 1:nmode) {
     Apx[i] = A_scale*Apx_unit[i];
@@ -110,6 +111,8 @@ transformed parameters {
     Acy[i] = A_scale*Acy_unit[i];
 
     A[i] = 0.5*(sqrt((Acy[i] + Apx[i])^2 + (Acx[i] - Apy[i])^2) + sqrt((Acy[i] - Apx[i])^2 + (Acx[i] + Apy[i])^2));
+
+    ellip[i] = (sqrt((Acy[i] + Apx[i])^2 + (Acx[i] - Apy[i])^2) -  sqrt((Acy[i] - Apx[i])^2 + (Acx[i] + Apy[i])^2))/( sqrt((Acy[i] + Apx[i])^2 + (Acx[i] - Apy[i])^2) +  sqrt((Acy[i] - Apx[i])^2 + (Acx[i] + Apy[i])^2));
   }
 
   {
@@ -124,6 +127,12 @@ transformed parameters {
 
   for (i in 1:nmode-1) {
       if (gamma[i+1] <= gamma[i]) reject("gamma[", i, "] > gamma[", i+1, "]");
+  }
+
+  if ((flat_A_ellip) && (only_prior)) {
+      for (i in 1:nmode-1) {
+          if (A[i] > A_scale) reject("A", i, " > Amax");
+      }
   }
 
   for (i in 1:nobs) {
@@ -145,9 +154,10 @@ transformed parameters {
 
 model {
   /* Amplitude prior */
-  if (Gaussian_in_A) {
-    /* Gaussian prior on A, uniform in angles, etc.   Since we sample in the quadratures, we have a factor of A^3 dA = d^4 A_quad. */
-    target += -3*sum(log(A)) - 0.5*dot_product((A/A_scale), (A/A_scale));
+  if (flat_A_ellip) {
+      for (i in 1:nobs) {
+        target += -3*log(A[i]) - log1m(ellip[i]^2);
+      }
   } else {
     Apx_unit ~ std_normal();
     Apy_unit ~ std_normal();
@@ -173,12 +183,9 @@ generated quantities {
   vector[nmode] phiR;
   vector[nmode] phiL;
 
-  vector[nmode] ellip;
-
   for (i in 1:nmode) {
     phiR[i] = atan2(-Acx[i] + Apy[i], Acy[i] + Apx[i]);
     phiL[i] = atan2(-Acx[i] - Apy[i], -Acy[i] + Apx[i]);
 
-    ellip[i] = (sqrt((Acy[i] + Apx[i])^2 + (Acx[i] - Apy[i])^2) -  sqrt((Acy[i] - Apx[i])^2 + (Acx[i] + Apy[i])^2))/( sqrt((Acy[i] + Apx[i])^2 + (Acx[i] - Apy[i])^2) +  sqrt((Acy[i] - Apx[i])^2 + (Acx[i] + Apy[i])^2));
   }
 }
