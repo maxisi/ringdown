@@ -1,6 +1,6 @@
-# gwtones
+# ringdown
 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/maxisi/gwtones/HEAD)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/maxisi/ringdown/HEAD)
 
 Bayesian analysis of black hole ringdowns.  The original paper that inspired this code package is [Isi, et al. (2019)](https://arxiv.org/abs/1905.00869); a full description of the code and method can be found in [Isi & Farr (2021)](XXX).
 
@@ -9,28 +9,28 @@ Bayesian analysis of black hole ringdowns.  The original paper that inspired thi
 This package is pip installable:
 
 ```shell
-pip install gwtones
+pip install ringdown
 ```
 
 For the latest and greatest version, you can install directly from the git repo:
 
 ```shell
-pip install git+https://github.com/maxisi/gwtones.git
+pip install git+https://github.com/maxisi/ringdown.git
 ```
 
 ### Complete Environments
 
-A complete [conda](https://docs.conda.io/en/latest/) environment that includes all the prerequisites (and more!) to install `gwtones` can be found in  `environment.yml` in the current directory:
+A complete [conda](https://docs.conda.io/en/latest/) environment that includes all the prerequisites (and more!) to install `ringdown` can be found in  `environment.yml` in the current directory:
 
 ```shell
 conda env create -f environment.yml
-conda activate gwtones
-pip install gwtones
+conda activate ringdown
+pip install ringdown
 ```
 
-will leave the shell in an environment that includes `jupyterlab` ready to explore the `gwtones` package.  
+will leave the shell in an environment that includes `jupyterlab` ready to explore the `ringdown` package.  
 
-The `environment.yml` file enables running `gwtones` in JupyterHub services like [MyBinder](https://mybinder.org/) by pointing MyBinder at this repository or clicking the button at the top of this README.  (Don't forget to `pip install gwtones` after the binder activates!)
+The `environment.yml` file enables running `ringdown` in JupyterHub services like [MyBinder](https://mybinder.org/) by pointing MyBinder at this repository or clicking the button at the top of this README.  (Don't forget to `pip install ringdown` after the binder activates!)
 
 ## Examples of Use
 

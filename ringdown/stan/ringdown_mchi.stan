@@ -131,7 +131,7 @@ transformed parameters {
 
   if ((flat_A_ellip) && (only_prior)) {
       for (i in 1:nmode-1) {
-          if (A[i] > A_scale) reject("A", i, " > Amax");
+          if (A[i] > A_scale) reject("A", i, " > A_scale");
       }
   }
 

@@ -2,15 +2,15 @@
 
 from setuptools import setup, find_packages
 
-setup(name='gwtones',
+setup(name='ringdown',
       version='0.1',
       description='Bayesian analysis of black hole ringdowns.',
       author='Maximiliano Isi, Will M. Farr',
       author_email='max.isi@ligo.org, will.farr@stonybrook.edu',
-      url='https://github.com/maxisi/gwtones',
+      url='https://github.com/maxisi/ringdown',
       license='MIT',
-      packages=['gwtones'],
-      package_data={'gwtones': ['stan/*.stan']},
+      packages=['ringdown'],
+      package_data={'ringdown': ['stan/*.stan']},
       install_requires=[
             'Cython>=0.22',
             'arviz',

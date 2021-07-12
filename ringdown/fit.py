@@ -19,6 +19,49 @@ Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 MODELS = ('ftau', 'mchi')
 
 class Fit(object):
+    """ A ringdown fit.
+
+    Attributes
+    ----------
+    model : str
+        name of Stan model to be fit.
+    data : dict
+        dictionary containing data, indexed by detector name.
+    acfs : dict
+        dictionary containing autocovariance functions corresponding to data,
+        if already computed.
+    start_times : dict
+        target truncation time for each detector.
+    antenna_patterns : dict
+        dictionary of tuples (Fp, Fc) with plus and cross antenna patterns
+        for each detector (only applicable depending on model).
+    target : Target
+        information about truncation time at geocenter and, if applicable,
+        source right ascension, declination and polarization angle.
+    result : arviz.data.inference_data.InferenceData
+        if model has been run, arviz object containing fit result
+    prior : arviz.data.inference_data.InferenceData
+        if model prior has been run, arviz object containing prior
+    modes : list
+        if applicable, list of (p, s, l, m, n) tuples identifying modes to be
+        fit (else, None).
+    n_modes : int
+        number of modes to be fit.
+    ifos : list
+        list of detector names.
+    t0 : float
+        target geocenter start time.
+    sky: tuple
+        tuple with source right ascension, declination and polarization angle.
+    analysis_data : dict
+        dictionary of truncated analysis data that will be fed to Stan model.
+    spectral_coefficients: tuple
+        tuple of arrays containing dimensionless frequency and damping rate
+        fit coefficients to be passed internally to Stan model.
+    model_data: dict
+        arguments passed to Stan model internally.
+    """
+
 
     _compiled_models = {}
 
@@ -67,7 +110,7 @@ class Fit(object):
         if force or self.model not in self._compiled_models:
             # compile model and cache in class variable
             code = pkg_resources.resource_string(__name__,
-                'stan/gwtones_{}.stan'.format(self.model)
+                'stan/ringdown_{}.stan'.format(self.model)
             )
             import pystan
             model = pystan.StanModel(model_code=code.decode("utf-8"))
@@ -190,6 +233,8 @@ class Fit(object):
         return cp.copy(self)
 
     def condition_data(self, **kwargs):
+        """ Condition data for all detectors.
+        """
         new_data = {}
         for k, d in self.data.items():
             t0 = self.start_times[k]
@@ -199,6 +244,15 @@ class Fit(object):
         self.acfs = {} # Just to be sure that these stay consistent
 
     def run(self, prior=False, **kws):
+        """ Fit model.
+
+        Arguments
+        ---------
+        prior : bool
+            whether to sample the prior (def. False).
+
+        additional kwargs are passed to pystan.model.sampling 
+        """
         # get model input
         stan_data = self.model_input
         stan_data['only_prior'] = int(prior)
@@ -368,33 +422,3 @@ class Fit(object):
 
         return wtseries
 
-# ##################################################################
-# TODO: go through following functions and see what's worth keeping
-
-
-DEF_KEYS = ('M', 'chi', 'A', 'ellip', 'theta', 'phi0', 'df', 'dtau')
-
-def get_neff(fit, keys=DEF_KEYS, **kws):
-    keys = [k for k in keys if k in fit.posterior]
-    kws['relative'] = kws.get('relative', True)
-    # compute effective number of samples for each parameter
-    esss = az.stats.diagnostics.ess(fit, var_names=list(keys), **kws)
-    # find minimum number of effective samples for this fit
-    return min([min(atleast_1d(esss[k])) for k in keys])
-
-def get_thin(*args, **kwargs):
-    return int(round(1/get_neff(*args, **kwargs)))
-
-def get_neff_dict(all_fits, **kws):
-    neffs = {k: [] for k in all_fits}
-    for i, fits in all_fits.items():
-        for j, fit in fits.items():
-            neffs[i].append(get_neff(fit, **kws))
-    return neffs
-
-def get_thin_dict(all_fits, **kws):
-    thins = {k: [] for k in all_fits}
-    for i, fits in all_fits.items():
-        for j, fit in fits.items():
-            thins[i].append(get_thin(fit, **kws))
-    return thins
