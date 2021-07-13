@@ -14,7 +14,7 @@ dependencies:
   - numpy
   - pandas
   - pip
-  - pystan
+  - pystan=2
   - python=3
   - scipy
   - seaborn
