@@ -22,3 +22,4 @@ dependencies:
   - pip:
     - qnm
   - parse
+  - wget
