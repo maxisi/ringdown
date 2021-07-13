@@ -2,7 +2,7 @@
 
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/maxisi/ringdown/HEAD)
 
-Bayesian analysis of black hole ringdowns.  The original paper that inspired this code package is [Isi, et al. (2019)](https://arxiv.org/abs/1905.00869); a full description of the code and method can be found in [Isi & Farr (2021)](XXX).
+Bayesian analysis of black hole ringdowns.  The original paper that inspired this code package is [Isi, et al. (2019)](https://arxiv.org/abs/1905.00869); a full description of the code and method can be found in [Isi & Farr (2021)](https://arxiv.org/abs/2107.05609).
 
 ## Installation
 
@@ -41,10 +41,12 @@ See the `examples` directory for Jupyter notebooks that give examples of using t
 We ask that scientific users of this code cite [Isi & Farr (2021)](XXX):
 
 ```bibtex
-@article{Isi:2021,
-    author = "Isi, Max and Farr, Will M.",
+@misc{Isi:2021,
+    author = "Isi, Maximiliano and Farr, Will M.",
     title = "{Analyzing black hole ringdowns}",
-    journal = "arXiv e-prints",
+    eprint = "2107.05609",
+    archivePrefix = "arXiv",
+    primaryClass = "gr-qc",
     year = "2021"
 }
 ```
