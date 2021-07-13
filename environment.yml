@@ -19,7 +19,6 @@ dependencies:
   - scipy
   - seaborn
   - numexpr
-  - pip:
-    - qnm
+  - qnm
   - parse
   - wget
