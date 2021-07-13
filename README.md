@@ -38,7 +38,7 @@ See the `examples` directory for Jupyter notebooks that give examples of using t
 
 ## Citations
 
-We ask that scientific users of this code cite [Isi & Farr (2021)](XXX):
+We ask that scientific users of this code cite [Isi & Farr (2021)](https://arxiv.org/abs/2107.05609):
 
 ```bibtex
 @misc{Isi:2021,
