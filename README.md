@@ -43,12 +43,14 @@ See the `examples` directory for Jupyter notebooks that give examples of using t
 We ask that scientific users of this code cite the corresponding Zenodo entry (see blue DOI badge above), as well as [Isi & Farr (2021)](https://arxiv.org/abs/2107.05609):
 
 ```bibtex
-@misc{Isi:2021,
+@article{Isi:2021iql,
     author = "Isi, Maximiliano and Farr, Will M.",
-    title = "{Analyzing black hole ringdowns}",
+    title = "{Analyzing black-hole ringdowns}",
     eprint = "2107.05609",
     archivePrefix = "arXiv",
     primaryClass = "gr-qc",
+    reportNumber = "LIGO-P2100227",
+    month = "7",
     year = "2021"
 }
 ```
