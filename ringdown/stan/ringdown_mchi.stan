@@ -125,10 +125,6 @@ transformed parameters {
     gamma = f0*g_factors(chi, nmode, g_coeffs) .* exp(-dtau .* perturb_tau);
   }
 
-  for (i in 1:nmode-1) {
-      if (gamma[i+1] <= gamma[i]) reject("gamma[", i, "] > gamma[", i+1, "]");
-  }
-
   if ((flat_A_ellip) && (only_prior)) {
       for (i in 1:nmode-1) {
           if (A[i] > A_scale) reject("A", i, " > A_scale");
