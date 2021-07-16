@@ -251,7 +251,7 @@ class Fit(object):
         prior : bool
             whether to sample the prior (def. False).
 
-        additional kwargs are passed to pystan.model.sampling 
+        additional kwargs are passed to pystan.model.sampling
         """
         # get model input
         stan_data = self.model_input
@@ -416,9 +416,8 @@ class Fit(object):
         wtseries = {}
 
         for ifo, ts in tseries_dict.items():
-            L = self.acfs[ifo].iloc[:self.n_analyze].cholesky
+            L = self.acfs[ifo].iloc[:len(ts)].cholesky
 
             wtseries[ifo] = np.linalg.solve(L, ts)
 
         return wtseries
-
