@@ -418,6 +418,8 @@ class Fit(object):
         for ifo, ts in tseries_dict.items():
             L = self.acfs[ifo].iloc[:len(ts)].cholesky
 
+            assert (ts.delta_t == self.acfs[ifo].delta_t)
+
             wtseries[ifo] = Data(np.linalg.solve(L, ts), index=ts.index)
 
         return wtseries
