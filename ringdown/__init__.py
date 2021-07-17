@@ -1,10 +1,12 @@
 from .data import *
 from .fit import *
 from .kde_contour import *
+from .peak import *
 from pylab import *
 from . import qnms
 from . import data
 from . import fit
+from . import peak
 
 # ############################################################################
 # rcParams
@@ -15,7 +17,7 @@ scale_factor = 2
 # Get columnsize from LaTeX using \showthe\columnwidth
 fig_width_pt = scale_factor*246.0
 # Convert pts to inches
-inches_per_pt = 1.0/72.27               
+inches_per_pt = 1.0/72.27
 # Golden ratio
 fig_ratio = (np.sqrt(5)-1.0)/2.0
 fig_width = fig_width_pt*inches_per_pt
@@ -37,5 +39,3 @@ rcParams['legend.fontsize'] = fs
 rcParams['xtick.labelsize'] = fs_label
 rcParams['ytick.labelsize'] = fs_label
 rcParams["text.usetex"] = "true"
-
-
