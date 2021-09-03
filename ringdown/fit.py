@@ -16,7 +16,7 @@ import arviz as az
 
 Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 
-MODELS = ('ftau', 'mchi')
+MODELS = ('ftau', 'mchi', 'mchi_circular')
 
 class Fit(object):
     """ A ringdown fit.
@@ -106,15 +106,17 @@ class Fit(object):
                 raise ValueError('unrecognized model %r' % self.model)
         return self._compiled_models[self.model]
 
-    def compile(self, force=False):
+    def compile(self, verbose=False, force=False):
         if force or self.model not in self._compiled_models:
             # compile model and cache in class variable
             code = pkg_resources.resource_string(__name__,
                 'stan/ringdown_{}.stan'.format(self.model)
             )
             import pystan
-            model = pystan.StanModel(model_code=code.decode("utf-8"))
-            self._compiled_models[self.model] = model
+            kws = dict(model_code=code.decode("utf-8"))
+            if not verbose:
+                kws['extra_compile_args'] = ["-w"]
+            self._compiled_models[self.model] = pystan.StanModel(**kws)
 
     @property
     def ifos(self):
@@ -170,6 +172,20 @@ class Fit(object):
                 chi_max=0.99,
                 flat_A_ellip=0
             ))
+        elif self.model == 'mchi_circular':
+            default.update(dict(
+                perturb_f=zeros(self.n_modes or 1),
+                perturb_tau=zeros(self.n_modes or 1),
+                df_max=0.5,
+                dtau_max=0.5,
+                M_min=None,
+                M_max=None,
+                chi_min=0,
+                chi_max=0.99,
+                cosi_min=-1,
+                cosi_max=1,
+                flat_A=0
+            ))
         return default
 
     @property
@@ -215,7 +231,7 @@ class Fit(object):
             dt_max=1E-6
         )
 
-        if self.model == 'mchi':
+        if 'mchi' in self.model:
             f_coeff, g_coeff = self.spectral_coefficients
             stan_data.update(dict(
                 f_coeffs=f_coeff,
