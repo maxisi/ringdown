@@ -428,14 +428,5 @@ class Fit(object):
         else:
             return self._n_analyze
 
-    def whiten(self, tseries_dict):
-        wtseries = {}
-
-        for ifo, ts in tseries_dict.items():
-            L = self.acfs[ifo].iloc[:len(ts)].cholesky
-
-            assert (ts.delta_t == self.acfs[ifo].delta_t)
-
-            wtseries[ifo] = Data(np.linalg.solve(L, ts), index=ts.index)
-
-        return wtseries
+    def whiten(self, datas):
+        return {i: Data(self.acfs[i].whiten(d), ifo=i) for i,d in datas.items()}
