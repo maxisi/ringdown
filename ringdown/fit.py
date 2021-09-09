@@ -16,7 +16,7 @@ import arviz as az
 
 Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 
-MODELS = ('ftau', 'mchi', 'mchi_circular')
+MODELS = ('ftau', 'mchi', 'mchi_aligned')
 
 class Fit(object):
     """ A ringdown fit.
@@ -84,7 +84,7 @@ class Fit(object):
             self.modes = None
         except TypeError:
             # otherwise, assume it's mode index list
-            self.modes = qnms.construct_mode_list(modes)
+            self.set_modes(modes)
             self._n_modes = None
         self._duration = None
         self._n_analyze = None
@@ -172,7 +172,7 @@ class Fit(object):
                 chi_max=0.99,
                 flat_A_ellip=0
             ))
-        elif self.model == 'mchi_circular':
+        elif self.model == 'mchi_aligned':
             default.update(dict(
                 perturb_f=zeros(self.n_modes or 1),
                 perturb_tau=zeros(self.n_modes or 1),
@@ -334,6 +334,11 @@ class Fit(object):
 
     def set_modes(self, modes):
         self.modes = qnms.construct_mode_list(modes)
+        if self.model == 'mchi_aligned':
+            ls_valid = [mode.l == 2 for mode in self.modes]
+            ms_valid = [abs(mode.m) == 2 for mode in self.modes]
+            if not (all(ls_valid) and all(ms_valid)):
+                raise ValueError("mchi_aligned model only accepts l=m=2 modes")
 
     def set_target(self, t0, ra=None, dec=None, psi=None, delays=None,
                    antenna_patterns=None, duration=None, n_analyze=None):
