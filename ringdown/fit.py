@@ -16,7 +16,7 @@ import arviz as az
 
 Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 
-MODELS = ('ftau', 'mchi')
+MODELS = ('ftau', 'mchi', 'mchi_aligned')
 
 class Fit(object):
     """ A ringdown fit.
@@ -84,7 +84,7 @@ class Fit(object):
             self.modes = None
         except TypeError:
             # otherwise, assume it's mode index list
-            self.modes = qnms.construct_mode_list(modes)
+            self.set_modes(modes)
             self._n_modes = None
         self._duration = None
         self._n_analyze = None
@@ -106,15 +106,17 @@ class Fit(object):
                 raise ValueError('unrecognized model %r' % self.model)
         return self._compiled_models[self.model]
 
-    def compile(self, force=False):
+    def compile(self, verbose=False, force=False):
         if force or self.model not in self._compiled_models:
             # compile model and cache in class variable
             code = pkg_resources.resource_string(__name__,
                 'stan/ringdown_{}.stan'.format(self.model)
             )
             import pystan
-            model = pystan.StanModel(model_code=code.decode("utf-8"))
-            self._compiled_models[self.model] = model
+            kws = dict(model_code=code.decode("utf-8"))
+            if not verbose:
+                kws['extra_compile_args'] = ["-w"]
+            self._compiled_models[self.model] = pystan.StanModel(**kws)
 
     @property
     def ifos(self):
@@ -170,6 +172,20 @@ class Fit(object):
                 chi_max=0.99,
                 flat_A_ellip=0
             ))
+        elif self.model == 'mchi_aligned':
+            default.update(dict(
+                perturb_f=zeros(self.n_modes or 1),
+                perturb_tau=zeros(self.n_modes or 1),
+                df_max=0.5,
+                dtau_max=0.5,
+                M_min=None,
+                M_max=None,
+                chi_min=0,
+                chi_max=0.99,
+                cosi_min=-1,
+                cosi_max=1,
+                flat_A=0
+            ))
         return default
 
     @property
@@ -215,7 +231,7 @@ class Fit(object):
             dt_max=1E-6
         )
 
-        if self.model == 'mchi':
+        if 'mchi' in self.model:
             f_coeff, g_coeff = self.spectral_coefficients
             stan_data.update(dict(
                 f_coeffs=f_coeff,
@@ -318,6 +334,11 @@ class Fit(object):
 
     def set_modes(self, modes):
         self.modes = qnms.construct_mode_list(modes)
+        if self.model == 'mchi_aligned':
+            ls_valid = [mode.l == 2 for mode in self.modes]
+            ms_valid = [abs(mode.m) == 2 for mode in self.modes]
+            if not (all(ls_valid) and all(ms_valid)):
+                raise ValueError("mchi_aligned model only accepts l=m=2 modes")
 
     def set_target(self, t0, ra=None, dec=None, psi=None, delays=None,
                    antenna_patterns=None, duration=None, n_analyze=None):
@@ -412,14 +433,5 @@ class Fit(object):
         else:
             return self._n_analyze
 
-    def whiten(self, tseries_dict):
-        wtseries = {}
-
-        for ifo, ts in tseries_dict.items():
-            L = self.acfs[ifo].iloc[:len(ts)].cholesky
-
-            assert (ts.delta_t == self.acfs[ifo].delta_t)
-
-            wtseries[ifo] = Data(np.linalg.solve(L, ts), index=ts.index)
-
-        return wtseries
+    def whiten(self, datas):
+        return {i: Data(self.acfs[i].whiten(d), ifo=i) for i,d in datas.items()}
