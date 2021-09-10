@@ -4,28 +4,16 @@ functions {
     return dot_product(wh, mdivide_left_tri_low(L, d)) / sqrt(dot_self(wh));
   }
 
-  vector f_factors(real chi, int nmode, matrix f_coeffs) {
+  vector chi_factors(real chi, int nmode, matrix coeffs) {
     /* return f's for first `nmode` modes */
     real log1mc = log1p(-chi);
 
     vector[nmode] f;
     for (i in 1:nmode) {
-      row_vector[6] c = row(f_coeffs, i);
+      row_vector[6] c = row(coeffs, i);
       f[i] = c[1]*log1mc + c[2] + chi*(c[3] + chi*(c[4] + chi*(c[5] + chi*c[6])));
     }
     return f;
-  }
-
-  vector g_factors(real chi, int nmode, matrix g_coeffs) {
-    /* return g's for first `nmode` modes */
-    real log1mc = log1p(-chi);
-
-    vector[nmode] g;
-    for (i in 1:nmode) {
-      row_vector[6] c = row(g_coeffs, i);
-      g[i] = c[1]*log1mc + c[2] + chi*(c[3] + chi*(c[4] + chi*(c[5] + chi*c[6])));
-    }
-    return g;
   }
 
   vector rd(vector t, real f, real gamma, real A, real cosi, real phi0, real Fp, real Fc) {
@@ -115,8 +103,8 @@ transformed parameters {
 
     real f0 = fref*mref/M;
 
-    f = f0*f_factors(chi, nmode, f_coeffs) .* exp(df .* perturb_f);
-    gamma = f0*g_factors(chi, nmode, g_coeffs) .* exp(-dtau .* perturb_tau);
+    f = f0*chi_factors(chi, nmode, f_coeffs) .* exp(df .* perturb_f);
+    gamma = f0*chi_factors(chi, nmode, g_coeffs) .* exp(-dtau .* perturb_tau);
   }
 
   if ((flat_A) && (only_prior)) {
