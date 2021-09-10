@@ -225,7 +225,7 @@ class AutoCovariance(TimeSeries):
 
     def compute_snr(self, x, y=None):
         if y is None: y = x
-        ow_x = sl.solve_toeplitz(self[:len(x)], x)
+        ow_x = sl.solve_toeplitz(self.iloc[:len(x)], x)
         return dot(ow_x, y)/sqrt(dot(x, ow_x))
 
     def whiten(self, data):
