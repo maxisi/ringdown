@@ -64,8 +64,9 @@ class KerrMode(object):
     def compute_coefficients(mode, n_chi=1000, **kws):
         p, s, l, m, n = mode
         chis = linspace(0, 1, n_chi)[:-1]
-        M = column_stack((log1p(-chis), ones_like(chis), chis, chis**2,
-                          chis**3, chis**4))
+        logchis = log1p(-chis)
+        M = column_stack((chis, ones_like(chis), logchis, logchis**2,
+                          logchis**3, logchis**4))
 
         q = qnm.modes_cache(s, l, p*abs(m), n)
         f = sign(m)*array([q(c)[0].real for c in chis])/(2*pi)
@@ -81,7 +82,8 @@ class KerrMode(object):
 
     def ftau(self, chi, m_msun=None, approx=False):
         if approx:
-            c = (log1p(-chi), ones_like(chi), chi, chi**2, chi**3, chi**4)
+            logchi = log1p(-chi)
+            c = (chi, ones_like(chi), logchi, logchi**2, logchi**3, logchi**4)
             f, g = [dot(coeff, c) for coeff in self.coefficients]
         else:
             p, s, l, m, n = self.index
