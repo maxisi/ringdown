@@ -11,7 +11,7 @@ functions {
     vector[nmode] f;
     for (i in 1:nmode) {
       row_vector[6] c = row(coeffs, i);
-      f[i] = c[1]*log1mc + c[2] + chi*(c[3] + chi*(c[4] + chi*(c[5] + chi*c[6])));
+      f[i] = c[1]*chi + c[2] + log1mc*(c[3] + log1mc*(c[4] + log1mc*(c[5] + log1mc*c[6])));
     }
     return f;
   }
