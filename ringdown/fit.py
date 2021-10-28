@@ -246,7 +246,7 @@ class Fit(object):
         return stan_data
 
     def copy(self):
-        return cp.copy(self)
+        return cp.deepcopy(self)
 
     def condition_data(self, **kwargs):
         """ Condition data for all detectors.
