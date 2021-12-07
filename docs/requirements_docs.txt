@@ -1,0 +1,3 @@
+# docs/requirements_docs.txt
+sphinx
+sphinx-autobuild
