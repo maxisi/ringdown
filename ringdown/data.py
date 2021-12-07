@@ -1,3 +1,6 @@
+__all__ = ['condition', 'TimeSeries', 'FrequencySeries', 'Data',
+           'AutoCovariance', 'PowerSpectrum']
+
 from pylab import *
 import scipy.signal as sig
 import lal
@@ -60,59 +63,87 @@ def condition(raw_data, raw_time=None, flow=None, fhigh=None, ds=None,
     return cond_time, cond_data
 
 class TimeSeries(pd.Series):
+    """ A container for time series data based on `pandas.Series`;
+    the index should contain time stamps for uniformly-sampled data.
+    """
+
     @property
     def _constructor(self):
         return TimeSeries
 
     @property
-    def delta_t(self):
+    def delta_t(self) -> float:
+        """Sampling time interval."""
         return self.index[1] - self.index[0]
 
     @property
-    def fsamp(self):
+    def fsamp(self) -> float:
+        """Sampling frequency (`1/delta_t`)."""
         return 1/self.delta_t
 
     @property
-    def duration(self):
+    def duration(self) -> float:
+        """Time series duration (time spanned between first and last samples).
+        """
         return self.delta_t * len(self)
 
     @property
-    def delta_f(self):
+    def delta_f(self) -> float:
+        """Fourier frequency spacing."""
         return 1/self.duration
 
     @property
-    def time(self):
+    def time(self) -> pd.Index:
+        """Time stamps."""
         return self.index
 
 
 class FrequencySeries(pd.Series):
+    """ A container for frequency domain data based on `pandas.Series`;
+    the index should contain frequency stamps for uniformly-sampled data.
+    """
+
     @property
     def _constructor(self):
         return FrequencySeries
 
     @property
-    def delta_f(self):
+    def delta_f(self) -> float:
+        """Fourier frequency spacing."""
         return self.index[1] - self.index[0]
 
     # WARNING: I think this breaks for odd N
     @property
-    def delta_t(self):
+    def delta_t(self) -> float:
+        """Sampling time interval."""
         return 0.5/((len(self)-1)*self.delta_f)
 
     @property
-    def fsamp(self):
+    def fsamp(self) -> float:
+        """Sampling frequency (`1/delta_t`)."""
         return 1/self.delta_t
 
     @property
-    def duration(self):
+    def duration(self) -> float:
+        """Time series duration (time spanned between first and last samples).
+        """
         return self.delta_t * len(self)
 
     @property
-    def freq(self):
+    def freq(self) -> pd.Index:
+        """Frequency stamps."""
         return self.index
 
 
 class Data(TimeSeries):
+    """Container for time-domain strain data from a given GW detector.
+
+    Attributes
+    ----------
+    ifo : str
+        detector identifier (e.g., 'H1' for LIGO Hanford).
+    """
+
     _metadata = ['ifo']
 
     def __init__(self, *args, ifo=None, **kwargs):
@@ -124,16 +155,94 @@ class Data(TimeSeries):
         return Data
 
     @property
-    def detector(self):
+    def detector(self) -> lal.Detector:
+        """ :cls:`LALSuite` object containing detector information.
+        """
         if self.ifo:
             d = lal.cached_detector_by_prefix[self.ifo]
         else:
             d = None
         return d
 
-    def condition(self, **kws):
-        time, data = condition(self, self.index, **kws)
-        return Data(data, index=time, ifo=self.ifo)
+    def condition(self, flow=None, fhigh=None, ds=None, scipy_dec=True, t0=None,
+                  remove_mean=True, decimate_kws=None, trim=0.25):
+        """ Condition data.
+
+        Arguments
+        ---------
+        flow : `float`
+            lower frequency for high passing.
+        fhigh : float
+            higher frequency for low passing.
+        ds : int
+            decimation factor for downsampling.
+        scipy_dec : bool
+            use scipy to decimate.
+        t0 : float
+            target time to be preserved after downsampling.
+        remove_mean : bool
+            explicitly remove mean from time series after conditioning.
+        decimate_kws : dict
+            options for decimation function.
+        trim : float
+            fraction of data to trim from edges after conditioning, to avoid
+            spectral issues if filtering.
+
+        Returns
+        -------
+        cond_data : `Data`
+            conditioned data object.
+        """
+        raw_data = self
+        raw_time = self.index
+
+        decimate_kws = decimate_kws or {}
+
+        if t0 is not None:
+            ds = ds or 1
+            i = argmin(abs(raw_time - t0))
+            raw_time = roll(raw_time, -(i % ds))
+            raw_data = roll(raw_data, -(i % ds))
+
+        fny = 0.5/(raw_time[1] - raw_time[0])
+        # Filter
+        if flow and not fhigh:
+            b, a = sig.butter(4, flow/fny, btype='highpass', output='ba')
+        elif fhigh and not flow:
+            b, a = sig.butter(4, fhigh/fny, btype='lowpass', output='ba')
+        elif flow and fhigh:
+            b, a = sig.butter(4, (flow/fny, fhigh/fny), btype='bandpass',
+                              output='ba')
+
+        if flow or fhigh:
+            cond_data = sig.filtfilt(b, a, raw_data)
+        else:
+            cond_data = raw_data
+
+        # Decimate
+        if ds and ds > 1:
+            if scipy_dec:
+                cond_data = sig.decimate(cond_data, ds, zero_phase=True,
+                                         **decimate_kws)
+            else:
+                cond_data = cond_data[::ds]
+            if raw_time is not None:
+                cond_time = raw_time[::ds]
+        elif raw_time is not None:
+            cond_time = raw_time
+
+        N = len(cond_data)
+        istart = int(round(trim*N))
+        iend = int(round((1-trim)*N))
+
+        cond_time = cond_time[istart:iend]
+        cond_data = cond_data[istart:iend]
+
+        if remove_mean:
+            cond_data -= mean(cond_data)
+
+        return Data(cond_data, index=cond_time, ifo=self.ifo)
+
 
     def get_acf(self, **kws):
         return AutoCovariance.from_data(self, **kws)
@@ -233,12 +342,12 @@ class AutoCovariance(TimeSeries):
 
         Arguments
         ---------
-        data: array, TimeSeries
+        data : array, TimeSeries
             unwhitened data.
 
         Returns
         -------
-        w_data: Data
+        w_data : Data
             whitened data.
         """
         if isinstance(data, TimeSeries):
