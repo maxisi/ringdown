@@ -156,7 +156,7 @@ class Data(TimeSeries):
 
     @property
     def detector(self) -> lal.Detector:
-        """ :cls:`LALSuite` object containing detector information.
+        """ :mod:`lal` object containing detector information.
         """
         if self.ifo:
             d = lal.cached_detector_by_prefix[self.ifo]
