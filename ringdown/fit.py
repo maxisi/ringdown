@@ -1,3 +1,5 @@
+__all__ = ['Target', 'Fit', 'MODELS']
+
 import copy as cp
 from pylab import *
 from .data import *
@@ -51,14 +53,14 @@ class Fit(object):
         list of detector names.
     t0 : float
         target geocenter start time.
-    sky: tuple
+    sky : tuple
         tuple with source right ascension, declination and polarization angle.
     analysis_data : dict
         dictionary of truncated analysis data that will be fed to Stan model.
-    spectral_coefficients: tuple
+    spectral_coefficients : tuple
         tuple of arrays containing dimensionless frequency and damping rate
         fit coefficients to be passed internally to Stan model.
-    model_data: dict
+    model_data : dict
         arguments passed to Stan model internally.
     """
 
@@ -92,7 +94,9 @@ class Fit(object):
         self._prior_settings = kws
 
     @property
-    def n_modes(self):
+    def n_modes(self) -> int:
+        """ Number of damped sinusoids to be included in template.
+        """
         return self._n_modes or len(self.modes)
 
     @property
@@ -107,6 +111,15 @@ class Fit(object):
         return self._compiled_models[self.model]
 
     def compile(self, verbose=False, force=False):
+        """ Compile `Stan` model.
+
+        Arguments
+        ---------
+        verbose : bool
+            print out all messages from compiler.
+        force : bool
+            force recompile.
+        """
         if force or self.model not in self._compiled_models:
             # compile model and cache in class variable
             code = pkg_resources.resource_string(__name__,
@@ -119,7 +132,9 @@ class Fit(object):
             self._compiled_models[self.model] = pystan.StanModel(**kws)
 
     @property
-    def ifos(self):
+    def ifos(self) -> list:
+        """ Instruments to be analyzed.
+        """
         return list(self.data.keys())
 
     @property
@@ -246,7 +261,7 @@ class Fit(object):
         return stan_data
 
     def copy(self):
-        return cp.copy(self)
+        return cp.deepcopy(self)
 
     def condition_data(self, **kwargs):
         """ Condition data for all detectors.
@@ -303,16 +318,16 @@ class Fit(object):
             self.acfs[data.ifo] = acf
 
     def compute_acfs(self, shared=False, ifos=None, **kws):
-        """Compute ACFs for all data sets in Fit.
+        """Compute ACFs for all data sets in `Fit.data`.
 
         Arguments
         ---------
-        shared: bool
+        shared : bool
             specifices if all IFOs are to share a single ACF, in which case the
             ACF is only computed once from the data of the first IFO (useful
             for simulated data) (default False)
 
-        ifos: list
+        ifos : list
             specific set of IFOs for which to compute ACF, otherwise computes
             it for all
 
@@ -327,12 +342,42 @@ class Fit(object):
             self.acfs[ifo] = acf if shared else self.data[ifo].get_acf(**kws)
 
     def set_tone_sequence(self, nmode, p=1, s=-2, l=2, m=2):
-        """ Set fit modes to be a sequence of overtones.
+        """ Set template modes to be a sequence of overtones with a given
+        angular structure.
+
+        To set an arbitrary set of modes, use :meth:`ringdown.fit.Fit.set_modes`
+
+        Arguments
+        ---------
+        nmode : int
+          number of tones (`nmode=1` includes only fundamental mode).
+        p : int
+          prograde (`p=1`) vs retrograde (`p=-1`) flag.
+        s : int
+          spin-weight.
+        l : int
+          azimuthal quantum number.
+        m : int
+          magnetic quantum number.
         """
         indexes = [(p, s, l, m, n) for n in range(nmode)]
         self.set_modes(indexes)
 
     def set_modes(self, modes):
+        """ Establish list of modes to include in analysis template.
+
+        Modes identified by their `(p, s, l, m, n)` indices, where:
+          - `p` is `1` for prograde modes, and `-1` for retrograde modes;
+          - `s` is the spin-weight (`-2` for gravitational waves);
+          - `l` is the azimuthal quantum number;
+          - `m` is the magnetic quantum number;
+          - `n` is the overtone number.
+
+        Arguments
+        ---------
+        modes : list
+            list of tuples with quasinormal mode `(p, s, l, m, n)` numbers.
+        """
         self.modes = qnms.construct_mode_list(modes)
         if self.model == 'mchi_aligned':
             ls_valid = [mode.l == 2 for mode in self.modes]
@@ -344,20 +389,62 @@ class Fit(object):
                    antenna_patterns=None, duration=None, n_analyze=None):
         """ Establish truncation target, stored to `self.target`.
 
+        Provide a targetted analysis start time `t0` to serve as beginning of
+        truncated analysis segment; this will be compared against timestamps
+        in `fit.data` objects so that the closest sample to `t0` is preserved
+        after conditioning and taken as the first sample of the analysis 
+        segment.
+
+        .. important::
+          If the model accepts multiple detectors, `t0` is assumed to be
+          defined at geocenter; truncation time at individual detectors will
+          be determined based on specified sky location.
+
+        The source sky location and orientation can be specified by the `ra`,
+        `dec`, and `psi` arguments. These are use to both determine the
+        truncation time at different detectors, as well as to compute the 
+        corresponding antenna patterns. Specifying a sky location is only
+        required if the model can handle data from multiple detectors.
+
+        Alternatively, antenna patterns and geocenter-delays can be specified
+        directly through the `antenna_patterns` and `delays` arguments.
+
+        For all models, the argument `duration` specifies the length of the 
+        analysis segment in the unit of time used to index the data (e.g., s).
+        Based on the sampling rate, this argument is used to compute the number
+        of samples to be included in the segment, beginning from the first
+        sample identified from `t0`.
+
+        Alternatively, the `n_analyze` argument can be specified directly. If
+        neither `duration` nor `n_analyze` are provided, the duration will be
+        set based on the shortest available data series in the `Fit` object.
+
+        .. warning::
+          Failing to explicitly specify `duration` or `n_analyze` risks
+          inadvertedly extremely long analysis segments, with correspondingly
+          long runtimes.
+
         Arguments
         ---------
-        t0: float
-            target time (at geocenter for a detector network)
-        ra: float
-            source right ascension
-        dec: float
-            source declination
-        delays: dict
+        t0 : float
+            target time (at geocenter for a detector network).
+        ra : float
+            source right ascension (rad).
+        dec : float
+            source declination (rad).
+        psi : float
+            source polarization angle (rad).
+        duration : float
+            analysis segment length in seconds, or time unit indexing data
+            (overrides `n_analyze`).
+        n_analyze : int
+            number of datapoints to include in analysis segment.
+        delays : dict
             dictionary with delayes from geocenter for each detector, as would
-            be computed by `lal.TimeDelayFromEarthCenter` (optional)
-        antenna_patterns: dict
+            be computed by `lal.TimeDelayFromEarthCenter` (optional).
+        antenna_patterns : dict
             dictionary with tuples for plus and cross antenna patterns for
-            each detector {ifo: (Fp, Fc)} (optional)
+            each detector `{ifo: (Fp, Fc)}` (optional)
         """
         tgps = lal.LIGOTimeGPS(t0)
         gmst = lal.GreenwichMeanSiderealTime(tgps)
@@ -380,7 +467,7 @@ class Fit(object):
         if duration:
             self._duration = duration
         elif n_analyze:
-            self._nanalyze = int(n_analyze)
+            self._n_analyze = int(n_analyze)
 
     # TODO: warn or fail if self.results is not None?
     def update_target(self, **kws):
