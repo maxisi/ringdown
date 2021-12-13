@@ -133,7 +133,7 @@ transformed parameters {
 model {
   /* Amplitude prior */
   if (flat_A) {
-      for (i in 1:nobs) {
+      for (i in 1:nmode) {
         target += -log(A[i]);
       }
   } else {

@@ -139,7 +139,7 @@ transformed parameters {
 model {
   /* Amplitude prior */
   if (flat_A_ellip) {
-      for (i in 1:nobs) {
+      for (i in 1:nmode) {
         target += -3*log(A[i]) - log1m(ellip[i]^2);
       }
   } else {
