@@ -138,11 +138,17 @@ class Fit(object):
         return list(self.data.keys())
 
     @property
-    def t0(self):
+    def t0(self) -> float:
+        """ Target truncation time (defined at geocenter if model accepts
+        multiple detectors).
+        """
         return self.target.t0
 
     @property
-    def sky(self):
+    def sky(self) -> tuple[float]:
+        """ Tuple of source right ascension, declination and polarization
+        angle (all in radians).
+        """
         return (self.target.ra, self.target.dec, self.target.psi)
 
     # this can be generalized for charged bhs based on model name
@@ -157,7 +163,7 @@ class Fit(object):
         return array(f_coeffs), array(g_coeffs)
 
     @property
-    def analysis_data(self):
+    def analysis_data(self) -> dict[Data]:
         data = {}
         i0s = self.start_indices
         for i, d in self.data.items():
