@@ -301,7 +301,7 @@ class AutoCovariance(TimeSeries):
 
     @classmethod
     def from_data(self, d, n=None, dt=1, nperseg=None, f_low=None,
-                  method='td'):
+                  method='fd'):
         dt = getattr(d, 'delta_t', dt)
         n = n or len(d)
         if method.lower() == 'td':
@@ -361,4 +361,3 @@ class AutoCovariance(TimeSeries):
         elif isinstance(data, TimeSeries):
             w_data = TimeSeries(w_data, index=data.index)
         return w_data
-

@@ -44,6 +44,14 @@ ringdown.qnms module
    :undoc-members:
    :show-inheritance:
 
+ringdown.injection module
+--------------------
+
+.. automodule:: ringdown.injection
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 

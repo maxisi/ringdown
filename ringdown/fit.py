@@ -290,6 +290,9 @@ class Fit(object):
 
         additional kwargs are passed to pystan.model.sampling
         """
+        for ifo in self.ifos: #check if delta_t of ACFs is equal to delta_t of data
+            if self.acfs[ifo].delta_t != self.data[ifo].delta_t:
+                raise ValueError("delta_t of ACFs does not match delta_t of data for all IFOs")
         # get model input
         stan_data = self.model_input
         stan_data['only_prior'] = int(prior)
@@ -299,13 +302,14 @@ class Fit(object):
         n_jobs = kws.pop('n_jobs', chains)
         n_iter = kws.pop('iter', 2000*n)
         metric = kws.pop('metric', 'dense_e')
+        adapt_delta = kws.pop('adapt_delta', 0.95)
         stan_kws = {
             'iter': n_iter,
             'thin': n,
             'init': (kws.pop('init_dict', {}),)*chains,
             'n_jobs': n_jobs,
             'chains': chains,
-            'control': {'metric': metric}
+            'control': {'metric': metric, 'adapt_delta': adapt_delta}
         }
         stan_kws.update(kws)
         # run model and store
@@ -528,3 +532,4 @@ class Fit(object):
 
     def whiten(self, datas):
         return {i: Data(self.acfs[i].whiten(d), ifo=i) for i,d in datas.items()}
+
