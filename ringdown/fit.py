@@ -145,7 +145,7 @@ class Fit(object):
         return self.target.t0
 
     @property
-    def sky(self) -> tuple[float]:
+    def sky(self) -> tuple:
         """ Tuple of source right ascension, declination and polarization
         angle (all in radians).
         """
@@ -163,7 +163,7 @@ class Fit(object):
         return array(f_coeffs), array(g_coeffs)
 
     @property
-    def analysis_data(self) -> dict[Data]:
+    def analysis_data(self) -> dict:
         data = {}
         i0s = self.start_indices
         for i, d in self.data.items():
