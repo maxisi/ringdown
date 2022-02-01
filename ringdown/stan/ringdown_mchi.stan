@@ -115,24 +115,26 @@ transformed parameters {
 
   if ((flat_A_ellip) && (only_prior)) {
       for (i in 1:nmode) {
-          if (A[i] > A_scale) reject("A", i, " > A_scale");
+          if (A[i] > 2*A_scale) reject("A", i-1, " > 2*A_scale");
       }
   }
 
-  for (i in 1:nobs) {
-    real torigin;
-    h_det[i] = rep_vector(0.0, nsamp);
+  if ( only_prior == 0 ) {
+    for (i in 1:nobs) {
+      real torigin;
+      h_det[i] = rep_vector(0.0, nsamp);
 
-    if (i > 1) {
-      torigin = t0[i] + dts[i-1];
-    } else {
-      torigin = t0[i];
-    }
+      if (i > 1) {
+        torigin = t0[i] + dts[i-1];
+      } else {
+        torigin = t0[i];
+      }
 
     for (j in 1:nmode) {
       h_det_mode[i, j] = rd(times[i] - torigin, f[j], gamma[j], Apx[j], Apy[j], Acx[j], Acy[j], FpFc[i][1], FpFc[i][2]);
       h_det[i] = h_det[i] + h_det_mode[i,j];
     }
+  }
   }
 }
 
