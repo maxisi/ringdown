@@ -302,7 +302,7 @@ class Fit(object):
         n_jobs = kws.pop('n_jobs', chains)
         n_iter = kws.pop('iter', 2000*n)
         metric = kws.pop('metric', 'dense_e')
-        adapt_delta = kws.pop('adapt_delta', 0.95)
+        adapt_delta = kws.pop('adapt_delta', 0.8)
         stan_kws = {
             'iter': n_iter,
             'thin': n,
