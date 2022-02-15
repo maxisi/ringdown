@@ -20,9 +20,10 @@ data {
   real f_max;
   real gamma_min;
   real gamma_max;
-
-
+  
   real A_scale;
+
+  real drift_scale;
 
   int only_prior;
 }
@@ -39,6 +40,7 @@ transformed data {
 }
 
 parameters {
+  real log_drift_unit[nobs];
   vector<lower=f_min, upper=f_max>[nmode] f;
   real gamma_raw[nmode];
 
@@ -47,12 +49,17 @@ parameters {
 }
 
 transformed parameters {
+  real drift[nobs];
   vector[nmode] gamma;
   real gamma_logjac;
   vector[nmode] A;
   vector[nmode] phi0;
   vector[nsamp] h_det_mode[nobs,nmode];
   vector[nsamp] h_det[nobs];
+
+  for (i in 1:nobs) {
+    drift[i] = exp(log_drift_unit[i]*drift_scale);
+  }
 
   for (i in 1:nmode) {
     phi0[i] = atan2(Ay[i], Ax[i]);
@@ -86,6 +93,9 @@ transformed parameters {
 }
 
 model {
+  /* drift[i] ~ lognormal(0, drift_scale) */
+  log_drift_unit ~ std_normal();
+
   /* We want a flat prior on A, phi; thus need Jacobian to d(A, phi) / d(Ax, Ay) = 1/r */
   for (i in 1:nmode) {
     target += -log(A[i]);
@@ -100,7 +110,7 @@ model {
 
   if ( only_prior == 0 ) {
       for (i in 1:nobs) {
-        strain[i] ~ multi_normal_cholesky(h_det[i], L[i]);
+        strain[i] ~ multi_normal_cholesky(h_det[i], drift[i]*L[i]);
       }
   }
 }

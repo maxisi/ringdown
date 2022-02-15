@@ -50,6 +50,8 @@ data {
   real chi_max;
 
   real A_scale;
+  
+  real drift_scale;
 
   real cosi_min;
   real cosi_max;
@@ -69,6 +71,7 @@ data {
 }
 
 parameters {
+  real log_drift_unit[nobs];
   real<lower=M_min, upper=M_max> M;
   real<lower=chi_min, upper=chi_max> chi;
   real<lower=cosi_min, upper=cosi_max> cosi;
@@ -84,6 +87,7 @@ parameters {
 }
 
 transformed parameters {
+  real drift[nobs];
   vector[nmode] gamma;
   vector[nmode] f;
   vector[nsamp] h_det_mode[nobs,nmode];
@@ -92,6 +96,11 @@ transformed parameters {
 
   vector[nmode] A;
   real phi0[nmode];
+
+  for (i in 1:nobs) {
+    drift[i] = exp(log_drift_unit[i]*drift_scale);
+  }
+
   for (i in 1:nmode) {
     A[i] = A_scale*sqrt(Ax_unit[i]^2 + Ay_unit[i]^2);
     phi0[i] = atan2(Ay_unit[i], Ax_unit[i]);
@@ -131,6 +140,9 @@ transformed parameters {
 }
 
 model {
+  /* drift[i] ~ lognormal(0, drift_scale); */
+  log_drift_unit ~ std_normal();
+
   /* Amplitude prior */
   if (flat_A) {
       for (i in 1:nmode) {
@@ -148,7 +160,7 @@ model {
   /* Likelihood */
   if ( only_prior == 0 ) {
       for (i in 1:nobs) {
-        strain[i] ~ multi_normal_cholesky(h_det[i], L[i]);
+        strain[i] ~ multi_normal_cholesky(h_det[i], drift[i]*L[i]);
       }
   }
 }
