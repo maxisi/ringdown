@@ -173,7 +173,7 @@ class Fit(object):
     @property
     def _default_prior(self):
         default = {'A_scale': None,
-                   'drift_scale': 0.1}
+                   'drift_scale': 0.0} # Turn off ACF drift correction by default.
         if self.model == 'ftau':
             # TODO: set default priors based on sampling rate and duration
             default.update(dict(
