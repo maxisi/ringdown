@@ -111,7 +111,7 @@ class Fit(object):
         return self.target.t0
 
     @property
-    def sky(self) -> tuple[float]:
+    def sky(self) -> tuple:
         """ Tuple of source right ascension, declination and polarization
         angle (all in radians).
         """
@@ -129,7 +129,7 @@ class Fit(object):
         return array(f_coeffs), array(g_coeffs)
 
     @property
-    def analysis_data(self) -> dict[Data]:
+    def analysis_data(self) -> dict:
         data = {}
         i0s = self.start_indices
         for i, d in self.data.items():
@@ -138,14 +138,15 @@ class Fit(object):
 
     @property
     def _default_prior(self):
-        default = {'A_scale': None}
+        default = {'A_scale': None,
+                   'drift_scale': 0.0} # Turn off ACF drift correction by default.
         if self.model == 'ftau':
             # TODO: set default priors based on sampling rate and duration
             default.update(dict(
                 f_max=None,
                 f_min=None,
                 gamma_max=None,
-                gamma_min=None,
+                gamma_min=None
             ))
         elif self.model == 'mchi':
             default.update(dict(
@@ -500,5 +501,8 @@ class Fit(object):
         else:
             return self._n_analyze
 
-    def whiten(self, datas):
-        return {i: Data(self.acfs[i].whiten(d), ifo=i) for i,d in datas.items()}
+    def whiten(self, datas, drifts=None):
+        if drifts is None:
+            drifts = {i : 1 for i in datas.keys()}
+        return {i: Data(self.acfs[i].whiten(d, drift=drifts[i]), ifo=i) for i,d in datas.items()}
+        
