@@ -1,0 +1,6 @@
+astropy
+corner
+jupyterlab
+nest-asyncio
+nodejs
+qnm

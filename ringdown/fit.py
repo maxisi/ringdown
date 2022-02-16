@@ -8,6 +8,7 @@ import lal
 from collections import namedtuple
 import pkg_resources
 import arviz as az
+import stan
 
 # def get_raw_time_ifo(tgps, raw_time, duration=None, ds=None):
 #     ds = ds or 1
@@ -64,9 +65,6 @@ class Fit(object):
         arguments passed to Stan model internally.
     """
 
-
-    _compiled_models = {}
-
     def __init__(self, model='mchi', modes=None, **kws):
         self.data = {}
         self.acfs = {}
@@ -98,38 +96,6 @@ class Fit(object):
         """ Number of damped sinusoids to be included in template.
         """
         return self._n_modes or len(self.modes)
-
-    @property
-    def _model(self):
-        if self.model is None:
-            raise ValueError('you must specify a model')
-        elif self.model not in self._compiled_models:
-            if self.model in MODELS:
-                self.compile()
-            else:
-                raise ValueError('unrecognized model %r' % self.model)
-        return self._compiled_models[self.model]
-
-    def compile(self, verbose=False, force=False):
-        """ Compile `Stan` model.
-
-        Arguments
-        ---------
-        verbose : bool
-            print out all messages from compiler.
-        force : bool
-            force recompile.
-        """
-        if force or self.model not in self._compiled_models:
-            # compile model and cache in class variable
-            code = pkg_resources.resource_string(__name__,
-                'stan/ringdown_{}.stan'.format(self.model)
-            )
-            import pystan
-            kws = dict(model_code=code.decode("utf-8"))
-            if not verbose:
-                kws['extra_compile_args'] = ["-w"]
-            self._compiled_models[self.model] = pystan.StanModel(**kws)
 
     @property
     def ifos(self) -> list:
@@ -243,8 +209,8 @@ class Fit(object):
             nmode=self.n_modes,
             nobs=len(data_dict),
             t0=list(self.start_times.values()),
-            times=[d.time for d in data_dict.values()],
-            strain=list(data_dict.values()),
+            times=[np.array(d.time) for d in data_dict.values()],
+            strain=[np.array(d) for d in data_dict.values()],
             L=[acf.iloc[:self.n_analyze].cholesky for acf in self.acfs.values()],
             FpFc = list(self.antenna_patterns.values()),
             # default priors
@@ -265,6 +231,16 @@ class Fit(object):
             if v is None:
                 raise ValueError('please specify {}'.format(k))
         return stan_data
+
+    @property
+    def model_code(self):
+        if self.model in MODELS:
+            code = pkg_resources.resource_string(__name__,
+                'stan/ringdown_{}.stan'.format(self.model))
+            code = code.decode('utf-8')
+            return code
+        else:
+            raise ValueError('model \'{}\' not in MODELS'.format(self.model))
 
     def copy(self):
         return cp.deepcopy(self)
@@ -296,21 +272,19 @@ class Fit(object):
         # get sampler settings
         n = kws.pop('thin', 1)
         chains = kws.pop('chains', 4)
-        n_jobs = kws.pop('n_jobs', chains)
-        n_iter = kws.pop('iter', 2000*n)
-        metric = kws.pop('metric', 'dense_e')
+        n_iter = kws.pop('iter', 1000*n)
         stan_kws = {
-            'iter': n_iter,
-            'thin': n,
-            'init': (kws.pop('init_dict', {}),)*chains,
-            'n_jobs': n_jobs,
-            'chains': chains,
-            'control': {'metric': metric}
+            'num_samples': n_iter,
+            'num_warmup': n_iter,
+            'num_thin': n,
+            'num_chains': chains
         }
         stan_kws.update(kws)
         # run model and store
         print('Running {}'.format(self.model))
-        result = self._model.sampling(data=stan_data, **stan_kws)
+        code = self.model_code
+        stanmodel = stan.build(code, stan_data)
+        result = stanmodel.sample(**stan_kws)
         if prior:
             self.prior = az.convert_to_inference_data(result)
         else:

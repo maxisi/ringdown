@@ -1,7 +1,6 @@
 # ringdown
 
 [![PyPI version](https://badge.fury.io/py/ringdown.svg)](https://badge.fury.io/py/ringdown)
-[![Binder](https://mybinder.org/badge_logo.svg)](https://binder.flatironinstitute.org/~wfarr/ringdown)
 [![DOI](https://zenodo.org/badge/368680640.svg)](https://zenodo.org/badge/latestdoi/368680640)
 [![Documentation Status](https://readthedocs.org/projects/ringdown/badge/?version=latest)](https://ringdown.readthedocs.io/en/latest/?badge=latest)
 
@@ -23,17 +22,37 @@ pip install git+https://github.com/maxisi/ringdown.git
 
 ### Complete Environments
 
-A complete [conda](https://docs.conda.io/en/latest/) environment that includes all the prerequisites (and more!) to install `ringdown` can be found in  `environment.yml` in the current directory:
+We no longer advocate for the use of a Conda environment for this package (pystan does not play nice with Conda).  Instead, you can create a virtualenv if you want to isolate the installation from your system Python:
 
 ```shell
-conda env create -f environment.yml
-conda activate ringdown
-pip install ringdown
+python -m venv /path/to/virtual/env
 ```
 
-will leave the shell in an environment that includes `jupyterlab` ready to explore the `ringdown` package.  
+(a common location is apparently `$HOME/.venv/ringdown`).
 
-The `environment.yml` file enables running `ringdown` in JupyterHub services like [MyBinder](https://mybinder.org/) by pointing MyBinder at this repository or clicking the button at the top of this README.  (Don't forget to `pip install ringdown` after the binder activates!)
+You can then activate the venv with 
+
+```shell
+source /path/to/virtual/env/bin/activate
+```
+
+and then install this package and its dependencies with 
+
+```shell
+python -m pip install ringdown
+```
+
+or, for development / hacking
+
+```shell
+python -m pip install -e /path/to/ringdown/project/root
+```
+
+You may find the additional packages in `requirements-notebook.txt` useful if you want to run the examples in a notebook or work with jupyter notebooks and this package:
+
+```shell
+python -m pip install -r requirements-notebook.txt
+```
 
 ## Examples of Use
 
