@@ -3,29 +3,50 @@ import lal
 from .data import *
 
 def simulated_template(freq,tau,smprate,duration,theta,phi,amplitude,alpha,declination,ifolist,tgps,ellip,psi=0):
-    #Function to make a simulated signal, as in "Analyzing black-hole ringdowns" Eqns. 9-13, here using a 
-    #"ring-up" followed by a ring-down as modeled by a time decay of exp(-abs(t-tgps-time_delay_dict[ifo])*v)
-    #
-    #The various paramters are defined as follows
-    #freq: frequency of each tone, Hz
-    #tau: damping time of each tone, seconds
-    #phase: phasor offset for complex amplitude, note 2 independent phases phi_l,+m,n and phi_l,-m,n are expected,
-    #       thus for each tone the list must be entered as [[phi0plus,phi0minus],[phi1plus,ph1minus],....], in radians
-    #ellip: ellipticity of each tone, -1<=ellip<=1
-    #smprate: sample rate of signal, Hz
-    #duration: length of time of the full signal, seconds
-    #alpha: source right ascension
-    #declination: source declination
-    #psi: degenerate with alpha and declination, therefore evaluated at arbitrary fixed value of zero
-    #ifolist: List of ifos as strings, i.e. ["H1","L1"]
-    #tgps: gps time for peak of signal
-    #amplitude: amplitude of each tone
-    #
-    #Note freq,tau,phase,amplitude,epsilon must all be entered as a list ordered by overtones,
-    #and in general this function works best for durations much longer than the time delay
-    #
-    #No noise is overlaid on this template - noise should be generated separately as another ringdown.TimeSeries object
-    #and overlaid on this template
+     """Function to make a simulated signal, as in "Analyzing black-hole ringdowns" Eqns. 11-13, here using a 
+        "ring-up" followed by a ring-down as modeled by a time decay of exp(-abs(t-tgps-time_delay_dict[ifo])*v).
+                
+        Note that in general this function works best for durations much longer than the time delay. No noise is overlaid on this template - noise should 
+        be generated separately as another ringdown.TimeSeries object and overlaid on this template.
+        
+        Arguments
+        ---------
+        freq: list
+            list of frequencies of each tone, Hz
+        tau: list
+            damping time of each tone, seconds
+        theta: list
+            angle of ellipse in h+,hx space, in radians
+        phi: list
+            phase offset of sinusoids, in radians
+        ellip: list
+            ellipticity of each tone, -1<=ellip<=1
+        smprate: float
+            sample rate of signal, Hz
+        duration: float
+            length of time of the full signal, seconds
+        alpha: float
+            source right ascension
+        declination: float
+            source declination
+        psi: float
+            degenerate with alpha and declination, therefore evaluated at arbitrary fixed value of zero
+        ifolist: list
+            List of ifos as strings, i.e. ["H1","L1"]
+        tgps: float
+            gps time for peak of signal
+        amplitude: list
+            amplitude of each tone
+            
+        Returns
+        -------
+        sig_dict : dict
+            Dict of signal TimeSeries for each ifo.
+        modes_dict: dict
+            Dict of mode TimeSeries for each ifo.
+        time_delay_dict: dict
+            Dict of TimeDelayFromEarthCenter for each ifo.
+        """
     N = int((duration*smprate))
     t = arange(N)/smprate+tgps-duration/2.0 #list of times that will be used as fake data input
     s = TimeSeries(zeros_like(t), index=t) #array for template signal
