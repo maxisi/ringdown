@@ -301,7 +301,7 @@ class AutoCovariance(TimeSeries):
 
     @classmethod
     def from_data(self, d, n=None, dt=1, nperseg=None, f_low=None,
-                  method='td'):
+                  method='fd'):
         dt = getattr(d, 'delta_t', dt)
         n = n or len(d)
         if method.lower() == 'td':
@@ -309,7 +309,7 @@ class AutoCovariance(TimeSeries):
             rho = ifftshift(rho)
             rho = rho[:n] / len(d)
         elif method.lower() == 'fd':
-            nperseg = nperseg or 3*len(d)
+            nperseg = nperseg or 1/dt
             freq, psd = sig.welch(d, fs=1/dt, nperseg=nperseg)
             rho = 0.5*np.fft.irfft(psd)[:n] / dt
         else:
@@ -364,4 +364,3 @@ class AutoCovariance(TimeSeries):
         elif isinstance(data, TimeSeries):
             w_data = TimeSeries(w_data, index=data.index)
         return w_data
-
