@@ -3,7 +3,7 @@ import lal
 from .data import *
 
 def simulated_template(freq,tau,smprate,duration,theta,phi,amplitude,alpha,declination,ifolist,tgps,ellip,psi=0):
-     """Function to make a simulated signal, as in "Analyzing black-hole ringdowns" Eqns. 11-13, here using a 
+    """Function to make a simulated signal, as in "Analyzing black-hole ringdowns" Eqns. 11-13, here using a 
         "ring-up" followed by a ring-down as modeled by a time decay of exp(-abs(t-tgps-time_delay_dict[ifo])*v).
                 
         Note that in general this function works best for durations much longer than the time delay. No noise is overlaid on this template - noise should 
@@ -46,7 +46,7 @@ def simulated_template(freq,tau,smprate,duration,theta,phi,amplitude,alpha,decli
             Dict of mode TimeSeries for each ifo.
         time_delay_dict: dict
             Dict of TimeDelayFromEarthCenter for each ifo.
-        """
+    """
     N = int((duration*smprate))
     t = arange(N)/smprate+tgps-duration/2.0 #list of times that will be used as fake data input
     s = TimeSeries(zeros_like(t), index=t) #array for template signal
