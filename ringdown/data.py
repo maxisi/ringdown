@@ -243,7 +243,6 @@ class Data(TimeSeries):
 
         return Data(cond_data, index=cond_time, ifo=self.ifo)
 
-
     def get_acf(self, **kws):
         return AutoCovariance.from_data(self, **kws)
 
@@ -364,4 +363,8 @@ class AutoCovariance(TimeSeries):
         elif isinstance(data, TimeSeries):
             w_data = TimeSeries(w_data, index=data.index)
         return w_data
+
+    def whiten_segments(self, data, N, drift=1):
+        """Whiten segments of length `N` from `data`."""
+        return [self.whiten(data.iloc[i:i+N], drift=drift) for i in range(0, len(data), N)]
 
