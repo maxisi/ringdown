@@ -2,7 +2,7 @@ from pylab import *
 import lal
 from .data import *
 
-def simulated_template(freq,tau,smprate,duration,phase,amplitude,alpha,declination,ifolist,tgps,ellip,psi=0):
+def simulated_template(freq,tau,smprate,duration,theta,phi,amplitude,alpha,declination,ifolist,tgps,ellip,psi=0):
     #Function to make a simulated signal, as in "Analyzing black-hole ringdowns" Eqns. 9-13, here using a 
     #"ring-up" followed by a ring-down as modeled by a time decay of exp(-abs(t-tgps-time_delay_dict[ifo])*v)
     #
@@ -41,21 +41,17 @@ def simulated_template(freq,tau,smprate,duration,phase,amplitude,alpha,declinati
     omega = 2*pi*array(freq) #frequencies
     gamma = 1./array(tau) #damping
     gmst = lal.GreenwichMeanSiderealTime(tgps)
-    theta = 0.0 #tilt angle in phase space wrt h_plus
-    phi = 0.0 #phasor offset
     for ifo in ifolist:
         s = s-s #hacky way to zero out the arrays for fresh signal in each ifo
         lal_det[ifo] = lal.cached_detector_by_prefix[ifo]
         antenna_patterns[ifo] = lal.ComputeDetAMResponse(lal_det[ifo].response, alpha, declination, psi, gmst)
         time_delay_dict[ifo] = lal.TimeDelayFromEarthCenter(lal_det[ifo].location, alpha, declination, tgps)
         modes_dict[ifo]=[]
-        for (w,v,p,A,E,n) in zip(omega,gamma,phase,amplitude,ellip,arange(len(omega))):
-            theta = -(p[0]+p[1])/2.0
-            phi = (p[0]-p[1])/2.0
-            hsin = TimeSeries(A*exp(-abs(t-tgps-time_delay_dict[ifo])*v)*sin(w*(t-tgps-time_delay_dict[ifo])-phi), index=t)
-            hcos = TimeSeries(A*exp(-abs(t-tgps-time_delay_dict[ifo])*v)*cos(w*(t-tgps-time_delay_dict[ifo])-phi), index=t)
-            hplus= hcos*cos(theta)-E*hsin*sin(theta)
-            hcross= hcos*sin(theta)+E*hsin*cos(theta)
+        for (w,v,A,E,n,th,ph) in zip(omega,gamma,amplitude,ellip,arange(len(omega)),theta,phi):
+            hsin = TimeSeries(A*exp(-abs(t-tgps-time_delay_dict[ifo])*v)*sin(w*(t-tgps-time_delay_dict[ifo])-ph), index=t)
+            hcos = TimeSeries(A*exp(-abs(t-tgps-time_delay_dict[ifo])*v)*cos(w*(t-tgps-time_delay_dict[ifo])-ph), index=t)
+            hplus= hcos*cos(th)-E*hsin*sin(th)
+            hcross= hcos*sin(th)+E*hsin*cos(th)
             m = antenna_patterns[ifo][0]*hplus+antenna_patterns[ifo][1]*hcross
             s += m
             modes_dict[ifo].append(m)

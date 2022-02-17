@@ -309,7 +309,7 @@ class AutoCovariance(TimeSeries):
             rho = ifftshift(rho)
             rho = rho[:n] / len(d)
         elif method.lower() == 'fd':
-            nperseg = nperseg or 3*len(d)
+            nperseg = nperseg or 1/dt
             freq, psd = sig.welch(d, fs=1/dt, nperseg=nperseg)
             rho = 0.5*np.fft.irfft(psd)[:n] / dt
         else:
