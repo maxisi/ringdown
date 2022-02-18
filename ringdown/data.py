@@ -346,7 +346,8 @@ class AutoCovariance(TimeSeries):
             unwhitened data.
 
         drift : float, default=1
-            factor to apply to noise amplitude before whitening (accounts for short-term noise drift)
+            factor to apply to noise amplitude before whitening (accounts for
+            short-term noise drift)
 
         Returns
         -------
