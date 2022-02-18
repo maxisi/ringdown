@@ -457,6 +457,8 @@ class Fit(object):
             dictionary with tuples for plus and cross antenna patterns for
             each detector `{ifo: (Fp, Fc)}` (optional)
         """
+        if not self.data:
+            raise ValueError("must add data before setting target.")
         tgps = lal.LIGOTimeGPS(t0)
         gmst = lal.GreenwichMeanSiderealTime(tgps)
         delays = delays or {}
