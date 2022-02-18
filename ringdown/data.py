@@ -373,5 +373,5 @@ class AutoCovariance(TimeSeries):
 
     def whiten_segments(self, data, N, drift=1):
         """Whiten segments of length `N` from `data`."""
-        return [self.whiten(data.iloc[i:i+N], drift=drift) for i in range(0, len(data), N)]
+        return [self.whiten(data.iloc[i:i+N], drift=drift) for i in range(0, len(data)-N, N)]
 
