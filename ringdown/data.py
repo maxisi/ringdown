@@ -300,7 +300,10 @@ class AutoCovariance(TimeSeries):
 
     @classmethod
     def from_data(self, d, n=None, dt=1, nperseg=None, f_low=None,
-                  method='td'):
+                  method='td', surgery_low=None, surgery_high=None):
+        if (surgery_low is not None or surgery_high is not None) and method.lower() == 'td':
+            raise ValueError('cannot do surgery in the time domain ACF')
+
         dt = getattr(d, 'delta_t', dt)
         n = n or len(d)
         if method.lower() == 'td':
@@ -308,8 +311,12 @@ class AutoCovariance(TimeSeries):
             rho = ifftshift(rho)
             rho = rho[:n] / len(d)
         elif method.lower() == 'fd':
-            nperseg = nperseg or 3*len(d)
+            nperseg = nperseg or int(round(1/dt)) # Default to 1s of data for PSD estimation.
             freq, psd = sig.welch(d, fs=1/dt, nperseg=nperseg)
+            if surgery_low is not None:
+                psd[freq < surgery_low] = psd[argmin(abs(freq - surgery_low))]
+            if surgery_high is not None:
+                psd[freq > surgery_high] = psd[argmin(abs(freq - surgery_high))]
             rho = 0.5*np.fft.irfft(psd)[:n] / dt
         else:
             raise ValueError("method must be 'td' or 'fd' not %r" % method)

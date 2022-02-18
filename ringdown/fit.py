@@ -340,6 +340,7 @@ class Fit(object):
 
         extra kwargs are passed to ACF constructor
         """
+
         ifos = self.ifos if ifos is None else ifos
         if len(ifos) == 0:
             raise ValueError("first add data")
