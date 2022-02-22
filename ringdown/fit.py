@@ -319,7 +319,10 @@ class Fit(object):
         if prior:
             self.prior = az.convert_to_inference_data(result)
         else:
-            self.result = az.convert_to_inference_data(result)
+            od = {'strain': self.model_input['strain']}
+            cd = {k: v for k,v in self.model_input.items() if k != 'strain'}
+            self.result = az.convert_to_inference_data(result, observed_data=od,
+                                                       constant_data=cd)
 
     def add_data(self, data, time=None, ifo=None, acf=None):
         if not isinstance(data, Data):
