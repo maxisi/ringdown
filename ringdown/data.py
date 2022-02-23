@@ -1,4 +1,4 @@
-__all__ = ['condition', 'TimeSeries', 'FrequencySeries', 'Data',
+__all__ = ['TimeSeries', 'FrequencySeries', 'Data',
            'AutoCovariance', 'PowerSpectrum']
 
 from pylab import *
@@ -6,6 +6,8 @@ import scipy.signal as sig
 import lal
 import scipy.linalg as sl
 import pandas as pd
+import h5py
+import os
 
 # def get_raw_time_ifo(tgps, raw_time, duration=None, ds=None):
 #     ds = ds or 1
@@ -13,54 +15,6 @@ import pandas as pd
 #     m = abs(raw_time - tgps) < 0.5*duration
 #     i = argmin(abs(raw_time - tgps))
 #     return roll(raw_time, -(i % ds))[m]
-
-def condition(raw_data, raw_time=None, flow=None, fhigh=None, ds=None,
-              scipy_dec=True, remove_mean=True, t0=None, decimate_kws=None, trim=0.25):
-    decimate_kws = decimate_kws or {}
-
-    if t0 is not None:
-        ds = ds or 1
-        i = argmin(abs(raw_time - t0))
-        raw_time = roll(raw_time, -(i % ds))
-        raw_data = roll(raw_data, -(i % ds))
-
-    fny = 0.5/(raw_time[1] - raw_time[0])
-    # Filter
-    if flow and not fhigh:
-        b, a = sig.butter(4, flow/fny, btype='highpass', output='ba')
-    elif fhigh and not flow:
-        b, a = sig.butter(4, fhigh/fny, btype='lowpass', output='ba')
-    elif flow and fhigh:
-        b, a = sig.butter(4, (flow/fny, fhigh/fny), btype='bandpass',
-                          output='ba')
-
-    if flow or fhigh:
-        cond_data = sig.filtfilt(b, a, raw_data)
-    else:
-        cond_data = raw_data
-
-    # Decimate
-    if ds and ds > 1:
-        if scipy_dec:
-            cond_data = sig.decimate(cond_data, ds, zero_phase=True, **decimate_kws)
-        else:
-            cond_data = cond_data[::ds]
-        if raw_time is not None:
-            cond_time = raw_time[::ds]
-    elif raw_time is not None:
-        cond_time = raw_time
-
-    N = len(cond_data)
-    istart = int(round(trim*N))
-    iend = int(round((1-trim)*N))
-
-    cond_time = cond_time[istart:iend]
-    cond_data = cond_data[istart:iend]
-
-    if remove_mean:
-        cond_data -= mean(cond_data)
-
-    return cond_time, cond_data
 
 class TimeSeries(pd.Series):
     """ A container for time series data based on `pandas.Series`;
@@ -96,6 +50,44 @@ class TimeSeries(pd.Series):
     def time(self) -> pd.Index:
         """Time stamps."""
         return self.index
+
+    @classmethod
+    def read(cls, path, kind=None, **kws):
+        kind = (kind or '').lower()
+        if not kind:
+            # attempt to guess filetype
+            ext = os.path.splitext(path)[1].lower().strip('.')
+            if ext in ['h5', 'hdf5', 'hdf']:
+                kind = 'hdf'
+            elif ext in ['txt', 'gz', 'dat', 'csv']:
+                kind = 'csv'
+            else:
+                raise ValueError("unrecognized extension: {}".format(ext))
+
+        if kind == 'gwosc':
+            with h5py.File(path, 'r') as f:
+                t0 = f['meta/GPSstart'][()]
+                T = f['meta/Duration'][()]
+                h = f['strain/Strain'][:]
+                dt = T/len(h)
+                time = t0 + dt*arange(len(h))
+                return cls(h, index=time, **kws)
+        elif kind in ['hdf', 'csv']:
+            read_func = getattr(pd, 'read_{}'.format(kind))
+            # get list of arguments accepted by pandas read function in order
+            # to filter out extraneous arguments that should go to cls
+            read_vars = read_func.__code__.co_varnames
+            # define some defaults to ensure we get a Series and not a DataFrame
+            read_kws = dict(sep=None, index_col=0, squeeze=True)
+            if 'sep' in kws:
+                # gymnastics to be able to support `sep = \t` (e.g., when
+                # reading a config file)
+                kws['sep'] = kws['sep'].encode('raw_unicode_escape').decode('unicode_escape')
+            read_kws.update({k: v for k,v in kws.items() if k in read_vars})
+            cls_kws = {k: v for k,v in kws.items() if k not in read_vars}
+            return cls(read_func(path, **read_kws), **cls_kws)
+        else:
+            raise ValueError("unrecognized file kind: {}".format(kind))
 
 
 class FrequencySeries(pd.Series):
@@ -147,8 +139,11 @@ class Data(TimeSeries):
     _metadata = ['ifo']
 
     def __init__(self, *args, ifo=None, **kwargs):
+        if ifo is not None:
+            ifo = ifo.upper()
+        kwargs['name'] = kwargs.get('name', ifo)
         super(Data, self).__init__(*args, **kwargs)
-        self.ifo = ifo.upper() if ifo is not None else ifo
+        self.ifo = ifo
 
     @property
     def _constructor(self):
@@ -156,7 +151,7 @@ class Data(TimeSeries):
 
     @property
     def detector(self) -> lal.Detector:
-        """ :mod:`lal` object containing detector information.
+        """:mod:`lal` object containing detector information.
         """
         if self.ifo:
             d = lal.cached_detector_by_prefix[self.ifo]
@@ -166,7 +161,7 @@ class Data(TimeSeries):
 
     def condition(self, flow=None, fhigh=None, ds=None, scipy_dec=True, t0=None,
                   remove_mean=True, decimate_kws=None, trim=0.25):
-        """ Condition data.
+        """Condition data.
 
         Arguments
         ---------
@@ -199,7 +194,7 @@ class Data(TimeSeries):
         decimate_kws = decimate_kws or {}
 
         if t0 is not None:
-            ds = ds or 1
+            ds = int(ds or 1)
             i = argmin(abs(raw_time - t0))
             raw_time = roll(raw_time, -(i % ds))
             raw_data = roll(raw_data, -(i % ds))
@@ -265,6 +260,7 @@ class PowerSpectrum(FrequencySeries):
     @classmethod
     def from_data(self, data, f_low=None, **kws):
         fs = kws.pop('fs', 1/getattr(data, 'delta_t', 1))
+        kws['nperseg'] = kws.get('nperseg', fs)  # default to 1s segments
         freq, psd = sig.welch(data, fs=fs, **kws)
         p = PowerSpectrum(psd, index=freq)
         if f_low:
@@ -300,18 +296,16 @@ class AutoCovariance(TimeSeries):
         return AutoCovariance
 
     @classmethod
-    def from_data(self, d, n=None, dt=1, nperseg=None, f_low=None,
-                  method='fd'):
-        dt = getattr(d, 'delta_t', dt)
+    def from_data(self, d, n=None, delta_t=None, method='fd', **kws):
+        dt = getattr(d, 'delta_t', delta_t)
         n = n or len(d)
         if method.lower() == 'td':
-            rho = sig.correlate(d, d)
+            rho = sig.correlate(d, d, **kws)
             rho = ifftshift(rho)
             rho = rho[:n] / len(d)
         elif method.lower() == 'fd':
-            nperseg = nperseg or 1/dt
-            freq, psd = sig.welch(d, fs=1/dt, nperseg=nperseg)
-            rho = 0.5*np.fft.irfft(psd)[:n] / dt
+            kws['fs'] = kws.get('fs', 1/dt)
+            rho = PowerSpectrum.from_data(d, **kws).to_acf()
         else:
             raise ValueError("method must be 'td' or 'fd' not %r" % method)
         return AutoCovariance(rho, delta_t=dt)
