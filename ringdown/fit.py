@@ -80,16 +80,12 @@ class Fit(object):
                                                                          MODELS))
         self.result = None
         self.prior = None
-        try:
-            # if modes is integer, interpret as number of modes
-            self._n_modes = int(modes)
-            self.modes = None
-        except TypeError:
-            # otherwise, assume it's mode index list
-            self.set_modes(modes)
-            self._n_modes = None
         self._duration = None
         self._n_analyze = None
+        # set modes dynamically
+        self._nmodes = None
+        self.modes = None
+        self.set_modes(modes)
         # assume rest of kwargs are to be passed to stan_data (e.g. prior)
         self._prior_settings = kws
 
@@ -267,12 +263,83 @@ class Fit(object):
                 raise ValueError('please specify {}'.format(k))
         return stan_data
 
+    @classmethod
+    def from_config(cls, config_input):
+        """Creates a :class:`Fit` instance from a configuration file.
+        
+        Has the ability to load and condition data, as well as to compute or
+        load ACFs. Does not run the fit automatically.
+
+        Arguments
+        ---------
+        config_input : str, configparser.ConfigParser
+            path to config file on disk, or preloaded
+            :class:`configparser.ConfigParser`
+
+        Returns
+        -------
+        fit : Fit
+            Ringdown :class:`Fit` object.
+        """
+        import configparser
+        if isinstance(config_input, configparser.ConfigParser):
+            config = config_input
+        else:
+            config = configparser.ConfigParser()
+            config.read(config_input)
+        # utility function
+        def try_float(x):
+            try:
+                return float(x)
+            except (TypeError,ValueError):
+                return x
+        # create fit object
+        fit = cls(config['model']['name'], modes=config['model']['modes'])
+        # add priors
+        fit.update_prior(**{k: float(v) for k,v in config['prior'].items()})
+        if 'data' not in config:
+            # the rest of the options require loading data, so if no pointer to
+            # data was provided, just exit
+            return fit
+        # load data
+        # TODO: add ability to generate synthetic data here?
+        ifo_input = config.get('data', 'ifos', fallback='')
+        ifos = [i.strip().strip('[').strip(']') for i in ifo_input.split(',')]
+        path_input = config['data']['path']
+        # NOTE: not popping in order to preserve original ConfigParser
+        used_keys = ['ifos', 'data', 'path']
+        kws = {k: v for k,v in config['data'].items() if k not in used_keys}
+        for ifo in ifos:
+            i = '' if not ifo else ifo[0]
+            path = path_input.format(i=i, ifo=ifo)
+            fit.add_data(Data.read(path, ifo=ifo, **kws))
+        # add target
+        fit.set_target(**{k: float(v) for k,v in config['target'].items()})
+        # condition data if requested
+        if config.has_section('condition'):
+            cond_kws = {k: try_float(v) for k,v in config['condition'].items()}
+            fit.condition_data(**cond_kws)
+        # load or produce ACFs
+        if config.get('acf', 'path', fallback=False):
+            kws = {k: v for k,v in config['acf'].items() if k not in ['path']}
+            kws['header'] = kws.get('header', None)
+            for ifo in ifos:
+                p = config['acf']['path'].format(i=i, ifo=ifo)
+                fit.acf[ifo] = AutoCovariance.read(p, **kws)
+        else:
+            acf_kws = {} if 'acf' not in config else config['acf']
+            fit.compute_acfs(**{k: try_float(v) for k,v in acf_kws.items()})
+        return fit
+
     def copy(self):
         return cp.deepcopy(self)
 
     def condition_data(self, **kwargs):
-        """ Condition data for all detectors.
+        """Condition data for all detectors by calling
+        :function:`Data.condition`. Docstring for that function below.
+
         """
+
         new_data = {}
         for k, d in self.data.items():
             t0 = self.start_times[k]
@@ -280,9 +347,10 @@ class Fit(object):
 
         self.data = new_data
         self.acfs = {} # Just to be sure that these stay consistent
+    condition_data.__doc__ += Data.condition.__doc__
 
     def run(self, prior=False, **kws):
-        """ Fit model.
+        """Fit model.
 
         Arguments
         ---------
@@ -291,9 +359,12 @@ class Fit(object):
 
         additional kwargs are passed to pystan.model.sampling
         """
-        for ifo in self.ifos: #check if delta_t of ACFs is equal to delta_t of data
+        #check if delta_t of ACFs is equal to delta_t of data
+        for ifo in self.ifos:
             if self.acfs[ifo].delta_t != self.data[ifo].delta_t:
-                raise ValueError("delta_t of ACFs does not match delta_t of data for all IFOs")
+                e = "{} ACF delta_t ({:.1e}) does not match data ({:.1e})."
+                raise ValueError(e.format(ifo, self.acfs[ifo].delta_t,
+                                          self.data[ifo].delta_t))
         # get model input
         stan_data = self.model_input
         stan_data['only_prior'] = int(prior)
@@ -387,17 +458,26 @@ class Fit(object):
           - `m` is the magnetic quantum number;
           - `n` is the overtone number.
 
+        See :function:`ringdown.qnms.construct_mode_list`.
+
         Arguments
         ---------
         modes : list
             list of tuples with quasinormal mode `(p, s, l, m, n)` numbers.
         """
-        self.modes = qnms.construct_mode_list(modes)
-        if self.model == 'mchi_aligned':
-            ls_valid = [mode.l == 2 for mode in self.modes]
-            ms_valid = [abs(mode.m) == 2 for mode in self.modes]
-            if not (all(ls_valid) and all(ms_valid)):
-                raise ValueError("mchi_aligned model only accepts l=m=2 modes")
+        try:
+            # if modes is integer, interpret as number of modes
+            self._n_modes = int(modes)
+            self.modes = None
+        except (TypeError, ValueError):
+            # otherwise, assume it is a mode index list
+            self._n_modes = None
+            self.modes = qnms.construct_mode_list(modes)
+            if self.model == 'mchi_aligned':
+                ls_valid = [mode.l == 2 for mode in self.modes]
+                ms_valid = [abs(mode.m) == 2 for mode in self.modes]
+                if not (all(ls_valid) and all(ms_valid)):
+                    raise ValueError("mchi_aligned model only accepts l=m=2 modes")
 
     def set_target(self, t0, ra=None, dec=None, psi=None, delays=None,
                    antenna_patterns=None, duration=None, n_analyze=None):
