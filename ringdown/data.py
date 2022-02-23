@@ -170,7 +170,7 @@ class Data(TimeSeries):
 
         Arguments
         ---------
-        flow : `float`
+        flow : float
             lower frequency for high passing.
         fhigh : float
             higher frequency for low passing.
@@ -190,7 +190,7 @@ class Data(TimeSeries):
 
         Returns
         -------
-        cond_data : `Data`
+        cond_data : Data
             conditioned data object.
         """
         raw_data = self
