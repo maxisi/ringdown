@@ -8,6 +8,7 @@ import lal
 from collections import namedtuple
 import pkg_resources
 import arviz as az
+from ast import literal_eval
 
 # def get_raw_time_ifo(tgps, raw_time, duration=None, ds=None):
 #     ds = ds or 1
@@ -176,8 +177,8 @@ class Fit(object):
 
     @property
     def _default_prior(self):
-        default = {'A_scale': None,
-                   'drift_scale': 0.0} # Turn off ACF drift correction by default.
+        # turn off ACF drift correction by default.
+        default = {'A_scale': None, 'drift_scale': 0.0}
         if self.model == 'ftau':
             # TODO: set default priors based on sampling rate and duration
             default.update(dict(
@@ -239,9 +240,11 @@ class Fit(object):
         :attr:`ringdown.fit.Fit.valid_model_options`.
         """
         valid_keys = self.valid_model_options
+        valid_keys_low = [k.lower() for k in valid_keys]
         for k, v in kws.items():
-            if k in valid_keys:
-                self._prior_settings[k] = v
+            if k.lower() in valid_keys_low:
+                i = valid_keys_low.index(k.lower())
+                self._prior_settings[valid_keys[i]] = v
             else:
                 raise ValueError('{} is not a valid model argument.'
                                  'Valid options are: {}'.format(k, valid_keys))
@@ -336,7 +339,8 @@ class Fit(object):
             path = path_input.format(i=i, ifo=ifo)
             fit.add_data(Data.read(path, ifo=ifo, **kws))
         # add target
-        fit.set_target(**{k: float(v) for k,v in config['target'].items()})
+        target = config['target']
+        fit.set_target(**{k: literal_eval(v) for k,v in target.items()})
         # condition data if requested
         if config.has_section('condition'):
             cond_kws = {k: try_float(v) for k,v in config['condition'].items()}
@@ -347,7 +351,7 @@ class Fit(object):
             kws['header'] = kws.get('header', None)
             for ifo in ifos:
                 p = config['acf']['path'].format(i=i, ifo=ifo)
-                fit.acf[ifo] = AutoCovariance.read(p, **kws)
+                fit.acfs[ifo] = AutoCovariance.read(p, **kws)
         else:
             acf_kws = {} if 'acf' not in config else config['acf']
             fit.compute_acfs(**{k: try_float(v) for k,v in acf_kws.items()})
