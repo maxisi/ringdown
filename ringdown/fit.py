@@ -142,14 +142,18 @@ class Fit(object):
 
     @property
     def sky(self) -> tuple:
-        """ Tuple of source right ascension, declination and polarization
-        angle (all in radians).
+        """ Tuple of source right ascension, declination and polarization angle
+        (all in radians). This can be set using
+        :meth:`ringdown.fit.Fit.set_target`.
         """
         return (self.target.ra, self.target.dec, self.target.psi)
 
     # this can be generalized for charged bhs based on model name
     @property
-    def spectral_coefficients(self):
+    def spectral_coefficients(self) -> tuple:
+        """Regression coefficients used by sampler to obtain mode frequencies
+        and damping times as a function of physical black hole parameters.
+        """
         f_coeffs = []
         g_coeffs = []
         for mode in self.modes:
@@ -160,6 +164,10 @@ class Fit(object):
 
     @property
     def analysis_data(self) -> dict:
+        """Slice of data to be analyzed for each detector. Extracted from
+        :attr:`ringdown.fit.Fit.data` based on information in analysis target
+        :attr:`ringdown.fit.Fit.target`.
+        """
         data = {}
         i0s = self.start_indices
         for i, d in self.data.items():
@@ -207,17 +215,29 @@ class Fit(object):
         return default
 
     @property
-    def prior_settings(self):
+    def prior_settings(self) -> dict:
+        """Prior options as currently set.
+        """
         prior = self._default_prior
         prior.update(self._prior_settings)
         return prior
 
     @property
-    def valid_model_options(self):
+    def valid_model_options(self) -> list:
+        """Valid prior parameters for the selected model. These can be set
+        through :meth:`ringdown.fit.Fit.update_prior`.
+        """
         return list(self._default_prior.keys())
 
     # TODO: warn or fail if self.results is not None?
     def update_prior(self, **kws):
+        """Set or modify prior options.  For example,
+        ``fit.update_prior(A_scale=1e-21)`` sets the `A_scale` parameter to
+        `1e-21`.
+
+        Valid arguments for the selected model can be found in
+        :attr:`ringdown.fit.Fit.valid_model_options`.
+        """
         valid_keys = self.valid_model_options
         for k, v in kws.items():
             if k in valid_keys:
@@ -227,7 +247,9 @@ class Fit(object):
                                  'Valid options are: {}'.format(k, valid_keys))
 
     @property
-    def model_input(self):
+    def model_input(self) -> dict:
+        """Arguments to be passed to sampler.
+        """
         if not self.acfs:
             print('WARNING: computing ACFs with default settings.')
             self.compute_acfs()
@@ -332,14 +354,20 @@ class Fit(object):
         return fit
 
     def copy(self):
+        """Produce a deep copy of this `Fit` object.
+
+        Returns
+        -------
+        fit_copy : Fit
+            deep copy of `Fit`.
+        """
         return cp.deepcopy(self)
 
     def condition_data(self, **kwargs):
         """Condition data for all detectors by calling
-        :function:`Data.condition`. Docstring for that function below.
+        :meth:`ringdown.data.Data.condition`. Docstring for that function below.
 
         """
-
         new_data = {}
         for k, d in self.data.items():
             t0 = self.start_times[k]
@@ -352,12 +380,13 @@ class Fit(object):
     def run(self, prior=False, **kws):
         """Fit model.
 
+        Additional keyword arguments not listed below are passed to
+        :func:`pystan.model.sampling`.
+
         Arguments
         ---------
         prior : bool
             whether to sample the prior (def. False).
-
-        additional kwargs are passed to pystan.model.sampling
         """
         #check if delta_t of ACFs is equal to delta_t of data
         for ifo in self.ifos:
@@ -396,6 +425,20 @@ class Fit(object):
                                                        constant_data=cd)
 
     def add_data(self, data, time=None, ifo=None, acf=None):
+        """Add data to fit.
+
+        Arguments
+        ---------
+        data : array,Data
+            time series to be added.
+        time : array
+            array of time stamps (only required if `data` is not
+            :class:`ringdown.data.Data`).
+        ifo : str
+            interferometer key (optional).
+        acf : array,AutoCovariance
+            autocovariance series corresponding to these data (optional).
+        """
         if not isinstance(data, Data):
             data = Data(data, index=getattr(data, 'time', time), ifo=ifo)
         self.data[data.ifo] = data
@@ -458,7 +501,7 @@ class Fit(object):
           - `m` is the magnetic quantum number;
           - `n` is the overtone number.
 
-        See :function:`ringdown.qnms.construct_mode_list`.
+        See :meth:`ringdown.qnms.construct_mode_list`.
 
         Arguments
         ---------
@@ -567,6 +610,9 @@ class Fit(object):
 
     # TODO: warn or fail if self.results is not None?
     def update_target(self, **kws):
+        """Modify analysis target. See also
+        :meth:`ringdown.fit.Fit.set_target`.
+        """
         target = dict(**self.target)
         target.update({k: getattr(self,k) for k in
                        ['duration', 'n_analyze', 'antenna_patterns']})
@@ -574,7 +620,14 @@ class Fit(object):
         self.set_target(**target)
 
     @property
-    def duration(self):
+    def duration(self) -> float:
+        """Analysis duration in the units of time presumed by the
+        :attr:`ringdown.fit.Fit.data` and :attr:`ringdown.fit.Fit.acfs` objects
+        (usually seconds). Defined as :math:`T = N\\times\Delta t`, where
+        :math:`N` is the number of analysis samples
+        (:attr:`ringdown.fit.n_analyze`) and :math:`\Delta t` is the time
+        sample spacing.
+        """
         if self._n_analyze and not self._duration:
             if self.data:
                 return self._n_analyze*self.data[self.ifos[0]].delta_t
@@ -586,11 +639,17 @@ class Fit(object):
             return self._duration
 
     @property
-    def has_target(self):
+    def has_target(self) -> bool:
+        """Whether an analysis target has been set with
+        :meth:`ringdown.fit.Fit.set_target`.
+        """
         return self.target.t0 is not None
 
     @property
-    def start_indices(self):
+    def start_indices(self) -> dict:
+        """Locations of first samples in :attr:`ringdown.fit.Fit.data`
+        to be included in the ringdown analysis for each detector.
+        """
         i0_dict = {}
         if self.has_target:
             for ifo, d in self.data.items():
@@ -599,7 +658,9 @@ class Fit(object):
         return i0_dict
 
     @property
-    def n_analyze(self):
+    def n_analyze(self) -> int:
+        """Number of data points included in analysis for each detector.
+        """
         if self._duration and not self._n_analyze:
             # set n_analyze based on specified duration in seconds
             if self.data:
@@ -617,6 +678,24 @@ class Fit(object):
             return self._n_analyze
 
     def whiten(self, datas, drifts=None):
+        """Return whiten data for all detectors.
+
+        See also :meth:`ringdown.data.AutoCovariance.whiten`.
+
+        Arguments
+        ---------
+        datas : dict
+            dictionary of data to be whitened for each detector.
+        drifts : dict
+            optional ACF scale drift factors for each detector.
+
+        Returns
+        -------
+        wdatas : dict
+            dictionary of :class:`ringdown.data.Data` with whitned data for
+            each detector.
+        """
         if drifts is None:
             drifts = {i : 1 for i in datas.keys()}
-        return {i: Data(self.acfs[i].whiten(d, drift=drifts[i]), ifo=i) for i,d in datas.items()}
+        return {i: Data(self.acfs[i].whiten(d, drift=drifts[i]), ifo=i) 
+                for i,d in datas.items()}
