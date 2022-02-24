@@ -4,6 +4,70 @@ from pylab import *
 import lal
 from .data import *
 
+class Signal(TimeSeries):
+    _metadata = ['parameters']
+
+    def __init__(self, *args, parameters=None, **kwargs):
+        super(Signal, self).__init__(*args, **kwargs)
+        self.parameters = parameters
+
+    @property
+    def _constructor(self):
+        return Signal
+
+    @property
+    def hp(self):
+        hp = self.copy()
+        hp.iloc[:] = np.real(self) 
+        return hp
+
+    @property
+    def hc(self):
+        hc = self.copy()
+        hc.iloc[:] = -np.imag(self) 
+        return hc
+
+
+class SymmetricRingdown(Signal):
+    @property
+    def _constructor(self):
+        return SymmetricRingdown
+
+    @classmethod
+    def from_parameters(cls, time, A=None, phi0=None, f=None, tau=None, t0=0,
+                        A_pre=1, df_pre=0, dtau_pre=None, window=np.inf):
+        """Create injection: a sinusoid up to t0, then a damped sinusoiud. The
+        (A_pre, df_pre, dtau_pre) parameters can turn the initial sinusoid into a
+        sinegaussian, to produce a ring-up.
+        Can incorporate several modes, if (A, phi0, f, tau) are 1D.
+        """
+        # reshape arrays (to handle multiple modes)
+        signal = np.zeros(len(time))
+        t = time.reshape(len(time), 1)
+
+        A = np.array([A], ndmin=2)
+        phi0 = np.array([phi0], ndmin=2)
+        f = np.array([f], ndmin=2)
+        tau = np.array([tau], ndmin=2)
+
+        # define some masks (pre and post t0)
+        mpre = (time < t0) & (abs(time-t0) < 0.5*window)
+        mpost = (time >= t0) & (abs(time-t0) < 0.5*window)
+
+        # signal will be a sinusoid up to t0, then a damped sinusoiud
+        t_t0 = t - t0
+        f_pre = f*(1 + df_pre)
+        signal[mpre]  = np.sum(A*np.cos(2*np.pi*f_pre*t_t0[mpre] - phi0), axis=1).flatten()
+        signal[mpost] = np.sum(A*np.cos(2*np.pi*f*t_t0[mpost] - phi0)*np.exp(-t_t0[mpost]/tau), axis=1).flatten()
+
+        # add a damping to the amplitude near t0 for t < t0
+        if dtau_pre is not None:
+            tau_pre = tau * (1 + dtau_pre)
+            signal[mpre] *= A_pre*np.exp(-abs(t_t0[mpre])/tau_pre).flatten()
+        return cls(signal, index=time)
+
+
+
 def simulated_template(freq, tau, smprate, duration, theta, phi, amplitude, ra,
                        dec, ifos, tgps, ellip, psi=0):
     """Function to make a simulated signal, as in Isi & Farr (2021)
