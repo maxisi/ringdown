@@ -1,16 +1,18 @@
-__all__ = ['simulated_template']
+__all__ = ['Signal', 'Ringdown', 'simulated_template']
 
 from pylab import *
 import lal
 from .data import *
+from . import qnms
 from scipy.interpolate import interp1d
+from inspect import getfullargspec
 
 class Signal(TimeSeries):
     _metadata = ['parameters']
 
     def __init__(self, *args, parameters=None, **kwargs):
         super(Signal, self).__init__(*args, **kwargs)
-        self.parameters = parameters
+        self.parameters = parameters or {}
 
     @property
     def _constructor(self):
@@ -18,7 +20,10 @@ class Signal(TimeSeries):
 
     @property
     def t0(self):
-        return self.parameters.get('t0', None)
+        return self.get_parameter('t0', None)
+
+    def get_parameter(self, k, *args):
+        return self.parameters.get(k.lower(), *args) 
 
     @property
     def _hp(self):
@@ -26,9 +31,7 @@ class Signal(TimeSeries):
 
     @property
     def hp(self):
-        hp = self.copy()
-        hp.iloc[:] = self._hp
-        return hp
+        return Signal(self._hp, index=self.index, parameters=self.parameters)
 
     @property
     def _hc(self):
@@ -36,9 +39,7 @@ class Signal(TimeSeries):
 
     @property
     def hc(self):
-        hc = self.copy()
-        hc.iloc[:] = self._hc
-        return hc
+        return Signal(self._hc, index=self.index, parameters=self.parameters)
 
     def project(self, ifo=None, t0=None, antenna_patterns=None, delay=None,
                 ra=None, dec=None, psi=None, fd_shift=False, interpolate=False):
@@ -76,44 +77,152 @@ class Signal(TimeSeries):
 
 
 class Ringdown(Signal):
+    _metadata = ['modes']
+
+    def __init__(self, *args, modes=None, **kwargs):
+        super(Ringdown, self).__init__(*args, **kwargs)
+        self.modes = qnms.construct_mode_list(modes)
+
     @property
     def _constructor(self):
         return Ringdown
 
+    @property
+    def n_modes(self):
+        return len(self.get_parameter('A', []))
+
+    @staticmethod
+    def _theta_phi_from_phip_phim(phip, phim):
+        return -0.5*(phip + phim), 0.5*(phip - phim)
+
+    @staticmethod
+    def _phip_phim_from_theta_phi(theta, phi):
+        return phi - theta, -(phi + theta)
+
+    @staticmethod
+    def _construct_parameters(ndmin=0, **kws):
+        kws = {k.lower(): v for k,v in kws.items()}
+        # define parameters that will take precedence for storage
+        keys = ['a', 'ellip', 'theta', 'phi', 'omega', 'gamma']
+        pars = {k: array(kws.pop(k), ndmin=ndmin) for k in list(kws.keys())
+                if k in keys}
+        # frequency parameters
+        if 'f' in kws:
+            pars['omega'] = pars.get('omega', 2*pi*array(kws.pop('f'),
+                                                         ndmin=ndmin))
+        if 'tau' in kws:
+            pars['gamma'] = pars.get('gamma', 1/array(kws.pop('tau'),
+                                                      ndmin=ndmin))
+        # phase parameters
+        if 'phip' in kws and 'phim' in kws:
+            theta, phi = Ringdown._theta_phi_from_phip_phim(kws['phip'],
+                                                            kws['phim'])
+            pars['theta'] = array(theta, ndmin=ndmin)
+            pars['phi'] = array(phi, ndmin=ndmin)
+        pars.update(kws)
+        return pars
+
+    @staticmethod
+    def complex_mode(time, omega, gamma, A, ellip, theta, phi):
+        """Eq. (8) in Isi & Farr (2021).
+        """
+        phi_p = phi - theta
+        phi_m = - (phi + theta)
+        iwt = 1j*omega*time
+        vt = gamma*time
+        # h = 0.5*A*exp(-time*gamma)*((1 + ellip)*exp(-1j*(wt - phi_p)) +
+        #                             (1 - ellip)*exp(1j*(wt + phi_m)))
+        h = ((0.5*A)*(1 + ellip))*exp(1j*phi_p - iwt - vt) + \
+            ((0.5*A)*(1 - ellip))*exp(1j*phi_m + iwt - vt)
+        return h
+
+    _MODE_PARS = [k.lower() for k in getfullargspec(Ringdown.complex_mode)[0][1:]]
+
     @classmethod
-    def from_pars(cls, time, f=None, tau=None, A=None, ellip=None, theta=None,
-                  phi=None, t0=0, A_pre=1, df_pre=0, dtau_pre=None,
-                  window=np.inf):
+    def from_parameters(cls, time, t0=0, window=inf, two_sided=True, df_pre=0,
+                  dtau_pre=0, **kws):
         """Create injection: a sinusoid up to t0, then a damped sinusoiud. The
         (A_pre, df_pre, dtau_pre) parameters can turn the initial sinusoid into
         a sinegaussian, to produce a ring-up.  Can incorporate several modes,
         if (A, phi0, f, tau) are 1D.
         """
+        # parse arguments
+        modes = kws.pop('modes', None)
+        all_kws = {k: v for k,v in locals().items() if k not in ['cls','time']}
+        all_kws.update(all_kws.pop('kws'))
+
         # reshape arrays (to handle multiple modes)
-        signal_cos = np.zeros(len(time))
-        t = time.reshape(len(time), 1)
+        t = reshape(time, (len(time), 1))
+        signal = empty(len(time), dtype=complex)
 
-        A = np.array([A], ndmin=2)
-        phi0 = np.array([phi0], ndmin=2)
-        f = np.array([f], ndmin=2)
-        tau = np.array([tau], ndmin=2)
+        pars = cls._construct_parameters(ndmin=1, **all_kws)
 
-        # define some masks (pre and post t0)
-        mpre = (time < t0) & (abs(time-t0) < 0.5*window)
-        mpost = (time >= t0) & (abs(time-t0) < 0.5*window)
+        # define some masks (pre and post t0) to avoid evaluating the waveform
+        # over extremely long time arrays [optional]
+        mpost = (time >= t0) & (time < 0.5*window + t0)
 
-        # signal will be a sinusoid up to t0, then a damped sinusoiud
-        t_t0 = t - t0
-        f_pre = f*(1 + df_pre)
-        signal_cos[mpre] = np.sum(A*np.cos(2*np.pi*f_pre*t_t0[mpre] - phi0), axis=1).flatten()
-        signal_cos[mpost] = np.sum(A*np.cos(2*np.pi*f*t_t0[mpost] - phi0)*np.exp(-t_t0[mpost]/tau), axis=1).flatten()
+        # each mode will be a sinusoid up to t0, then a damped sinusoid
+        mode_args = [array(pars[k], ndmin=2) for k in cls._MODE_PARS]
+        if modes:
+            if len(modes) > len(mode_args[0]):
+                raise ValueError("insufficient parameters provided")
+        signal[mpost] = sum(cls.complex_mode(t[mpost]-t0, *mode_args), axis=1)
 
         # add a damping to the amplitude near t0 for t < t0
-        if dtau_pre is not None:
-            tau_pre = tau * (1 + dtau_pre)
-            signal[mpre] *= A_pre*np.exp(-abs(t_t0[mpre])/tau_pre).flatten()
-        return cls(signal, index=time)
+        if two_sided:
+            pars_pre = pars.copy()
+            pars_pre['omega'] = pars_pre['omega']*exp(df_pre)
+            pars_pre['gamma'] = -pars_pre['gamma']*exp(-dtau_pre)
+            mode_args = [array(pars_pre[k], ndmin=2) for k in cls._MODE_PARS]
+            signal[~mpost] = sum(cls.complex_mode(t[~mpost]-t0, *mode_args),
+                                 axis=1)
+        else:
+            signal[~mpost] = 0
+        return cls(signal, index=time, parameters=pars, modes=modes)
 
+    @classmethod
+    def from_remnant(cls, *args, **kwargs):
+        M = kwargs.pop('M', None) or kwargs.pop('m')
+        chi = kwargs.pop('chi')
+        mode_idxs = kwargs['modes']
+        kwargs['approx'] = kwargs.get('approx', False)
+        kwargs['f'] = []
+        kwargs['tau'] = []
+        for m in mode_idxs:
+            f, tau = qnms.KerrMode(m).ftau(chi, M, kwargs['approx'])
+            kwargs['f'].append(f)
+            kwargs['tau'].append(tau)
+        return cls.from_parameters(*args, **kwargs)
+
+    def get_parameter(self, k, *args, **kwargs):
+        k = k.lower()
+        if k == 'f':
+            return self.get_parameter('omega', *args, **kwargs)/ (2*pi)
+        elif k == 'tau':
+            return 1/self.get_parameter('gamma', *args, **kwargs)
+        elif k == 'phip' or k == 'phim':
+            th = self.get_parameter('theta', *args, **kwargs)
+            ph = self.get_parameter('phi', *args, **kwargs)
+            d = dict(zip(['phip', 'phim'],
+                         self._phip_phim_from_theta_phi(th, ph)))
+            return d[k]
+        elif k == 'quality':
+            # Q = pi*f*tau
+            w = self.get_parameter('omega', *args, **kwargs)
+            v = self.get_parameter('gamma', *args, **kwargs)
+            return 0.5 * w / v
+        else:
+            return super().get_parameter(k, *args, **kwargs)
+
+    def get_mode_parameters(self, mode):
+        try:
+            n = int(mode)
+        except (TypeError, ValueError):
+            n = self.modes.index(qnms.ModeIndex(*mode))
+        pars = {k: self.parameters[k][n] for k in self._MODE_PARS}
+        return pars
+
+        
 
 
 def simulated_template(freq, tau, smprate, duration, theta, phi, amplitude, ra,
