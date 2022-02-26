@@ -106,6 +106,17 @@ class Ringdown(Signal):
         keys = ['a', 'ellip', 'theta', 'phi', 'omega', 'gamma']
         pars = {k: array(kws.pop(k), ndmin=ndmin) for k in list(kws.keys())
                 if k in keys}
+        # check if should obtain frequencies from remnant parameters
+        if 'modes' in kws:
+            if 'M' in kws:
+                kws['m'] = kws.pop('M')
+            kws['approx'] = kws.get('approx', False)
+            kws['f'], kws['tau'] = [], []
+            for m in kws['modes']:
+                f, tau = qnms.KerrMode(m).ftau(kws['chi'], kws['m'],
+                                               kws['approx'])
+                kws['f'].append(f)
+                kws['tau'].append(tau)
         # frequency parameters
         if 'f' in kws:
             pars['omega'] = pars.get('omega', 2*pi*array(kws.pop('f'),
@@ -136,7 +147,8 @@ class Ringdown(Signal):
             ((0.5*A)*(1 - ellip))*exp(1j*phi_m + iwt - vt)
         return h
 
-    _MODE_PARS = [k.lower() for k in getfullargspec(Ringdown.complex_mode)[0][1:]]
+    #_MODE_PARS = [k.lower() for k in getfullargspec(Ringdown.complex_mode)[0][1:]]
+    _MODE_PARS = ['time', 'omega', 'gamma', 'A', 'ellip', 'theta', 'phi']
 
     @classmethod
     def from_parameters(cls, time, t0=0, window=inf, two_sided=True, df_pre=0,
@@ -179,20 +191,6 @@ class Ringdown(Signal):
         else:
             signal[~mpost] = 0
         return cls(signal, index=time, parameters=pars, modes=modes)
-
-    @classmethod
-    def from_remnant(cls, *args, **kwargs):
-        M = kwargs.pop('M', None) or kwargs.pop('m')
-        chi = kwargs.pop('chi')
-        mode_idxs = kwargs['modes']
-        kwargs['approx'] = kwargs.get('approx', False)
-        kwargs['f'] = []
-        kwargs['tau'] = []
-        for m in mode_idxs:
-            f, tau = qnms.KerrMode(m).ftau(chi, M, kwargs['approx'])
-            kwargs['f'].append(f)
-            kwargs['tau'].append(tau)
-        return cls.from_parameters(*args, **kwargs)
 
     def get_parameter(self, k, *args, **kwargs):
         k = k.lower()

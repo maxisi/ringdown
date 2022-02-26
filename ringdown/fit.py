@@ -4,6 +4,7 @@ import copy as cp
 from pylab import *
 from .data import *
 from . import qnms
+from . import injection
 import lal
 from collections import namedtuple
 import pkg_resources
@@ -380,6 +381,11 @@ class Fit(object):
         self.data = new_data
         self.acfs = {} # Just to be sure that these stay consistent
     condition_data.__doc__ += Data.condition.__doc__
+
+    def inject_signal(self, *args, **kwargs):
+        """Add simulated signal to data.
+        """
+        raise NotImplementedError
 
     def run(self, prior=False, **kws):
         """Fit model.
