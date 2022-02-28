@@ -10,6 +10,7 @@ from collections import namedtuple
 import pkg_resources
 import arviz as az
 from ast import literal_eval
+from inspect import getfullargspec
 
 # def get_raw_time_ifo(tgps, raw_time, duration=None, ds=None):
 #     ds = ds or 1
@@ -71,6 +72,7 @@ class Fit(object):
 
     def __init__(self, model='mchi', modes=None, **kws):
         self.data = {}
+        self.injections = {}
         self.acfs = {}
         self.start_times = {}
         self.antenna_patterns = {}
@@ -84,6 +86,7 @@ class Fit(object):
         self.prior = None
         self._duration = None
         self._n_analyze = None
+        self.injection_parameters = {}
         # set modes dynamically
         self._nmodes = None
         self.modes = None
@@ -382,10 +385,52 @@ class Fit(object):
         self.acfs = {} # Just to be sure that these stay consistent
     condition_data.__doc__ += Data.condition.__doc__
 
-    def inject_signal(self, *args, **kwargs):
+    def inject(self, fast_projection=False, window='auto', **kws):
         """Add simulated signal to data.
         """
-        raise NotImplementedError
+        if window == 'auto':
+            if self.duration is not None:
+                kws['window'] = 10*self.duration
+        else:
+            kws['window'] = window
+        all_kws = {k: v for k,v in locals().items() if k not in ['self']}
+        all_kws.update(all_kws.pop('kws'))
+        s_kws = all_kws.copy()
+        p_kws ={k: s_kws.pop(k) for k in kws.keys() if k in 
+                getfullargspec(injection.Signal.project)[0][1:]}
+        if all([k in p_kws for k in ['ra', 'dec']]):
+            aps = {}
+        else:
+            aps = p_kws.pop('antenna_patterns', None) or self.antenna_patterns
+
+        if fast_projection:
+            # evaluate template once and timeshift for each detector
+            s_kws['t0'] = all_kws.get('t0', self.t0)
+            p_kws['delay'] = all_kws.get('delay', 'from_geo')
+            for k in ['ra', 'dec', 'psi']:
+                p_kws[k] = p_kws.get(k, self.target._asdict()[k])
+            print(p_kws)
+            # get baseline signal (by default at geocenter)
+            t = self.data[self.ifos[0]].time.values
+            gw = injection.Ringdown.from_parameters(t, **s_kws)
+            # project onto each detector
+            self.injections = {i: gw.project(antenna_patterns=aps.get(i, None),
+                                             ifo=i, **p_kws)
+                               for i in self.ifos}
+        else:
+            # revaluate the template from scratch for each detector
+            if 't0' not in all_kws:
+                p_kws['delay'] = None
+            for ifo, d in self.data.items():
+                s_kws['t0'] = all_kws.get('t0', self.start_times[ifo])
+                gw = injection.Ringdown.from_parameters(d.time.values,
+                                                        **s_kws)
+                self.injections[ifo] = gw.project(antenna_patterns=aps[ifo],
+                                                  ifo=ifo, **p_kws)
+        for i, h in self.injections.items():
+            self.data[i] = self.data[i] + h
+        self.injection_parameters = all_kws
+        return gw
 
     def run(self, prior=False, **kws):
         """Fit model.
@@ -623,7 +668,7 @@ class Fit(object):
         """Modify analysis target. See also
         :meth:`ringdown.fit.Fit.set_target`.
         """
-        target = dict(**self.target)
+        target = self.target._asdict()
         target.update({k: getattr(self,k) for k in
                        ['duration', 'n_analyze', 'antenna_patterns']})
         target.update(kws)

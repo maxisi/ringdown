@@ -148,30 +148,30 @@ class Ringdown(Signal):
         return h
 
     #_MODE_PARS = [k.lower() for k in getfullargspec(Ringdown.complex_mode)[0][1:]]
-    _MODE_PARS = ['time', 'omega', 'gamma', 'A', 'ellip', 'theta', 'phi']
+    _MODE_PARS = ['omega', 'gamma', 'a', 'ellip', 'theta', 'phi']
 
     @classmethod
     def from_parameters(cls, time, t0=0, window=inf, two_sided=True, df_pre=0,
-                  dtau_pre=0, **kws):
+                        dtau_pre=0, **kws):
         """Create injection: a sinusoid up to t0, then a damped sinusoiud. The
         (A_pre, df_pre, dtau_pre) parameters can turn the initial sinusoid into
         a sinegaussian, to produce a ring-up.  Can incorporate several modes,
         if (A, phi0, f, tau) are 1D.
         """
         # parse arguments
-        modes = kws.pop('modes', None)
         all_kws = {k: v for k,v in locals().items() if k not in ['cls','time']}
         all_kws.update(all_kws.pop('kws'))
+        modes = all_kws.get('modes', None)
 
         # reshape arrays (to handle multiple modes)
         t = reshape(time, (len(time), 1))
-        signal = empty(len(time), dtype=complex)
+        signal = zeros(len(time), dtype=complex)
 
         pars = cls._construct_parameters(ndmin=1, **all_kws)
 
         # define some masks (pre and post t0) to avoid evaluating the waveform
         # over extremely long time arrays [optional]
-        mpost = (time >= t0) & (time < 0.5*window + t0)
+        mpost = (time >= t0) & (time < t0 + 0.5*window) 
 
         # each mode will be a sinusoid up to t0, then a damped sinusoid
         mode_args = [array(pars[k], ndmin=2) for k in cls._MODE_PARS]
@@ -186,10 +186,9 @@ class Ringdown(Signal):
             pars_pre['omega'] = pars_pre['omega']*exp(df_pre)
             pars_pre['gamma'] = -pars_pre['gamma']*exp(-dtau_pre)
             mode_args = [array(pars_pre[k], ndmin=2) for k in cls._MODE_PARS]
-            signal[~mpost] = sum(cls.complex_mode(t[~mpost]-t0, *mode_args),
-                                 axis=1)
-        else:
-            signal[~mpost] = 0
+            mpre = (time < t0) & (time > t0 - 0.5*window)
+            signal[mpre] = sum(cls.complex_mode(t[mpre]-t0, *mode_args),
+                               axis=1)
         return cls(signal, index=time, parameters=pars, modes=modes)
 
     def get_parameter(self, k, *args, **kwargs):
