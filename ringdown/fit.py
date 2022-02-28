@@ -386,8 +386,32 @@ class Fit(object):
     condition_data.__doc__ += Data.condition.__doc__
 
     def inject(self, fast_projection=False, window='auto', **kws):
-        """Add simulated signal to data.
+        """Add simulated signal to data, and records it in
+        :attr:`ringdown.fit.Fit.injections`.
+
+        Additional arguments are passed to 
+        :meth:`ringdown.injection.Ringdown.from_parameters` and
+        :meth:`ringdown.injection.Ringdown.project`.
+
+        .. warning::
+          This overwrites data stored in in :attr:`ringdown.fit.Fit.data`.
+
+        Arguments
+        ---------
+        fast_projection : bool
+            if true, evaluates polarization functions only once using the time
+            array of the first interferometer and then projects onto each
+            detector by time shifiting; otherwise, evaluates polarizations for
+            each detector, ensuring that there are no off-by-one alignment
+            errors. (Def. False)
+        window : float, str
+            window of time around target for which to evaluate polarizations,
+            to avoid doing so over a very long time array (for speed). By
+            defauly, ``window='auto'`` sets this to a multiple of the analysis
+            duration; otherwise this should be a float, or `inf` for no window.
+            (see docs for :meth:`ringdown.injection.Ringdown.from_parameters`).
         """
+        # parse GW and projection arguments
         if window == 'auto':
             if self.duration is not None:
                 kws['window'] = 10*self.duration
@@ -399,17 +423,18 @@ class Fit(object):
         p_kws ={k: s_kws.pop(k) for k in kws.keys() if k in 
                 getfullargspec(injection.Signal.project)[0][1:]}
         if all([k in p_kws for k in ['ra', 'dec']]):
+            # a sky location was explicitly provided, so compute APs from that
             aps = {}
         else:
+            # no sky location given, so use provided APs or default to target
             aps = p_kws.pop('antenna_patterns', None) or self.antenna_patterns
+        for k in ['ra', 'dec', 'psi']:
+            p_kws[k] = p_kws.get(k, self.target._asdict()[k])
 
         if fast_projection:
-            # evaluate template once and timeshift for each detector
+            # evaluate GW polarizations once and timeshift for each detector
             s_kws['t0'] = all_kws.get('t0', self.t0)
-            p_kws['delay'] = all_kws.get('delay', 'from_geo')
-            for k in ['ra', 'dec', 'psi']:
-                p_kws[k] = p_kws.get(k, self.target._asdict()[k])
-            print(p_kws)
+            p_kws['delay'] = 'from_geo'
             # get baseline signal (by default at geocenter)
             t = self.data[self.ifos[0]].time.values
             gw = injection.Ringdown.from_parameters(t, **s_kws)
@@ -419,18 +444,16 @@ class Fit(object):
                                for i in self.ifos}
         else:
             # revaluate the template from scratch for each detector
-            if 't0' not in all_kws:
-                p_kws['delay'] = None
+            p_kws['delay'] = 'from_geo' if 't0' in all_kws else None
             for ifo, d in self.data.items():
                 s_kws['t0'] = all_kws.get('t0', self.start_times[ifo])
-                gw = injection.Ringdown.from_parameters(d.time.values,
-                                                        **s_kws)
+                gw = injection.Ringdown.from_parameters(d.time.values, **s_kws)
                 self.injections[ifo] = gw.project(antenna_patterns=aps[ifo],
                                                   ifo=ifo, **p_kws)
+        # add signal to data
         for i, h in self.injections.items():
             self.data[i] = self.data[i] + h
         self.injection_parameters = all_kws
-        return gw
 
     def run(self, prior=False, **kws):
         """Fit model.
