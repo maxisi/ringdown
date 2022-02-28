@@ -126,6 +126,35 @@ class FrequencySeries(pd.Series):
         """Frequency stamps."""
         return self.index
 
+    def read(cls, path, kind=None, **kws):
+        kind = (kind or '').lower()
+        if not kind:
+            # attempt to guess filetype
+            ext = os.path.splitext(path)[1].lower().strip('.')
+            if ext in ['h5', 'hdf5', 'hdf']:
+                kind = 'hdf'
+            elif ext in ['txt', 'gz', 'dat', 'csv']:
+                kind = 'csv'
+            else:
+                raise ValueError("unrecognized extension: {}".format(ext))
+        if kind in ['hdf', 'csv']:
+            read_func = getattr(pd, 'read_{}'.format(kind))
+            # get list of arguments accepted by pandas read function in order
+            # to filter out extraneous arguments that should go to cls
+            read_vars = read_func.__code__.co_varnames
+            # define some defaults to ensure we get a Series and not a DataFrame
+            read_kws = dict(sep=None, index_col=0, squeeze=True)
+            if 'sep' in kws:
+                # gymnastics to be able to support `sep = \t` (e.g., when
+                # reading a config file)
+                kws['sep'] = kws['sep'].encode('raw_unicode_escape').decode('unicode_escape')
+            read_kws.update({k: v for k,v in kws.items() if k in read_vars})
+            cls_kws = {k: v for k,v in kws.items() if k not in read_vars}
+            return cls(read_func(path, **read_kws), **cls_kws)
+        else:
+            raise ValueError("unrecognized file kind: {}".format(kind))
+
+
 
 class Data(TimeSeries):
     """Container for time-domain strain data from a given GW detector.

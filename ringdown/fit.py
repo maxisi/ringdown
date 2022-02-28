@@ -1,5 +1,6 @@
 __all__ = ['Target', 'Fit', 'MODELS']
 
+import os
 import copy as cp
 from pylab import *
 from .data import *
@@ -11,6 +12,7 @@ import pkg_resources
 import arviz as az
 from ast import literal_eval
 from inspect import getfullargspec
+import configparser
 
 # def get_raw_time_ifo(tgps, raw_time, duration=None, ds=None):
 #     ds = ds or 1
@@ -71,6 +73,7 @@ class Fit(object):
     _compiled_models = {}
 
     def __init__(self, model='mchi', modes=None, **kws):
+        self.info = {}
         self.data = {}
         self.injections = {}
         self.acfs = {}
@@ -310,7 +313,6 @@ class Fit(object):
         fit : Fit
             Ringdown :class:`Fit` object.
         """
-        import configparser
         if isinstance(config_input, configparser.ConfigParser):
             config = config_input
         else:
@@ -325,23 +327,23 @@ class Fit(object):
         # create fit object
         fit = cls(config['model']['name'], modes=config['model']['modes'])
         # add priors
-        fit.update_prior(**{k: float(v) for k,v in config['prior'].items()})
+        prior = config['prior']
+        fit.update_prior(**{k: literal_eval(v) for k,v in prior.items()})
         if 'data' not in config:
             # the rest of the options require loading data, so if no pointer to
             # data was provided, just exit
             return fit
         # load data
-        # TODO: add ability to generate synthetic data here?
         ifo_input = config.get('data', 'ifos', fallback='')
-        ifos = [i.strip().strip('[').strip(']') for i in ifo_input.split(',')]
+        try:
+            ifos = literal_eval(ifo_input)
+        except (ValueError,SyntaxError):
+            ifos = [i.strip() for i in ifo_input.split(',')]
         path_input = config['data']['path']
         # NOTE: not popping in order to preserve original ConfigParser
-        used_keys = ['ifos', 'data', 'path']
+        used_keys = ['ifos', 'path']
         kws = {k: v for k,v in config['data'].items() if k not in used_keys}
-        for ifo in ifos:
-            i = '' if not ifo else ifo[0]
-            path = path_input.format(i=i, ifo=ifo)
-            fit.add_data(Data.read(path, ifo=ifo, **kws))
+        fit.load_data(path_input, ifos, **kws)
         # add target
         target = config['target']
         fit.set_target(**{k: literal_eval(v) for k,v in target.items()})
@@ -352,14 +354,65 @@ class Fit(object):
         # load or produce ACFs
         if config.get('acf', 'path', fallback=False):
             kws = {k: v for k,v in config['acf'].items() if k not in ['path']}
-            kws['header'] = kws.get('header', None)
-            for ifo in ifos:
-                p = config['acf']['path'].format(i=i, ifo=ifo)
-                fit.acfs[ifo] = AutoCovariance.read(p, **kws)
+            fit.load_acfs(config['acf']['path'], **kws)
         else:
             acf_kws = {} if 'acf' not in config else config['acf']
             fit.compute_acfs(**{k: try_float(v) for k,v in acf_kws.items()})
         return fit
+
+    def to_config(self, path=None):
+        """Create configuration file to reproduce this fit by calling
+        :meth:`Fit.from_config`.
+
+        .. note::
+            This will only result in a working configuration file if all 
+            data provenance information is available in :attr:`Fit.info`.
+            This field is automatically populated if the :meth:`Fit.load_data`
+            method is used to add data to fit.
+
+        Arguments
+        ---------
+        path : str
+            optional destination path for configuration file.
+
+        Returns
+        -------
+        config : configparser.ConfigParser
+            configuration file object.
+        """
+        config = configparser.ConfigParser()
+        # model options
+        config['model'] = {}
+        config['model']['name'] = self.model
+        if self.modes is None:
+            config['model']['modes'] = str(self.n_modes)
+        else:
+            config['model']['modes'] = str([tuple(m) for m in self.modes])
+        # prior options
+        config['prior'] = {}
+        for k, v in self.prior_settings.items():
+            try:
+                config['prior'][k] = str(float(v))
+            except TypeError:
+                config['prior'][k] = array2string(v, separator=', ')
+        # rest of options require data, so exit of none were added
+        if not self.ifos:
+            return config
+        # data, conditioning and acf options
+        for sec in ['data', 'condition', 'acf']:
+            config[sec] =  {k: str(v) for k,v in self.info.get(sec,{}).items()}
+        # target options
+        config['target'] = {k: str(v) for k,v in self.target._asdict().items()}
+        config['target']['duration'] = str(self.duration)
+        # write file to disk if requested
+        if path is not None:
+            with open(path, 'w') as f:
+                config.write(f)
+        return config
+
+    def update_info(self, section, **kws):
+        self.info[section] = self.info.get(section, {})
+        self.info[section].update(**kws)
 
     def copy(self):
         """Produce a deep copy of this `Fit` object.
@@ -380,9 +433,10 @@ class Fit(object):
         for k, d in self.data.items():
             t0 = self.start_times[k]
             new_data[k] = d.condition(t0=t0, **kwargs)
-
         self.data = new_data
         self.acfs = {} # Just to be sure that these stay consistent
+        # record conditioning settings
+        self.update_info('condition', **kwargs)
     condition_data.__doc__ += Data.condition.__doc__
 
     def inject(self, fast_projection=False, window='auto', **kws):
@@ -523,6 +577,44 @@ class Fit(object):
         if acf is not None:
             self.acfs[data.ifo] = acf
 
+    def load_data(self, path_input, ifos=None, **kws):
+        """Load data from disk.
+
+        Additional arguments are passed to :meth:`ringdown.data.Data.read`.
+
+        Arguments
+        ---------
+        path_input : dict, str
+            dictionary of data paths indexed by interferometer keys, or path
+            string replacement pattern, e.g.,
+            ``'path/to/{i}-{ifo}_GWOSC_16KHZ_R1-1126259447-32.hdf5'``
+            where `i` and `ifo` will be respectively replaced by the first
+            letter and key for each detector listed in `ifos` (e.g., `H` and
+            `H1` for LIGO Hanford).
+
+        ifos : list
+            list of detector keys (e.g., ``['H1', 'L1']``), not required 
+            if `path_input` is a dictionary.
+        """
+        # TODO: add ability to generate synthetic data here?
+        if isinstance(path_input, str):
+            try:
+                path_dict = literal_eval(path_input)
+            except (ValueError,SyntaxError):
+                if ifos is None:
+                    raise ValueError("must provide IFO list.")
+                path_dict = {}
+                for ifo in ifos:
+                    i = '' if not ifo else ifo[0]
+                    path_dict[ifo] = path_input.format(i=i, ifo=ifo)
+        else:
+            path_dict = path_input
+        path_dict = {k: os.path.abspath(v) for k,v in path_dict.items()}
+        for ifo, path in path_dict.items():
+            self.add_data(Data.read(path, ifo=ifo, **kws))
+        # record data provenance
+        self.update_info('data', path=path_dict, **kws)
+    
     def compute_acfs(self, shared=False, ifos=None, **kws):
         """Compute ACFs for all data sets in `Fit.data`.
 
@@ -546,6 +638,54 @@ class Fit(object):
         acf = self.data[ifos[0]].get_acf(**kws) if shared else None
         for ifo in ifos:
             self.acfs[ifo] = acf if shared else self.data[ifo].get_acf(**kws)
+        # record ACF computation options
+        self.update_info('acf', shared=shared, **kws)
+
+    def load_acfs(self, path_input, ifos=None, from_psd=False, **kws):
+        """Load autocovariances from disk. Can read in a PSD, instead of an
+        ACF, if using the `from_psd` argument.
+
+        Additional arguments are passed to
+        :meth:`ringdown.data.AutoCovariance.read` (or,
+        :meth:`ringdown.data.PowerSpectrum.read` if ``from_psd``).
+
+        Arguments
+        ---------
+        path_input : dict, str
+            dictionary of ACF paths indexed by interferometer keys, or path
+            string replacement pattern, e.g.,
+            ``'path/to/acf_{i}_{ifo}.dat'`` where `i` and `ifo` will be
+            respectively replaced by the first letter and key for each detector
+            listed in `ifos` (e.g., `H` and `H1` for LIGO Hanford).
+
+        ifos : list
+            list of detector keys (e.g., ``['H1', 'L1']``), not required 
+            if `path_input` is a dictionary.
+
+        from_psd : bool
+            read in a PSD and convert to ACF.
+        """
+        kws['header'] = kws.get('header', None)
+        if isinstance(path_input, str):
+            try:
+                path_dict = literal_eval(path_input)
+            except (ValueError,SyntaxError):
+                if ifos is None:
+                    ifos = self.ifos 
+                path_dict = {}
+                for ifo in ifos:
+                    i = '' if not ifo else ifo[0]
+                    path_dict[ifo] = path_input.format(i=i, ifo=ifo)
+        else:
+            path_dict = path_input
+        path_dict = {k: os.path.abspath(v) for k,v in path_dict.items()}
+        for ifo, p in path_dict.items():
+            if from_psd:
+                self.acfs[ifo] = PowerSpectrum.read(p, **kws).to_acf()
+            else:
+                self.acfs[ifo] = AutoCovariance.read(p, **kws)
+        # record ACF computation options
+        self.update_info('acf', path=path_dict, from_psd=from_psd, **kws)
 
     def set_tone_sequence(self, nmode, p=1, s=-2, l=2, m=2):
         """ Set template modes to be a sequence of overtones with a given
