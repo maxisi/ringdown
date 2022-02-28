@@ -67,6 +67,11 @@ class Fit(object):
         fit coefficients to be passed internally to Stan model.
     model_data : dict
         arguments passed to Stan model internally.
+    info : dict
+        information that can be used to reproduce a fit (e.g., data provenance,
+        or conditioning options), stored as dictionary of dictionaries whose
+        outer (inner) keys will be interpreted as sections (options) when
+        creating a configuration file through :meth:`Fit.to_config`.
     """
 
 
@@ -299,8 +304,9 @@ class Fit(object):
     def from_config(cls, config_input):
         """Creates a :class:`Fit` instance from a configuration file.
         
-        Has the ability to load and condition data, as well as to compute or
-        load ACFs. Does not run the fit automatically.
+        Has the ability to load and condition data, as well as to inject a
+        simualted signal and to compute or load ACFs. Does not run the fit
+        automatically.
 
         Arguments
         ---------
@@ -319,11 +325,14 @@ class Fit(object):
             config = configparser.ConfigParser()
             config.read(config_input)
         # utility function
-        def try_float(x):
+        def try_parse(x):
             try:
                 return float(x)
             except (TypeError,ValueError):
-                return x
+                try:
+                    return literal_eval(x)
+                except (TypeError,ValueError,SyntaxError):
+                    return x
         # create fit object
         fit = cls(config['model']['name'], modes=config['model']['modes'])
         # add priors
@@ -341,23 +350,27 @@ class Fit(object):
             ifos = [i.strip() for i in ifo_input.split(',')]
         path_input = config['data']['path']
         # NOTE: not popping in order to preserve original ConfigParser
-        used_keys = ['ifos', 'path']
-        kws = {k: v for k,v in config['data'].items() if k not in used_keys}
+        kws = {k: try_parse(v) for k,v in config['data'].items()
+                  if k not in ['ifos', 'path']}
         fit.load_data(path_input, ifos, **kws)
         # add target
-        target = config['target']
-        fit.set_target(**{k: literal_eval(v) for k,v in target.items()})
+        fit.set_target(**{k: try_parse(v) for k,v in config['target'].items()})
+        # inject signal if requested
+        if config.has_section('injection'):
+            inj_kws = {k: try_parse(v) for k,v in config['injection'].items()}
+            fit.inject(**inj_kws)
         # condition data if requested
         if config.has_section('condition'):
-            cond_kws = {k: try_float(v) for k,v in config['condition'].items()}
+            cond_kws = {k: try_parse(v) for k,v in config['condition'].items()}
             fit.condition_data(**cond_kws)
         # load or produce ACFs
         if config.get('acf', 'path', fallback=False):
-            kws = {k: v for k,v in config['acf'].items() if k not in ['path']}
+            kws = {k: try_parse(v) for k,v in config['acf'].items()
+                   if k not in ['path']}
             fit.load_acfs(config['acf']['path'], **kws)
         else:
             acf_kws = {} if 'acf' not in config else config['acf']
-            fit.compute_acfs(**{k: try_float(v) for k,v in acf_kws.items()})
+            fit.compute_acfs(**{k: try_parse(v) for k,v in acf_kws.items()})
         return fit
 
     def to_config(self, path=None):
@@ -381,6 +394,9 @@ class Fit(object):
             configuration file object.
         """
         config = configparser.ConfigParser()
+        # utility to format options in config
+        def form_opt(x):
+            return array2string(array(x), separator=', ')
         # model options
         config['model'] = {}
         config['model']['name'] = self.model
@@ -389,18 +405,13 @@ class Fit(object):
         else:
             config['model']['modes'] = str([tuple(m) for m in self.modes])
         # prior options
-        config['prior'] = {}
-        for k, v in self.prior_settings.items():
-            try:
-                config['prior'][k] = str(float(v))
-            except TypeError:
-                config['prior'][k] = array2string(v, separator=', ')
+        config['prior'] = {k:form_opt(v) for k,v in self.prior_settings.items()}
         # rest of options require data, so exit of none were added
         if not self.ifos:
             return config
-        # data, conditioning and acf options
-        for sec in ['data', 'condition', 'acf']:
-            config[sec] =  {k: str(v) for k,v in self.info.get(sec,{}).items()}
+        # data, injection, conditioning and acf options
+        for sec, opts in self.info.items():
+            config[sec] = {k: form_opt(v) for k,v in self.info[sec].items()}
         # target options
         config['target'] = {k: str(v) for k,v in self.target._asdict().items()}
         config['target']['duration'] = str(self.duration)
@@ -411,6 +422,26 @@ class Fit(object):
         return config
 
     def update_info(self, section, **kws):
+        """Update fit information stored in :attr:`Fit.info`, e.g., data
+        provenance or injection properties. If creating a config file through
+        :meth:`Fit.to_config`, `section` will operate as a name for a section
+        with options determined by the keyword arguments passed here.
+
+        Keyword arguments are stored as "options" for the given section,
+        e.g.,::
+
+            fit.update_info('data', path='path/to/{ifo}-data.h5')
+
+        adds an entry to ``fit.info`` like::
+        
+            {'data': {'path': 'path/to/{ifo}-data.h5')}}
+
+        Arguments
+        ---------
+        section : str
+            name of information category, e.g., `data`, `injection`,
+            `condition`. 
+        """
         self.info[section] = self.info.get(section, {})
         self.info[section].update(**kws)
 
@@ -507,7 +538,7 @@ class Fit(object):
         # add signal to data
         for i, h in self.injections.items():
             self.data[i] = self.data[i] + h
-        self.injection_parameters = all_kws
+        self.update_info('injection', **all_kws)
 
     def run(self, prior=False, **kws):
         """Fit model.

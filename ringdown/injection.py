@@ -176,7 +176,7 @@ class Ringdown(Signal):
         # each mode will be a sinusoid up to t0, then a damped sinusoid
         mode_args = [array(pars[k], ndmin=2) for k in cls._MODE_PARS]
         if modes:
-            if len(modes) > len(mode_args[0]):
+            if len(modes) > len(mode_args[0][0]):
                 raise ValueError("insufficient parameters provided")
         signal[mpost] = sum(cls.complex_mode(t[mpost]-t0, *mode_args), axis=1)
 
