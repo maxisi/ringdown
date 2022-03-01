@@ -106,6 +106,31 @@ class Ringdown(Signal):
         keys = ['a', 'ellip', 'theta', 'phi', 'omega', 'gamma']
         pars = {k: array(kws.pop(k), ndmin=ndmin) for k in list(kws.keys())
                 if k in keys}
+        # possibly interpret parameters as coming from a specific stan model
+        if 'model' in kws:
+            if kws['model'] == 'mchi_aligned':
+                # this assumes a template for the oscillatory part like
+                #     hp = (1 + cosi**2) * A * cos(wt - phi)
+                #     hc = 2*cosi * A * sin(wt - phi)
+                # in the parameterization adopted here, this corresponds to 
+                #     A = A*(1 + cosi**2), e = 2*cosi / (1 + cosi**2)
+                #     phi = phi, theta = 0
+                # the ellipticity is already computed within stan, but we need
+                # to readjust the definition of the amplitude and add theta
+                pars['cosi'] = array(kws.pop('cosi'), ndmin=ndmin)
+                pars['a'] = pars['a']*(1 + pars['cosi']**2)
+                kws['theta'] = zeros_like(pars['a'])
+                if 'ellip' not in kws:
+                    kws['ellip'] = 2*pars['cosi'] / (1 + pars['cosi']**2)
+            elif kws['model'] == 'ftau':
+                # this assumes a template for the oscillatory part like
+                #     hp = Ax*cos(wt) + Ay*sin(wt) = A*cos(wt - phi)
+                #     hc = 0
+                # with phi = atan2(Ay, Ax) and A = sqrt(Ax**2 + Ay**2)
+                # in the parameterization adopted here, this corresponds to
+                #     A = A, ellip = 0, theta = 0, phi = phi
+                kws['theta'] = zeros_like(pars['a'])
+                kws['ellip'] = zeros_like(pars['a'])
         # check if should obtain frequencies from remnant parameters
         if 'modes' in kws:
             if 'M' in kws:
@@ -190,7 +215,7 @@ class Ringdown(Signal):
             signal[mpre] = sum(cls.complex_mode(t[mpre]-t0, *mode_args),
                                axis=1)
         return cls(signal, index=time, parameters=pars, modes=modes)
-
+    
     def get_parameter(self, k, *args, **kwargs):
         k = k.lower()
         if k == 'f':
