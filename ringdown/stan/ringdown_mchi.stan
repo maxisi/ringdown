@@ -179,10 +179,12 @@ generated quantities {
   vector[nmode] Q = pi() * f .* tau;
   vector[nmode] phiR;
   vector[nmode] phiL;
-
+  vector[nmode] theta;
+  vector[nmode] phi;
   for (i in 1:nmode) {
     phiR[i] = atan2(-Acx[i] + Apy[i], Acy[i] + Apx[i]);
     phiL[i] = atan2(-Acx[i] - Apy[i], -Acy[i] + Apx[i]);
-
   }
+  theta = -0.5*(phiR + phiL);
+  phi = 0.5*(phiR - phiL);
 }

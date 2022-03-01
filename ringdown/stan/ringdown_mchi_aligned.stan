@@ -16,9 +16,9 @@ functions {
     return f;
   }
 
-  vector rd(vector t, real f, real gamma, real A, real cosi, real phi0, real Fp, real Fc) {
+  vector rd(vector t, real f, real gamma, real A, real cosi, real phi, real Fp, real Fc) {
     int n = rows(t);
-    vector[n] phase = 2*pi()*f*t - phi0;
+    vector[n] phase = 2*pi()*f*t - phi;
 
     /* could easily add polarization angle here */
     vector[n] p = (1 + cosi^2)*A*exp(-gamma*t).*cos(phase);
@@ -95,7 +95,7 @@ transformed parameters {
   // real cosi = cos(atan2(iota_unit[2], iota_unit[1]));
 
   vector[nmode] A;
-  real phi0[nmode];
+  real phi[nmode];
 
   for (i in 1:nobs) {
     drift[i] = exp(log_drift_unit[i]*drift_scale);
@@ -103,7 +103,7 @@ transformed parameters {
 
   for (i in 1:nmode) {
     A[i] = A_scale*sqrt(Ax_unit[i]^2 + Ay_unit[i]^2);
-    phi0[i] = atan2(Ay_unit[i], Ax_unit[i]);
+    phi[i] = atan2(Ay_unit[i], Ax_unit[i]);
   }
 
   {
@@ -133,7 +133,7 @@ transformed parameters {
     }
 
     for (j in 1:nmode) {
-      h_det_mode[i, j] = rd(times[i] - torigin, f[j], gamma[j], A[j], cosi, phi0[j], FpFc[i][1], FpFc[i][2]);
+      h_det_mode[i, j] = rd(times[i] - torigin, f[j], gamma[j], A[j], cosi, phi[j], FpFc[i][1], FpFc[i][2]);
       h_det[i] = h_det[i] + h_det_mode[i,j];
     }
   }
