@@ -14,6 +14,7 @@ setup(name='ringdown',
       license='MIT',
       packages=['ringdown'],
       package_data={'ringdown': ['stan/*.stan']},
+      scripts=['bin/ringdown_fit'],
       install_requires=[
             'Cython>=0.22',
             'arviz',
