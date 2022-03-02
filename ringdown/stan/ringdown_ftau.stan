@@ -54,8 +54,10 @@ transformed parameters {
   real gamma_logjac;
   vector[nsamp] h_det_mode[nobs,nmode];
   vector[nsamp] h_det[nobs];
+  vector[nmode] A;
 
   for (i in 1:nobs) {
+    A[i] = sqrt(Ax[i]*Ax[i] + Ay[i]*Ay[i]);
     drift[i] = exp(log_drift_unit[i]*drift_scale);
   }
 
@@ -111,10 +113,8 @@ model {
 generated quantities {
   vector[nmode] tau = 1.0 ./ gamma;
   vector[nmode] Q = pi()* f .* tau;
-  vector[nmode] A;
   vector[nmode] phi;
   for (i in 1:nmode) {
     phi[i] = atan2(Ay[i], Ax[i]);
-    A[i] = sqrt(Ax[i]*Ax[i] + Ay[i]*Ay[i]);
   }
 }
