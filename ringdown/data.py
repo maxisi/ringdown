@@ -8,6 +8,7 @@ import scipy.linalg as sl
 import pandas as pd
 import h5py
 import os
+import logging
 
 # def get_raw_time_ifo(tgps, raw_time, duration=None, ds=None):
 #     ds = ds or 1
@@ -85,6 +86,9 @@ class TimeSeries(pd.Series):
                 kws['sep'] = kws['sep'].encode('raw_unicode_escape').decode('unicode_escape')
             read_kws.update({k: v for k,v in kws.items() if k in read_vars})
             cls_kws = {k: v for k,v in kws.items() if k not in read_vars}
+            if kind == 'csv' and 'float_precision' not in read_kws:
+                logging.warning("specify `float_precision='round_trip'` or risk "
+                                "strange errors due to precission loss")
             return cls(read_func(path, **read_kws), **cls_kws)
         else:
             raise ValueError("unrecognized file kind: {}".format(kind))
@@ -150,6 +154,9 @@ class FrequencySeries(pd.Series):
                 kws['sep'] = kws['sep'].encode('raw_unicode_escape').decode('unicode_escape')
             read_kws.update({k: v for k,v in kws.items() if k in read_vars})
             cls_kws = {k: v for k,v in kws.items() if k not in read_vars}
+            if kind == 'csv' and 'float_precision' not in read_kws:
+                logging.warning("specify `float_precision='round_trip'` or risk "
+                                "strange errors due to precission loss")
             return cls(read_func(path, **read_kws), **cls_kws)
         else:
             raise ValueError("unrecognized file kind: {}".format(kind))
@@ -217,8 +224,8 @@ class Data(TimeSeries):
         cond_data : Data
             conditioned data object.
         """
-        raw_data = self
-        raw_time = self.index
+        raw_data = self.values
+        raw_time = self.index.values
 
         decimate_kws = decimate_kws or {}
 
