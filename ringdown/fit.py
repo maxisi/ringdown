@@ -94,7 +94,6 @@ class Fit(object):
         self.prior = None
         self._duration = None
         self._n_analyze = None
-        self.injection_parameters = {}
         # set modes dynamically
         self._nmodes = None
         self.modes = None
@@ -118,6 +117,10 @@ class Fit(object):
             else:
                 raise ValueError('unrecognized model %r' % self.model)
         return self._compiled_models[self.model]
+    
+    @property
+    def injection_parameters(self) -> dict:
+        return self.info.get('injection', {})
 
     def compile(self, verbose=False, force=False):
         """ Compile `Stan` model.
@@ -470,16 +473,13 @@ class Fit(object):
         self.update_info('condition', **kwargs)
     condition_data.__doc__ += Data.condition.__doc__
 
-    def inject(self, fast_projection=False, window='auto', **kws):
-        """Add simulated signal to data, and records it in
-        :attr:`ringdown.fit.Fit.injections`.
+    def get_templates(self, fast_projection=False, window='auto', **kws):
+        """Produce templates at each detector for a given set of ringdown
+        parameters. Can be used to generate waveforms from model samples.
 
         Additional arguments are passed to 
         :meth:`ringdown.injection.Ringdown.from_parameters` and
         :meth:`ringdown.injection.Ringdown.project`.
-
-        .. warning::
-          This overwrites data stored in in :attr:`ringdown.fit.Fit.data`.
 
         Arguments
         ---------
@@ -516,29 +516,49 @@ class Fit(object):
         for k in ['ra', 'dec', 'psi']:
             p_kws[k] = p_kws.get(k, self.target._asdict()[k])
 
+        # some models allow for a `dts` parameter which shift t0 for detectors
+        # other than the first (i.e., a relative shift wrt the first detector)
+        dts = dict(zip(self.ifos[1:], kws.get('dts', zeros(len(self.ifos)-1))))
+
         if fast_projection:
             # evaluate GW polarizations once and timeshift for each detector
-            s_kws['t0'] = all_kws.get('t0', self.t0)
+            s_kws['t0'] = p_kws.pop('t0', self.t0)
             p_kws['delay'] = 'from_geo'
             # get baseline signal (by default at geocenter)
             t = self.data[self.ifos[0]].time.values
             gw = injection.Ringdown.from_parameters(t, **s_kws)
             # project onto each detector
-            self.injections = {i: gw.project(antenna_patterns=aps.get(i, None),
-                                             ifo=i, **p_kws)
-                               for i in self.ifos}
+            injections = {i: gw.project(antenna_patterns=aps.get(i, None),
+                                        t0=s_kws['t0'] + dts.get(i, 0),
+                                        ifo=i, **p_kws) for i in self.ifos}
         else:
             # revaluate the template from scratch for each detector
             p_kws['delay'] = 'from_geo' if 't0' in all_kws else None
+            injections = {}
             for ifo, d in self.data.items():
-                s_kws['t0'] = all_kws.get('t0', self.start_times[ifo])
+                s_kws['t0'] = all_kws.get('t0', self.start_times[ifo] +
+                                                dts.get(ifo, 0))
                 gw = injection.Ringdown.from_parameters(d.time.values, **s_kws)
-                self.injections[ifo] = gw.project(antenna_patterns=aps[ifo],
-                                                  ifo=ifo, **p_kws)
-        # add signal to data
+                injections[ifo] = gw.project(antenna_patterns=aps[ifo],
+                                             ifo=ifo, **p_kws)
+        return injections
+
+    def inject(self, **kws):
+        """Add simulated signal to data, and records it in
+        :attr:`ringdown.fit.Fit.injections`.
+
+        .. warning::
+          This method overwrites data stored in in :attr:`Fit.data`.
+
+        Arguments are passed to :meth:`Fit.get_templates`, whose documentation
+        is reproduced below.
+
+        """
+        self.injections = self.get_templates(**kws)
         for i, h in self.injections.items():
             self.data[i] = self.data[i] + h
-        self.update_info('injection', **all_kws)
+        self.update_info('injection', **kws)
+    inject.__doc__ += get_templates.__doc__
 
     def run(self, prior=False, **kws):
         """Fit model.

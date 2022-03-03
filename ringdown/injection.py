@@ -117,7 +117,7 @@ class Ringdown(Signal):
                 #     phi = phi, theta = 0
                 # the ellipticity is already computed within stan, but we need
                 # to readjust the definition of the amplitude and add theta
-                pars['cosi'] = array(kws.pop('cosi'), ndmin=ndmin)
+                pars['cosi'] = kws.pop('cosi')*ones_like(pars['a'])
                 pars['a'] = pars['a']*(1 + pars['cosi']**2)
                 kws['theta'] = zeros_like(pars['a'])
                 if 'ellip' not in kws:
@@ -131,8 +131,9 @@ class Ringdown(Signal):
                 #     A = A, ellip = 0, theta = 0, phi = phi
                 kws['theta'] = zeros_like(pars['a'])
                 kws['ellip'] = zeros_like(pars['a'])
-        # check if should obtain frequencies from remnant parameters
-        if 'modes' in kws:
+        # obtain frequencies from remnant parameters if necessary
+        freq_keys = ['omega', 'gamma', 'f', 'tau']
+        if 'modes' in kws and not any([k in kws for k in freq_keys]):
             if 'M' in kws:
                 kws['m'] = kws.pop('M')
             kws['approx'] = kws.get('approx', False)
@@ -143,12 +144,10 @@ class Ringdown(Signal):
                 kws['f'].append(f)
                 kws['tau'].append(tau)
         # frequency parameters
-        if 'f' in kws:
-            pars['omega'] = pars.get('omega', 2*pi*array(kws.pop('f'),
-                                                         ndmin=ndmin))
-        if 'tau' in kws:
-            pars['gamma'] = pars.get('gamma', 1/array(kws.pop('tau'),
-                                                      ndmin=ndmin))
+        if 'f' in kws and 'omega' not in kws:
+            pars['omega'] = 2*pi*array(kws.pop('f'), ndmin=ndmin)
+        if 'tau' in kws and 'gamma' not in kws:
+            pars['gamma'] = 1/array(kws.pop('tau'), ndmin=ndmin)
         # phase parameters
         if 'phip' in kws and 'phim' in kws:
             theta, phi = Ringdown._theta_phi_from_phip_phim(kws['phip'],
@@ -177,11 +176,17 @@ class Ringdown(Signal):
 
     @classmethod
     def from_parameters(cls, time, t0=0, window=inf, two_sided=True, df_pre=0,
-                        dtau_pre=0, **kws):
+                        dtau_pre=0, mode_isel=None, **kws):
         """Create injection: a sinusoid up to t0, then a damped sinusoiud. The
         (A_pre, df_pre, dtau_pre) parameters can turn the initial sinusoid into
         a sinegaussian, to produce a ring-up.  Can incorporate several modes,
         if (A, phi0, f, tau) are 1D.
+
+        Arguments
+        ---------
+        mode_isel : list, int
+            index or indices of modes to include in template; if `None` 
+            includes all modes (default).
         """
         # parse arguments
         all_kws = {k: v for k,v in locals().items() if k not in ['cls','time']}
@@ -199,20 +204,21 @@ class Ringdown(Signal):
         mpost = (time >= t0) & (time < t0 + 0.5*window) 
 
         # each mode will be a sinusoid up to t0, then a damped sinusoid
-        mode_args = [array(pars[k], ndmin=2) for k in cls._MODE_PARS]
+        if mode_isel == None:
+            mode_isel = slice(None)
+        margs = {k: array(pars[k][mode_isel], ndmin=2) for k in cls._MODE_PARS}
         if modes:
             if len(modes) > len(mode_args[0][0]):
                 raise ValueError("insufficient parameters provided")
-        signal[mpost] = sum(cls.complex_mode(t[mpost]-t0, *mode_args), axis=1)
+        signal[mpost] = sum(cls.complex_mode(t[mpost]-t0, *margs.values()),
+                            axis=1)
 
         # add a damping to the amplitude near t0 for t < t0
         if two_sided:
-            pars_pre = pars.copy()
-            pars_pre['omega'] = pars_pre['omega']*exp(df_pre)
-            pars_pre['gamma'] = -pars_pre['gamma']*exp(-dtau_pre)
-            mode_args = [array(pars_pre[k], ndmin=2) for k in cls._MODE_PARS]
+            margs['omega'] = margs['omega']*exp(df_pre)
+            margs['gamma'] = -margs['gamma']*exp(-dtau_pre)
             mpre = (time < t0) & (time > t0 - 0.5*window)
-            signal[mpre] = sum(cls.complex_mode(t[mpre]-t0, *mode_args),
+            signal[mpre] = sum(cls.complex_mode(t[mpre]-t0, *margs.values()),
                                axis=1)
         return cls(signal, index=time, parameters=pars, modes=modes)
     
