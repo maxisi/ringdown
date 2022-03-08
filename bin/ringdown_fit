@@ -39,6 +39,8 @@ parser.add_argument('config', help="path to configuration file")
 parser.add_argument('-o', '--output', default=None,
                     help="output result path (def. {}).".format(DEFOUT))
 parser.add_argument('--prior', action='store_true', help="sample from prior")
+parser.add_argument('--force', action='store_true',
+                    help="overwrites output file if it already exists")
 parser.add_argument('-v', '--verbose', action='store_true')
 
 args = parser.parse_args()
@@ -66,6 +68,16 @@ else:
     run_kws = {}
 run_kws['prior'] = args.prior or run_kws.get('prior', False)
 
+if run_kws['prior']:
+    DEFOUT = DEFOUT.replace('fit', 'prior')
+out = args.output or DEFOUT
+
+if os.path.exists(out):
+    if args.force:
+        logging.warning("overwriting output file: {}".format(out))
+    else:
+        raise FileExistsError("output file already exists: {}".format(out))
+
 ##############################################################################
 # RUN FIT
 ##############################################################################
@@ -74,16 +86,14 @@ fit = rd.Fit.from_config(config)
 fit.run(**run_kws)
 
 if run_kws['prior']:
-    DEFOUT = DEFOUT.replace('fit', 'prior')
     result = fit.prior
 else:
     result = fit.result
 
-out = args.output or DEFOUT
 ext = os.path.splitext(out)[-1]
 if ext.lower() == '.nc':
     result.to_netcdf(out)
 else:
-    result.to_netjson(out)
+    result.to_json(out)
 
 print("Saved ringdown fit: {}".format(out))
