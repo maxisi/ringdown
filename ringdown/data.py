@@ -294,24 +294,30 @@ class PowerSpectrum(FrequencySeries):
         return PowerSpectrum
 
     @classmethod
-    def from_data(self, data, f_low=None, **kws):
+    def from_data(self, data, flow=None, **kws):
+        simple = kws.pop('simple', True)
         fs = kws.pop('fs', 1/getattr(data, 'delta_t', 1))
         kws['nperseg'] = kws.get('nperseg', fs)  # default to 1s segments
         freq, psd = sig.welch(data, fs=fs, **kws)
         p = PowerSpectrum(psd, index=freq)
-        if f_low:
-            p.flatten(f_low, inplace=True)
+        if flow:
+            p.flatten(flow, simple=simple, inplace=True)
         return p
 
-    def flatten(self, f_low, inplace=False):
+    def flatten(self, flow, simple=True, inplace=False):
         freq = self.freq
-        if not inplace:
+        if inplace:
+            psd = self
+        else:
             psd = self.copy()
-        fref = freq[freq >= f_low][0]
-        psd_ref = self[argmin(abs(freq - fref))]
-        def get_low_freqs(f):
-            return psd_ref + psd_ref*(fref-f)*np.exp(-(fref-f))/3
-        psd[freq < f_low] = get_low_freqs(freq[freq < f_low])
+        fref = freq[freq >= flow][0]
+        psd_ref = self[fref]
+        def get_low_freqs(f, simple):
+            if simple:
+                return psd_ref
+            else:
+                return psd_ref + psd_ref*(fref-f)*np.exp(-(fref-f))/3
+        psd[freq < flow] = get_low_freqs(freq[freq < flow], simple)
         if not inplace:
             return psd
 

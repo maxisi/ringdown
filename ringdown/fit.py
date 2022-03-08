@@ -325,6 +325,8 @@ class Fit(object):
         if isinstance(config_input, configparser.ConfigParser):
             config = config_input
         else:
+            if not os.path.exists(config_input):
+                raise FileNotFoundError(config_input)
             config = configparser.ConfigParser()
             config.read(config_input)
         # utility function
@@ -876,6 +878,10 @@ class Fit(object):
             self._duration = duration
         elif n_analyze:
             self._n_analyze = int(n_analyze)
+        # make sure that start times are encompassed by data
+        for i, t0_i in self.start_times.items():
+            if t0_i < self.data[i].time[0] or t0_i > self.data[i].time[-1]:
+                raise ValueError("{} start time not in data".format(i))
 
     # TODO: warn or fail if self.results is not None?
     def update_target(self, **kws):
@@ -921,6 +927,11 @@ class Fit(object):
         """
         i0_dict = {}
         if self.has_target:
+            # make sure that start times are encompassed by data
+            for i, t0_i in self.start_times.items():
+                if t0_i < self.data[i].time[0] or t0_i > self.data[i].time[-1]:
+                    raise ValueError("{} start time not in data".format(i))
+            # find sample closest to requested start time
             for ifo, d in self.data.items():
                 t0 = self.start_times[ifo]
                 i0_dict[ifo] = argmin(abs(d.time - t0))
