@@ -1,9 +1,11 @@
-__all__ = ['Signal', 'Ringdown', 'simulated_template']
+__all__ = ['Signal', 'Ringdown', 'simulated_template', 'IMR']
 
 from pylab import *
 import lal
 from .data import *
+from .peak import *
 from . import qnms
+import pandas as pd
 from scipy.interpolate import interp1d
 from inspect import getfullargspec
 
@@ -74,6 +76,247 @@ class Signal(TimeSeries):
                 h = hint(self.time + dt)
             h = np.roll(h, idt)
         return Data(h, ifo=ifo, index=self.time)
+
+    def interpolate(self, times=None, t0=None, duration=None, fsamp=None):
+        """
+        Arguments
+        ---------
+        times : list or numpy array or pd.Series
+            array of GPS times (seconds) to label the times
+        t0 : float
+            instead of an array of times, one can provide the start time t0
+            at geocenter, the duration or/and the sample rate. If both this and
+            times is provided then this takes the duration and fsamp from the times
+            array and sets the t0 to be the initial one
+
+        duration: float
+            duration of the new interpolated signal
+        fsamp: float
+            sample rate of the new interpolated signal
+        """
+        if times is None:
+            # Set default values if needed
+            t0 = t0 or self.time.min()
+            duration = duration or (self.time.max() - t0)
+            fsamp = fsamp or self.fsamp
+
+            # Find Number of points
+            # +1 because int(round(duration*fsamp)) counts the number of intervals
+            N = int(round(duration*fsamp)) + 1
+
+            # Create the timing array
+            times = np.arange(N)/fsamp + t0
+
+            # Make sure we don't include points outside of the index
+            if times.max() > self.time.max():
+                times = times[times <= self.time.max()]
+        elif t0 is not None:
+            # Use the times array for the delta_t and duration, but set 
+            # the t0 provided
+            times = times - times[0] + t0
+
+            
+
+        # Interpolate to the new times
+        hp_interp_func = interp1d(self.time, self.hp.values, kind='cubic', fill_value=0, bounds_error=False);
+        hc_interp_func = interp1d(self.time, self.hc.values, kind='cubic', fill_value=0, bounds_error=False);
+        hp_interp = hp_interp_func(times)
+        hc_interp = hc_interp_func(times)
+        signal_val = hp_interp - 1j*hc_interp
+
+        # Set up the parameters for a new copy of this object
+        kwargs = {'index': times}
+        for keyword in self._metadata:
+            kwargs[keyword] = getattr(self, keyword, None)
+
+        return self._constructor(signal_val, **kwargs)
+
+    def plot(self):
+        """
+        Plot the function's hp and hc components.
+        Remember that the value of this timeseries is h = hp -1j*hc
+        """
+        fig,ax = subplots(1)
+        ax.plot(self.time, self.hp,label="hp")
+        ax.plot(self.time, self.hc, label="hc")
+        legend(loc='best')
+        show()
+
+
+class IMR(Signal):
+    _metadata = ['parameters','posterior_sample', 't_dict']
+
+    def __init__(self, *args, posterior_sample=None, t_dict=None, **kwargs):
+        if isinstance(posterior_sample,pd.DataFrame):
+            posterior_sample = posterior_sample.squeeze().to_dict()
+
+        super(IMR, self).__init__(*args, **kwargs)
+        self.posterior_sample = posterior_sample
+        self.t_dict = t_dict
+
+    @classmethod
+    def from_posterior(cls, posterior_sample, wf=None, dt=(1/4096),
+                            interpolation_times=None):
+        """
+        Constructs the IMR signal from a posterior sample
+
+        Arguments
+        ---------
+        posterior_sample : dataframe or dictionary
+            contains one particular posterior sample, with sky location
+            and geocent_time
+        wf : int
+            One can provide a particular waveform code they would like to run
+            with
+        dt: float
+            duration of the new interpolated signal
+        interpolation_times: dictionary of time arrays for each ifo
+            if there is a dictionary of times for each detector, this will
+            interpolate at each ifo
+        """
+        if isinstance(posterior_sample,pd.DataFrame) or isinstance(posterior_sample,pd.Series):
+            posterior_sample = posterior_sample.squeeze().to_dict()
+
+        if not isinstance(posterior_sample, dict):
+            raise ValueError("Expected posterior_sample to be a dict or a one-row pandas DataFrame or Series")
+
+        if wf is None:
+            wf = int(posterior_sample['waveform_code'])
+
+        waveform_dt = dt
+
+        t_peak, t_dict, hp,hc = complex_strain_peak_time_td(posterior_sample, wf=wf,
+                                                                 dt=dt, f_low=20., f_ref=20.)
+        signal_dict = {}
+        # At Geocent
+        geocent_time = posterior_sample['geocent_time']
+        ts_geocent = (np.arange(len(hp.data.data)))*waveform_dt + float(hp.epoch) + geocent_time
+        hpdf = Data(hp.data.data,index=ts_geocent)
+        hcdf = Data(hc.data.data,index=ts_geocent)
+        signal_dict['geocent'] = {'hp': hpdf,'hc': hcdf}
+
+        # Get Times
+        tgps = lal.LIGOTimeGPS(geocent_time)
+        gmst = lal.GreenwichMeanSiderealTime(tgps)
+            
+        params = posterior_sample.copy()
+        params.update({(k+'_peak'):v for k,v in t_dict.items()})
+        params['t0'] = t_peak
+
+        main = hpdf - 1j*hcdf
+        result = cls(main, index=ts_geocent, posterior_sample=posterior_sample, 
+                            parameters=params, t_dict=t_dict)
+            
+        return result
+
+    @property
+    def _constructor(self):
+        return IMR
+
+    @property
+    def projections(self):
+        return {ifo: getattr(self,ifo) for ifo in ['H1','L1','V1']}
+
+    def project_with_timeshift(self, ifo):
+        """
+        Given a detector name, it projects the signal onto that
+        interferometer so that:
+
+            h = Fp*hp + Fc*hc
+            t = t + detectortimedelay
+
+        This makes sure that if we have a signal that starts at
+        the geocent signal peak, then the projected signal start
+        time corresponds to the geocent signal peak time delayed 
+        to H1 (a.k.a H1_peak)
+
+
+        Arguments
+        ---------
+        ifo : str, one of 'H1','L1' or 'V1'
+            name of the interferometer you would like to project to
+        """
+        tgps = lal.LIGOTimeGPS(self.t0)
+        gmst = lal.GreenwichMeanSiderealTime(tgps)
+        det = lal.cached_detector_by_prefix[ifo]
+
+        if self.posterior_sample is not {}:
+            ra = self.posterior_sample['ra']
+            dec = self.posterior_sample['dec']
+            psi = self.posterior_sample['psi']
+        else:
+            raise KeyError("Posterior Samples haven't been filled into this object")
+
+        # Get patterns and timedelay
+        Fp, Fc = lal.ComputeDetAMResponse(det.response, ra, dec, psi, gmst)
+        timedelay = lal.TimeDelayFromEarthCenter(det.location,  ra, dec, tgps)
+
+        # Get new time detector time index
+        ts_detector = self.time + timedelay
+
+        # Construct the data objects and use the antenna_patterns to project
+        hpdf = Data(self._hp, index=ts_detector,ifo=ifo)
+        hcdf = Data(self._hc, index=ts_detector, ifo=ifo)
+        signal = Fp*hpdf + Fc*hcdf
+        return signal
+
+    @property
+    def H1(self):
+        """
+        Finds the signal at H1
+        """ 
+        return self.project_with_timeshift('H1')
+
+    @property
+    def L1(self):
+        """
+        Finds the signal at L1
+        """
+        return self.project_with_timeshift('L1')
+
+    @property
+    def V1(self):
+        """
+        Finds the signal at V1
+        """
+        return self.project_with_timeshift('V1')
+
+    def whitened_projections(self, acfs, interpolate_data=True):
+        """
+        Whitens the data after projecting onto detectors
+        based on the passed acf dictionary
+
+        Returns: A dictionary of Data objects labelled by detectors
+        where the data is whitened by the corresponding acf provided
+
+        Arguments
+        ---------
+        acfs : dict 
+            dict must have key value pairs: {ifo: AutocorrelationFunction}
+
+        interpolate_data: bool (default=True)
+            Interpolates the data to the sample rate of the PSD so that
+            whitening can take place
+
+        """
+        whitened = {}
+
+        for ifo, acf in acfs.items():
+            data = getattr(self,ifo)
+            if interpolate_data:
+                # Interpolate to the new sample rate 
+                # (rest of the things remain the same)
+                duration = data.time.max() - data.time.min()
+                data = data.interpolate(times=acf.time[acf.time <= duration], t0=data.time[0])
+            else:
+                if acf.delta_t != data.delta_t:
+                    raise ValueError("""The data delta_t doesnot match the delta_t of the acf.
+                                        If you would like to interpolate the signal, then
+                                        set interpolate_data=True as a kwarg of this function""")
+            whitened[ifo] = acf.whiten(data)
+
+        return whitened
+
 
 
 class Ringdown(Signal):
