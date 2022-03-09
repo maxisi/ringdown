@@ -215,6 +215,21 @@ class IMR(Signal):
 
     @property
     def projections(self):
+        """
+        A dictionary of projections onto each detector.
+
+        Returns
+        --------
+        dict with the key value pairing {ifo : Data ...}
+
+        Note
+        ---------
+        This method projects with a timeshift, which means that
+        the time index of the projection will be shifted with respect
+        to the Signal time index so that there is an element by element
+        correspondence between the Signal values and the projected Data
+        values.
+        """
         return {ifo: getattr(self,ifo) for ifo in ['H1','L1','V1']}
 
     def project_with_timeshift(self, ifo):
@@ -235,6 +250,14 @@ class IMR(Signal):
         ---------
         ifo : str, one of 'H1','L1' or 'V1'
             name of the interferometer you would like to project to
+
+        Note
+        ---------
+        This method projects with a timeshift, which means that
+        the time index of the projection will be shifted with respect
+        to the Signal time index so that there is an element by element
+        correspondence between the Signal values and the projected Data
+        values.
         """
         tgps = lal.LIGOTimeGPS(self.t0)
         gmst = lal.GreenwichMeanSiderealTime(tgps)

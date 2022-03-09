@@ -228,7 +228,7 @@ class Fit(object):
                 cosi_max=1,
                 flat_A=0
             ))
-        elif self.model == 'mchi_shifted':
+        elif self.model == 'mchi_charged':
              default.update(dict(
                  M_min=None,
                  M_max=None,
