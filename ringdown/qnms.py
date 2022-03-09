@@ -12,6 +12,10 @@ ModeIndex = namedtuple('ModeIndex', ['p', 's', 'l', 'm', 'n'])
 def construct_mode_list(modes):
     if modes is None:
         modes = []
+    elif isinstance(modes, str):
+        # assume modes is a string like "(p0,s0,l0,m0,n0),(p1,s1,l1,m1,n1)"
+        from ast import literal_eval
+        modes = literal_eval(modes)
     mode_list = []
     for (p, s, l, m, n) in modes:
         mode_list.append(ModeIndex(p, s, l, m, n))

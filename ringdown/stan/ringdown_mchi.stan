@@ -49,6 +49,8 @@ data {
 
   real A_scale;
 
+  real drift_scale;
+
   real dt_min;
   real dt_max;
 
@@ -64,6 +66,7 @@ data {
 }
 
 parameters {
+  real log_drift_unit[nobs];
   real<lower=M_min, upper=M_max> M;
   real<lower=chi_min, upper=chi_max> chi;
 
@@ -79,6 +82,7 @@ parameters {
 }
 
 transformed parameters {
+  real drift[nobs];
   vector[nmode] gamma;
   vector[nmode] f;
   vector[nsamp] h_det_mode[nobs,nmode];
@@ -91,6 +95,10 @@ transformed parameters {
 
   vector[nmode] A;
   vector[nmode] ellip;
+
+  for (i in 1:nobs) {
+    drift[i] = exp(log_drift_unit[i]*drift_scale);
+  }
 
   for (i in 1:nmode) {
     Apx[i] = A_scale*Apx_unit[i];
@@ -114,32 +122,37 @@ transformed parameters {
   }
 
   if ((flat_A_ellip) && (only_prior)) {
-      for (i in 1:nmode-1) {
-          if (A[i] > A_scale) reject("A", i, " > A_scale");
+      for (i in 1:nmode) {
+          if (A[i] > 2*A_scale) reject("A", i-1, " > 2*A_scale");
       }
   }
 
-  for (i in 1:nobs) {
-    real torigin;
-    h_det[i] = rep_vector(0.0, nsamp);
+  if ( only_prior == 0 ) {
+    for (i in 1:nobs) {
+      real torigin;
+      h_det[i] = rep_vector(0.0, nsamp);
 
-    if (i > 1) {
-      torigin = t0[i] + dts[i-1];
-    } else {
-      torigin = t0[i];
-    }
+      if (i > 1) {
+        torigin = t0[i] + dts[i-1];
+      } else {
+        torigin = t0[i];
+      }
 
     for (j in 1:nmode) {
       h_det_mode[i, j] = rd(times[i] - torigin, f[j], gamma[j], Apx[j], Apy[j], Acx[j], Acy[j], FpFc[i][1], FpFc[i][2]);
       h_det[i] = h_det[i] + h_det_mode[i,j];
     }
   }
+  }
 }
 
 model {
+  /* drift ~ lognormal(0, drift_scale) */
+  log_drift_unit ~ std_normal();
+
   /* Amplitude prior */
   if (flat_A_ellip) {
-      for (i in 1:nobs) {
+      for (i in 1:nmode) {
         target += -3*log(A[i]) - log1m(ellip[i]^2);
       }
   } else {
@@ -156,7 +169,7 @@ model {
   /* Likelihood */
   if ( only_prior == 0 ) {
       for (i in 1:nobs) {
-        strain[i] ~ multi_normal_cholesky(h_det[i], L[i]);
+        strain[i] ~ multi_normal_cholesky(h_det[i], drift[i]*L[i]);
       }
   }
 }
@@ -166,10 +179,12 @@ generated quantities {
   vector[nmode] Q = pi() * f .* tau;
   vector[nmode] phiR;
   vector[nmode] phiL;
-
+  vector[nmode] theta;
+  vector[nmode] phi;
   for (i in 1:nmode) {
     phiR[i] = atan2(-Acx[i] + Apy[i], Acy[i] + Apx[i]);
     phiL[i] = atan2(-Acx[i] - Apy[i], -Acy[i] + Apx[i]);
-
   }
+  theta = -0.5*(phiR + phiL);
+  phi = 0.5*(phiR - phiL);
 }

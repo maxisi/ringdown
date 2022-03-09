@@ -16,9 +16,9 @@ functions {
     return f;
   }
 
-  vector rd(vector t, real f, real gamma, real A, real cosi, real phi0, real Fp, real Fc) {
+  vector rd(vector t, real f, real gamma, real A, real cosi, real phi, real Fp, real Fc) {
     int n = rows(t);
-    vector[n] phase = 2*pi()*f*t - phi0;
+    vector[n] phase = 2*pi()*f*t - phi;
 
     /* could easily add polarization angle here */
     vector[n] p = (1 + cosi^2)*A*exp(-gamma*t).*cos(phase);
@@ -50,6 +50,8 @@ data {
   real chi_max;
 
   real A_scale;
+  
+  real drift_scale;
 
   real cosi_min;
   real cosi_max;
@@ -69,6 +71,7 @@ data {
 }
 
 parameters {
+  real log_drift_unit[nobs];
   real<lower=M_min, upper=M_max> M;
   real<lower=chi_min, upper=chi_max> chi;
   real<lower=cosi_min, upper=cosi_max> cosi;
@@ -84,6 +87,7 @@ parameters {
 }
 
 transformed parameters {
+  real drift[nobs];
   vector[nmode] gamma;
   vector[nmode] f;
   vector[nsamp] h_det_mode[nobs,nmode];
@@ -91,10 +95,15 @@ transformed parameters {
   // real cosi = cos(atan2(iota_unit[2], iota_unit[1]));
 
   vector[nmode] A;
-  real phi0[nmode];
+  real phi[nmode];
+
+  for (i in 1:nobs) {
+    drift[i] = exp(log_drift_unit[i]*drift_scale);
+  }
+
   for (i in 1:nmode) {
     A[i] = A_scale*sqrt(Ax_unit[i]^2 + Ay_unit[i]^2);
-    phi0[i] = atan2(Ay_unit[i], Ax_unit[i]);
+    phi[i] = atan2(Ay_unit[i], Ax_unit[i]);
   }
 
   {
@@ -108,7 +117,7 @@ transformed parameters {
   }
 
   if ((flat_A) && (only_prior)) {
-      for (i in 1:nmode-1) {
+      for (i in 1:nmode) {
           if (A[i] > A_scale) reject("A", i, " > A_scale");
       }
   }
@@ -124,16 +133,19 @@ transformed parameters {
     }
 
     for (j in 1:nmode) {
-      h_det_mode[i, j] = rd(times[i] - torigin, f[j], gamma[j], A[j], cosi, phi0[j], FpFc[i][1], FpFc[i][2]);
+      h_det_mode[i, j] = rd(times[i] - torigin, f[j], gamma[j], A[j], cosi, phi[j], FpFc[i][1], FpFc[i][2]);
       h_det[i] = h_det[i] + h_det_mode[i,j];
     }
   }
 }
 
 model {
+  /* drift[i] ~ lognormal(0, drift_scale); */
+  log_drift_unit ~ std_normal();
+
   /* Amplitude prior */
   if (flat_A) {
-      for (i in 1:nobs) {
+      for (i in 1:nmode) {
         target += -log(A[i]);
       }
   } else {
@@ -148,7 +160,7 @@ model {
   /* Likelihood */
   if ( only_prior == 0 ) {
       for (i in 1:nobs) {
-        strain[i] ~ multi_normal_cholesky(h_det[i], L[i]);
+        strain[i] ~ multi_normal_cholesky(h_det[i], drift[i]*L[i]);
       }
   }
 }
