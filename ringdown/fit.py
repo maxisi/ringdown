@@ -23,7 +23,7 @@ import configparser
 
 Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 
-MODELS = ('ftau', 'mchi', 'mchi_aligned', 'mchi_shifted')
+MODELS = ('ftau', 'mchi', 'mchi_aligned', 'mchi_charged')
 
 class Fit(object):
     """ A ringdown fit.
