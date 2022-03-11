@@ -13,6 +13,7 @@ import arviz as az
 from ast import literal_eval
 from inspect import getfullargspec
 import configparser
+import logging
 
 # def get_raw_time_ifo(tgps, raw_time, duration=None, ds=None):
 #     ds = ds or 1
@@ -270,7 +271,7 @@ class Fit(object):
         """Arguments to be passed to sampler.
         """
         if not self.acfs:
-            print('WARNING: computing ACFs with default settings.')
+            logging.warning("computing ACFs with default settings")
             self.compute_acfs()
 
         data_dict = self.analysis_data
@@ -600,7 +601,7 @@ class Fit(object):
         }
         stan_kws.update(kws)
         # run model and store
-        print('Running {}'.format(self.model))
+        logging.info('running {}'.format(self.model))
         result = self._model.sampling(data=stan_data, **stan_kws)
         if prior:
             self.prior = az.convert_to_inference_data(result)
@@ -908,8 +909,8 @@ class Fit(object):
             if self.data:
                 return self._n_analyze*self.data[self.ifos[0]].delta_t
             else:
-                print("Add data to compute duration (n_analyze = {})".format(
-                      self._n_analyze))
+                logging.warning("add data to compute duration "
+                                "(n_analyze = {})".format(self._n_analyze))
                 return None
         else:
             return self._duration
@@ -948,8 +949,8 @@ class Fit(object):
                 dt = self.data[self.ifos[0]].delta_t
                 return int(round(self._duration/dt))
             else:
-                print("Add data to compute n_analyze (duration = {})".format(
-                      self._duration))
+                logging.warning("add data to compute n_analyze "
+                                "(duration = {})".format(self._duration))
                 return None
         elif self.data and self.has_target:
             # set n_analyze to fit shortest data set
