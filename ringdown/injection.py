@@ -115,8 +115,6 @@ class Signal(TimeSeries):
             # the t0 provided
             times = times - times[0] + t0
 
-            
-
         # Interpolate to the new times
         hp_interp_func = interp1d(self.time, self.hp.values, kind='cubic', fill_value=0, bounds_error=False);
         hc_interp_func = interp1d(self.time, self.hc.values, kind='cubic', fill_value=0, bounds_error=False);
@@ -156,7 +154,7 @@ class IMR(Signal):
 
     @classmethod
     def from_posterior(cls, posterior_sample, wf=None, dt=(1/4096),
-                            interpolation_times=None):
+                            interpolation_times=None, f_low=20.0, f_ref=20.0):
         """
         Constructs the IMR signal from a posterior sample
 
@@ -186,7 +184,7 @@ class IMR(Signal):
         waveform_dt = dt
 
         t_peak, t_dict, hp,hc = complex_strain_peak_time_td(posterior_sample, wf=wf,
-                                                                 dt=dt, f_low=20., f_ref=20.)
+                                                                 dt=dt, f_low=f_low, f_ref=f_ref)
         signal_dict = {}
         # At Geocent
         geocent_time = posterior_sample['geocent_time']
@@ -208,6 +206,22 @@ class IMR(Signal):
                             parameters=params, t_dict=t_dict)
             
         return result
+
+    def time_delay(self, t0_geocent, ifo):
+        tgps = lal.LIGOTimeGPS(t0_geocent)
+        gmst = lal.GreenwichMeanSiderealTime(tgps)
+        det = lal.cached_detector_by_prefix[ifo]
+
+        if self.posterior_sample is not {}:
+            ra = self.posterior_sample['ra']
+            dec = self.posterior_sample['dec']
+            psi = self.posterior_sample['psi']
+        else:
+            raise KeyError("Posterior Samples haven't been filled into this object")
+
+        # Get patterns and timedelay
+        timedelay = lal.TimeDelayFromEarthCenter(det.location,  ra, dec, tgps)
+        return timedelay
 
     @property
     def _constructor(self):
@@ -259,7 +273,7 @@ class IMR(Signal):
         correspondence between the Signal values and the projected Data
         values.
         """
-        tgps = lal.LIGOTimeGPS(self.t0)
+        tgps = lal.LIGOTimeGPS(self.posterior_sample['geocent_time'])
         gmst = lal.GreenwichMeanSiderealTime(tgps)
         det = lal.cached_detector_by_prefix[ifo]
 
@@ -275,7 +289,7 @@ class IMR(Signal):
         timedelay = lal.TimeDelayFromEarthCenter(det.location,  ra, dec, tgps)
 
         # Get new time detector time index
-        ts_detector = self.time + timedelay
+        ts_detector = self.time + timedelay 
 
         # Construct the data objects and use the antenna_patterns to project
         hpdf = Data(self._hp, index=ts_detector,ifo=ifo)
@@ -304,7 +318,7 @@ class IMR(Signal):
         """
         return self.project_with_timeshift('V1')
 
-    def whitened_projections(self, acfs, interpolate_data=True):
+    def whitened_projections(self, acfs, interpolate_data=False):
         """
         Whitens the data after projecting onto detectors
         based on the passed acf dictionary
@@ -330,7 +344,7 @@ class IMR(Signal):
                 # Interpolate to the new sample rate 
                 # (rest of the things remain the same)
                 duration = data.time.max() - data.time.min()
-                data = data.interpolate(times=acf.time[acf.time <= duration], t0=data.time[0])
+                data = data.interpolate(times=acf.time[acf.time <= duration].time, t0=data.time[0])
             else:
                 if acf.delta_t != data.delta_t:
                     raise ValueError("""The data delta_t doesnot match the delta_t of the acf.
@@ -339,6 +353,128 @@ class IMR(Signal):
             whitened[ifo] = acf.whiten(data)
 
         return whitened
+
+    def whiten_with_data(self, data, acfs, t0=None, duration=None, flow=None):
+        """
+        Given a dictionary of data and a dictionary of acfs, this returns
+        the whitened data and the whitened IMR signal for each detector. One can set the
+        start time (with respect to geocent) and the duration of the required
+        returned data
+
+        Arguments:
+        -----------
+        data: dict
+            A dictionary pairing ifo strings with Data objects. This will be
+            the strain data for each detector
+        acfs: dict
+            A dictionary pairing ifo strings with Autocovariance objects. This will
+            be the acf for the noise of each detector.
+        t0: float
+            All returned timestamps will be more than this t0 (when shifted to geocent)
+        duration: float
+            All returned timestamps will be less than t0+duration (when shifted to geocent)
+        flow: float
+            The low frequency cutoff needed to condition the provided data. If not provided, it
+            is assumed the data is already conditioned
+        """
+        # Initialize the dictionaries
+        whitened_data = {}
+        whitened_signal = {}
+        signal_projections = self.projections
+
+        # Loop over the detectors
+        for ifo in data.keys():
+            print(ifo)
+            # If t0 and duration not provided, set them to good default values (i.e. donot change the 
+            # length or start time of the data array)
+            start_ifo = data[ifo].time.min() if t0 is None else (t0 + self.time_delay(t0, ifo))
+            end_ifo = data[ifo].time.max() if duration is None else (start_ifo + duration)
+
+            # Get this detector's data, condition and chop it if needed
+            ds = int(round(data[ifo].fsamp/acfs[ifo].fsamp))
+            data_ifo = data[ifo].condition(flow=flow, ds=ds)[start_ifo:end_ifo]
+
+            # Interpolate this IMR signal's detector data to match the provided timestamps
+            signal_ifo = signal_projections[ifo].interpolate(times=data_ifo.time)
+
+            # Check if the provided ACF has the right sample frequency
+            if not (np.isclose(acfs[ifo].delta_t, data_ifo.delta_t) and np.isclose(acfs[ifo].delta_t, signal_ifo.delta_t)):
+                raise ValueError("The sample rates of the ACF, data and signal donot match")
+
+            # Whiten both data and the signal and append it to the dictionaries
+            whitened_data[ifo] = acfs[ifo].whiten(data_ifo)
+            whitened_signal[ifo] = acfs[ifo].whiten(signal_ifo)
+
+        return whitened_signal, whitened_data
+
+
+    def calculate_snr(self, data, acfs, t0=None, duration=None, flow=None):
+        """
+        Calculates the time-bounded matched filter SNR based on the 
+        provided data and the covariance matrix extracted from the
+        acfs provided.
+        
+        Arguments:
+        -----------
+        data: dict
+            A dictionary pairing ifo strings with Data objects. This will be
+            the strain data for each detector
+        acfs: dict
+            A dictionary pairing ifo strings with Autocovariance objects. This will
+            be the acf for the noise of each detector.
+        t0: float
+            All returned timestamps will be more than this t0 (when shifted to geocent)
+        duration: float
+            All returned timestamps will be less than t0+duration (when shifted to geocent)
+        flow: float
+            The low frequency cutoff needed to condition the provided data. If not provided, it
+            is assumed the data is already conditioned
+        """
+        whitened_signal, whitened_data = self.whiten_with_data(data=data,acfs=acfs,t0=t0,duration=duration,flow=flow)
+        SNR_squared = 0.0
+        for ifo in whitened_data.keys():
+            signal_optimal_SNR_squared = np.dot(whitened_signal[ifo].values, whitened_signal[ifo].values)
+            SNR_squared += (np.dot(whitened_signal[ifo].values, whitened_data[ifo].values)**2)/signal_optimal_SNR_squared
+        SNR = np.sqrt(SNR_squared)
+        return SNR
+
+    def plot_whitened_with_data(self, data, acfs, t0=None, duration=None, flow=None):
+        """
+        Plots the comparison of the whitened data and the IMR signal. 
+        The t0 and duration of the plot can be set
+
+        Arguments:
+        -----------
+        data: dict
+            A dictionary pairing ifo strings with Data objects. This will be
+            the strain data for each detector
+        acfs: dict
+            A dictionary pairing ifo strings with Autocovariance objects. This will
+            be the acf for the noise of each detector.
+        t0: float
+            All returned timestamps will be more than this t0 (when shifted to geocent)
+        duration: float
+            All returned timestamps will be less than t0+duration (when shifted to geocent)
+        """
+        whitened_signal, whitened_data = self.whiten_with_data(data=data,acfs=acfs,t0=t0,duration=duration, flow=flow)
+        fig,axes = subplots(len(whitened_data.keys()))
+        for i,ifo in enumerate(whitened_data.keys()):
+            data = whitened_data[ifo]
+            signal_ifo = whitened_signal[ifo]
+            axes[i].errorbar(data.time, data.values, yerr=ones_like(data.values), fmt='.', 
+             alpha=0.5, label='Data')
+            axes[i].plot(signal_ifo.time, signal_ifo.values, color="black", label='IMR')
+            axes[i].set_xlabel(r'$t / \mathrm{s}$')
+            axes[i].set_ylabel(r'$h_%s(t)$ (whitened)' % ifo[0])
+
+            # Add t_peak if needed
+            if (data.time.min() < self.t_dict[ifo]) and (self.t_dict[ifo] < data.time.max()):
+                axes[i].axvline(self.t_dict[ifo], linestyle='dashed', c='r', label='Peak Time', alpha=0.5)
+
+            axes[i].legend(loc='best')
+        show()
+        return fig, axes
+
 
 
 
