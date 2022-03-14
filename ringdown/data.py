@@ -193,7 +193,7 @@ class FrequencySeries(pd.Series):
             fmax = fmax or self.freq.max()
             df = df or self.delta_f
             N = (1 + (fmax-fmin)/df) or len(self.freq)
-            freqs = np.linspace(fmin,fmax,N)
+            freqs = np.linspace(fmin,fmax,int(N))
             
         # Interpolate to the new times
         interp_func = interp1d(self.freq, self.values, kind='linear', fill_value=0, bounds_error=False);
