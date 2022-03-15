@@ -77,6 +77,11 @@ class Signal(TimeSeries):
             h = np.roll(h, idt)
         return Data(h, ifo=ifo, index=self.time)
 
+    def find_peak(self):
+        ipeak = len(self) - _ishift(self._hp, self._hc)
+        tpeak = self.delta_t*ipeak + float(self.time[0])
+        return 
+
     def interpolate(self, times=None, t0=None, duration=None, fsamp=None):
         """
         Arguments
@@ -139,11 +144,6 @@ class Signal(TimeSeries):
         ax.plot(self.time, self.hc, label="hc")
         legend(loc='best')
         show()
-
-    def find_peak(self):
-        ipeak = len(self) - _ishift(self._hp, self._hc)
-        tpeak = self.delta_t*ipeak + float(self.time[0])
-        return tpeak
 
 
 class IMR(Signal):
