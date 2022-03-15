@@ -80,7 +80,7 @@ class Signal(TimeSeries):
     def find_peak(self):
         ipeak = len(self) - _ishift(self._hp, self._hc)
         tpeak = self.delta_t*ipeak + float(self.time[0])
-        return 
+        return tpeak
 
     def interpolate(self, times=None, t0=None, duration=None, fsamp=None):
         """
