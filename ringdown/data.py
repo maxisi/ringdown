@@ -76,7 +76,6 @@ class TimeSeries(pd.Series):
 
             # Create the timing array
             times = np.arange(0.0, duration, 1/fsamp) + t0
-            print(f"the new timing array sample rate {fsamp} is {1/(times[1]-times[0])}")
 
             # Make sure we don't include points outside of the index
             if times.max() > self.time.max():
