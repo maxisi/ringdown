@@ -140,6 +140,11 @@ class Signal(TimeSeries):
         legend(loc='best')
         show()
 
+    def find_peak(self):
+        ipeak = len(self) - _ishift(self._hp, self._hc)
+        tpeak = self.delta_t*ipeak + float(self.time[0])
+        return tpeak
+
 
 class IMR(Signal):
     _metadata = ['parameters','posterior_sample', 't_dict']
