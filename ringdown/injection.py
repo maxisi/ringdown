@@ -9,6 +9,27 @@ import pandas as pd
 from scipy.interpolate import interp1d
 from inspect import getfullargspec
 
+def _ishift(hp_t, hc_t):
+    hmag = np.sqrt(hp_t*hp_t + hc_t*hc_t)
+
+    ib = np.argmax(hmag)
+    if ib == len(hmag) - 1:
+        ic = 0
+        ia = ib-1
+    elif ib == 0:
+        ia = len(hmag)-1
+        ic = 1
+    else:
+        ia = ib-1
+        ic = ib+1
+
+    a = hmag[ia]
+    b = hmag[ib]
+    c = hmag[ic]
+
+    return (len(hmag) - (ib + (3*a - 4*b + c)/(2*(a-2*b+c)) - 1))%len(hmag)
+
+
 class Signal(TimeSeries):
     _metadata = ['parameters']
 
@@ -482,7 +503,6 @@ class IMR(Signal):
 
 
 
-
 class Ringdown(Signal):
     _metadata = ['modes']
 
@@ -615,7 +635,7 @@ class Ringdown(Signal):
             mode_isel = slice(None)
         margs = {k: array(pars[k][mode_isel], ndmin=2) for k in cls._MODE_PARS}
         if modes:
-            if len(modes) > len(mode_args[0][0]):
+            if len(modes) > len(margs[0][0]):
                 raise ValueError("insufficient parameters provided")
         signal[mpost] = sum(cls.complex_mode(t[mpost]-t0, *margs.values()),
                             axis=1)

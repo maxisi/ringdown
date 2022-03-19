@@ -6,6 +6,7 @@ import scipy.signal as sig
 import lal
 import scipy.linalg as sl
 from scipy.interpolate import interp1d
+import scipy.signal as ss
 import pandas as pd
 import h5py
 import os
@@ -269,8 +270,8 @@ class Data(TimeSeries):
             d = None
         return d
 
-    def condition(self, flow=None, fhigh=None, ds=None, scipy_dec=True, t0=None,
-                  remove_mean=True, decimate_kws=None, trim=0.25):
+    def condition(self, t0=None, ds=None, flow=None, fhigh=None, trim=0.25,
+                  scipy_dec=True, remove_mean=True, decimate_kws=None):
         """Condition data.
 
         Arguments
@@ -330,6 +331,14 @@ class Data(TimeSeries):
                 cond_data = sig.decimate(cond_data, ds, zero_phase=True,
                                          **decimate_kws)
             else:
+                # fft data
+                w = ss.windows.tukey(len(cond_data), trim)
+                cond_data_fd = np.fft.rfft(cond_data*w)
+                freq = np.fft.rfftfreq(len(cond_data), self.delta_t)
+                # throw away frequencies
+                cond_data_fd[freq > fny/ds] = 0
+                # ifft and downsample
+                cond_data = np.fft.irfft(cond_data_fd)
                 cond_data = cond_data[::ds]
             if raw_time is not None:
                 cond_time = raw_time[::ds]
