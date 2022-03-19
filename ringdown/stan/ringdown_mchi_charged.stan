@@ -46,6 +46,7 @@ data {
   /* Priors on m and chi are flat */
   real M_min;
   real M_max;
+  real A_scale;
 
   real drift_scale;
 
@@ -58,10 +59,13 @@ data {
   real theta_qchi_min;
   real theta_qchi_max;
 
-  real A_scale;
-
+  int flat_A;
   int flat_A_ellip;
   int only_prior;
+}
+
+transformed data {
+  if (flat_A && flat_A_ellip) reject("at most one of `flat_A` or `flat_A_ellip` can be true");
 }
 
 parameters {
@@ -125,7 +129,7 @@ transformed parameters {
     gamma = f0*(chi_factors(chi, nmode, g_coeffs) + q*chi_factors(chi, nmode, dg_coeffs));
   }
 
-  if ((flat_A_ellip) && (only_prior)) {
+  if (((flat_A) || (flat_A_ellip)) && (only_prior)) {
       for (i in 1:nmode) {
           if (A[i] > 2*A_scale) reject("A", i-1, " > 2*A_scale");
       }
@@ -155,7 +159,11 @@ model {
   log_drift_unit ~ std_normal();
 
   /* Amplitude prior */
-  if (flat_A_ellip) {
+  if (flat_A) {
+    for (i in 1:nmode) {
+      target += -3*log(A[i]);
+    }
+  } else if (flat_A_ellip) {
       for (i in 1:nmode) {
         target += -3*log(A[i]) - log1m(ellip[i]^2);
       }
