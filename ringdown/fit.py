@@ -235,6 +235,7 @@ class Fit(object):
                  theta_qchi_max=pi/2,
                  df_coeffs=[],
                  dg_coeffs=[],
+                 flat_A=0,
                  flat_A_ellip=0
              ))
         return default
