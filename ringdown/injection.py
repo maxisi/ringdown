@@ -410,7 +410,6 @@ class IMR(Signal):
 
         # Loop over the detectors
         for ifo in data.keys():
-            print(ifo)
             # If t0 and duration not provided, set them to good default values (i.e. donot change the 
             # length or start time of the data array)
             start_ifo = data[ifo].time.min() if t0 is None else (t0 + self.time_delay(t0, ifo))
