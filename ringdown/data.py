@@ -5,6 +5,7 @@ from pylab import *
 import scipy.signal as sig
 import lal
 import scipy.linalg as sl
+from scipy.interpolate import interp1d
 import scipy.signal as ss
 import pandas as pd
 import h5py
@@ -52,6 +53,48 @@ class TimeSeries(pd.Series):
     def time(self) -> pd.Index:
         """Time stamps."""
         return self.index
+
+    def interpolate(self, times=None, t0=None, duration=None, fsamp=None):
+        """Reinterpolate the timeseries to contain the new indices
+        Arguments
+        ---------
+        times : list or numpy array or pd.Series
+            array of GPS times (seconds) to label the times
+        t0 : float
+            instead of an array of times, one can provide the start time t0
+            the duration and sample rate. If both this and
+            times is provided then this takes the duration and fsamp from the times
+            array and sets the t0 to be the initial one
+        duration: float
+            duration of the new interpolated signal
+        fsamp: float
+            sample rate of the new interpolated signal
+        """
+        if times is None:
+            t0 = t0 or self.time.min()
+            duration = duration or (self.time.max() - t0)
+            fsamp = fsamp or self.fsamp
+
+            # Create the timing array
+            times = np.arange(0.0, duration, 1/fsamp) + t0
+
+            # Make sure we don't include points outside of the index
+            if times.max() > self.time.max():
+                times = times[times <= self.time.max()]
+        elif t0 is not None:
+            # Use the times array for the delta_t and duration, but set 
+            # the t0 provided
+            times = times - times[0] + t0
+            
+        # Interpolate to the new times
+        interp_func = interp1d(self.time, self.values, kind='cubic', fill_value=0, bounds_error=False);
+        interp = interp_func(times)
+
+        kwargs = {}
+        for attr in getattr(self, '_metadata', []):
+            kwargs[attr] = getattr(self, attr)
+
+        return self._constructor(interp, index=times, **kwargs)
 
     @classmethod
     def read(cls, path, kind=None, **kws):
@@ -130,6 +173,37 @@ class FrequencySeries(pd.Series):
     def freq(self) -> pd.Index:
         """Frequency stamps."""
         return self.index
+
+    def interpolate(self, freqs=None, fmin=None, fmax=None, df=None):
+        """Reinterpolate the frequency series to contain the new indices
+        Arguments
+        ---------
+        freqs : list or numpy array or pd.Series
+            array of frequency bins to label the new frequencies
+        fmin : float
+            instead of an array of freqs, one can provide the starting frequency fmin,
+            the fmax and df. 
+        fmax: float
+            max frequency of the new interpolated signal
+        df: float
+            frequency steps of the new interpolated signal
+        """
+        if freqs is None:
+            fmin = fmin or self.freq.min()
+            fmax = fmax or self.freq.max()
+            df = df or self.delta_f
+            N = (1 + (fmax-fmin)/df) or len(self.freq)
+            freqs = np.linspace(fmin,fmax,int(N))
+            
+        # Interpolate to the new times
+        interp_func = interp1d(self.freq, self.values, kind='linear', fill_value=0, bounds_error=False);
+        interp = interp_func(freqs)
+
+        kwargs = {}
+        for attr in getattr(self, '_metadata', []):
+            kwargs[attr] = getattr(self, attr)
+
+        return self._constructor(interp, index=freqs, **kwargs)
 
     def read(cls, path, kind=None, **kws):
         kind = (kind or '').lower()

@@ -1,3 +1,5 @@
+__all__ = ['complex_strain_peak_time_fd', 'complex_strain_peak_time_td']
+
 import numpy as np
 import lal
 import lalsimulation as ls
