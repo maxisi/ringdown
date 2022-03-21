@@ -54,9 +54,9 @@ class TimeSeries(pd.Series):
         """Time stamps."""
         return self.index
 
-    def interpolate(self, times=None, t0=None, duration=None, fsamp=None,
+    def interpolate(self, time=None, t0=None, duration=None, fsamp=None,
                     **kwargs):
-        """Reinterpolate the  :class:`TimeSeries` to the new index.
+        """Reinterpolate the :class:`TimeSeries` to new index.
 
         Makes use of :func:`scipy.interpolate.interp1d` to which additional
         arguments are passed (by default ``kind='cubic', fill_value=0,
@@ -64,42 +64,42 @@ class TimeSeries(pd.Series):
 
         Arguments
         ---------
-        times : list or numpy array or pd.Series
+        time : list or numpy array or pd.Series
             array of GPS times (seconds) to label the times
         t0 : float
-            instead of an array of times, one can provide the start time t0 the
-            duration and sample rate. If both this and times is provided then
-            this takes the duration and fsamp from the times array and sets the
-            t0 to be the initial one
+            instead of an array of times, one can provide the start time ``t0`` the
+            duration and sample rate. If these and ``time`` are provided then
+            the duration and sampling rate are taken from the ``time`` array, setting
+            ``t0`` to be the original one
         duration: float
             duration of the new interpolated signal
         fsamp: float
             sample rate of the new interpolated signal
         """
-        if times is None:
+        if time is None:
             t0 = t0 or self.time.min()
             duration = duration or (self.time.max() - t0)
             fsamp = fsamp or self.fsamp
 
             # Create the timing array
-            times = np.arange(0.0, duration, 1/fsamp) + t0
+            time = np.arange(0.0, duration, 1/fsamp) + t0
 
             # Make sure we don't include points outside of the index
-            if times.max() > self.time.max():
-                times = times[times <= self.time.max()]
+            if time.max() > self.time.max():
+                time = time[time <= self.time.max()]
         elif t0 is not None:
-            # Use the times array for the delta_t and duration, but set 
+            # Use the time array for the delta_t and duration, but set 
             # the t0 provided
-            times = times - times[0] + t0
+            time = time - time[0] + t0
             
-        # Interpolate to the new times
+        # Interpolate to the new time
         kws = dict(kind='cubic', fill_value=0, bounds_error=False)
         kws.update(**kwargs)
-        interp_func = interp1d(self.time, self.values, **kws);
-        interp = interp_func(times)
+        interp_func = interp1d(self.time, self.values, **kws)
+        interp = interp_func(time)
 
         kwargs = {a: getattr(self, a) for a in getattr(self, '_metadata', [])}
-        return self._constructor(interp, index=times, **kwargs)
+        return self._constructor(interp, index=time, **kwargs)
 
     @classmethod
     def read(cls, path, kind=None, **kws):
@@ -179,8 +179,8 @@ class FrequencySeries(pd.Series):
         """Frequency stamps."""
         return self.index
 
-    def interpolate(self, freqs=None, fmin=None, fmax=None, df=None, **kwargs):
-        """Reinterpolate the frequency series to new index.
+    def interpolate(self, freq=None, fmin=None, fmax=None, delta_f=None, **kwargs):
+        """Reinterpolate the :class:`FrequencySeries` to new index.
 
         Makes use of :func:`scipy.interpolate.interp1d` to which additional
         arguments are passed (by default ``kind='cubic', fill_value=0,
@@ -188,31 +188,32 @@ class FrequencySeries(pd.Series):
 
         Arguments
         ---------
-        freqs : list or numpy array or pd.Series
+        freq : list or numpy array or pd.Series
             array of frequency bins to label the new frequencies
         fmin : float
-            instead of an array of freqs, one can provide the starting frequency fmin,
-            the fmax and df. 
+            instead of an array of frequencies, one can provide the starting
+            frequency ``fmin``, the highest frequency ``fmax`` and the frequency
+            spacing ``delta_f``. 
         fmax: float
             max frequency of the new interpolated signal
-        df: float
+        delta_f: float
             frequency steps of the new interpolated signal
         """
-        if freqs is None:
+        if freq is None:
             fmin = fmin or self.freq.min()
             fmax = fmax or self.freq.max()
-            df = df or self.delta_f
-            N = (1 + (fmax-fmin)/df) or len(self.freq)
-            freqs = np.linspace(fmin,fmax,int(N))
+            delta_f = delta_f or self.delta_f
+            N = (1 + (fmax-fmin)/delta_f) or len(self.freq)
+            freq = np.linspace(fmin, fmax, int(N))
             
         # Interpolate to the new times
         kws = dict(kind='linear', fill_value=0, bounds_error=False)
         kws.update(**kwargs)
         interp_func = interp1d(self.freq, self.values, **kws)
-        interp = interp_func(freqs)
+        interp = interp_func(freq)
 
         kwargs = {a: gattr(self, a) for a in getattr(self, '_metadata', [])}
-        return self._constructor(interp, index=freqs, **kwargs)
+        return self._constructor(interp, index=freq, **kwargs)
 
     def read(cls, path, kind=None, **kws):
         kind = (kind or '').lower()
