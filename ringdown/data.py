@@ -179,8 +179,13 @@ class FrequencySeries(pd.Series):
         """Frequency stamps."""
         return self.index
 
-    def interpolate(self, freqs=None, fmin=None, fmax=None, df=None):
-        """Reinterpolate the frequency series to contain the new indices
+    def interpolate(self, freqs=None, fmin=None, fmax=None, df=None, **kwargs):
+        """Reinterpolate the frequency series to new index.
+
+        Makes use of :func:`scipy.interpolate.interp1d` to which additional
+        arguments are passed (by default ``kind='cubic', fill_value=0,
+        bounds_error=False``)
+
         Arguments
         ---------
         freqs : list or numpy array or pd.Series
@@ -201,13 +206,12 @@ class FrequencySeries(pd.Series):
             freqs = np.linspace(fmin,fmax,int(N))
             
         # Interpolate to the new times
-        interp_func = interp1d(self.freq, self.values, kind='linear', fill_value=0, bounds_error=False);
+        kws = dict(kind='linear', fill_value=0, bounds_error=False)
+        kws.update(**kwargs)
+        interp_func = interp1d(self.freq, self.values, **kws)
         interp = interp_func(freqs)
 
-        kwargs = {}
-        for attr in getattr(self, '_metadata', []):
-            kwargs[attr] = getattr(self, attr)
-
+        kwargs = {a: gattr(self, a) for a in getattr(self, '_metadata', [])}
         return self._constructor(interp, index=freqs, **kwargs)
 
     def read(cls, path, kind=None, **kws):
