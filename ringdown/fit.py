@@ -17,7 +17,7 @@ import logging
 
 Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 
-MODELS = ('ftau', 'mchi', 'mchi_aligned', 'mchi_charged')
+MODELS = ('ftau', 'mchi', 'mchi_aligned', 'mchiq')
 
 class Fit(object):
     """ A ringdown fit.
@@ -225,7 +225,7 @@ class Fit(object):
                 cosi_max=1,
                 flat_A=0
             ))
-        elif self.model == 'mchi_charged':
+        elif self.model == 'mchiq':
              default.update(dict(
                  M_min=None,
                  M_max=None,
