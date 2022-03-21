@@ -54,17 +54,23 @@ class TimeSeries(pd.Series):
         """Time stamps."""
         return self.index
 
-    def interpolate(self, times=None, t0=None, duration=None, fsamp=None):
-        """Reinterpolate the timeseries to contain the new indices
+    def interpolate(self, times=None, t0=None, duration=None, fsamp=None,
+                    **kwargs):
+        """Reinterpolate the  :class:`TimeSeries` to the new index.
+
+        Makes use of :func:`scipy.interpolate.interp1d` to which additional
+        arguments are passed (by default ``kind='cubic', fill_value=0,
+        bounds_error=False``)
+
         Arguments
         ---------
         times : list or numpy array or pd.Series
             array of GPS times (seconds) to label the times
         t0 : float
-            instead of an array of times, one can provide the start time t0
-            the duration and sample rate. If both this and
-            times is provided then this takes the duration and fsamp from the times
-            array and sets the t0 to be the initial one
+            instead of an array of times, one can provide the start time t0 the
+            duration and sample rate. If both this and times is provided then
+            this takes the duration and fsamp from the times array and sets the
+            t0 to be the initial one
         duration: float
             duration of the new interpolated signal
         fsamp: float
@@ -87,13 +93,12 @@ class TimeSeries(pd.Series):
             times = times - times[0] + t0
             
         # Interpolate to the new times
-        interp_func = interp1d(self.time, self.values, kind='cubic', fill_value=0, bounds_error=False);
+        kws = dict(kind='cubic', fill_value=0, bounds_error=False)
+        kws.update(**kwargs)
+        interp_func = interp1d(self.time, self.values, **kws);
         interp = interp_func(times)
 
-        kwargs = {}
-        for attr in getattr(self, '_metadata', []):
-            kwargs[attr] = getattr(self, attr)
-
+        kwargs = {a: getattr(self, a) for a in getattr(self, '_metadata', [])}
         return self._constructor(interp, index=times, **kwargs)
 
     @classmethod
