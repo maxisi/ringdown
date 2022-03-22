@@ -103,68 +103,18 @@ class Signal(TimeSeries):
         tpeak = self.delta_t*ipeak + float(self.time[0])
         return tpeak
 
-    def interpolate(self, times=None, t0=None, duration=None, fsamp=None):
+    def plot(self, ax=None, envelope=False):
+        """Plot the series' plus and cross components.
+        Remember that the value of this timeseries is ``h = hp -1j*hc``.
         """
-        Arguments
-        ---------
-        times : list or numpy array or pd.Series
-            array of GPS times (seconds) to label the times
-        t0 : float
-            instead of an array of times, one can provide the start time t0
-            at geocenter, the duration or/and the sample rate. If both this and
-            times is provided then this takes the duration and fsamp from the times
-            array and sets the t0 to be the initial one
-
-        duration: float
-            duration of the new interpolated signal
-        fsamp: float
-            sample rate of the new interpolated signal
-        """
-        if times is None:
-            # Set default values if needed
-            t0 = t0 or self.time.min()
-            duration = duration or (self.time.max() - t0)
-            fsamp = fsamp or self.fsamp
-
-            # Find Number of points
-            # +1 because int(round(duration*fsamp)) counts the number of intervals
-            N = int(round(duration*fsamp)) + 1
-
-            # Create the timing array
-            times = np.arange(N)/fsamp + t0
-
-            # Make sure we don't include points outside of the index
-            if times.max() > self.time.max():
-                times = times[times <= self.time.max()]
-        elif t0 is not None:
-            # Use the times array for the delta_t and duration, but set 
-            # the t0 provided
-            times = times - times[0] + t0
-
-        # Interpolate to the new times
-        hp_interp_func = interp1d(self.time, self.hp.values, kind='cubic', fill_value=0, bounds_error=False);
-        hc_interp_func = interp1d(self.time, self.hc.values, kind='cubic', fill_value=0, bounds_error=False);
-        hp_interp = hp_interp_func(times)
-        hc_interp = hc_interp_func(times)
-        signal_val = hp_interp - 1j*hc_interp
-
-        # Set up the parameters for a new copy of this object
-        kwargs = {'index': times}
-        for keyword in self._metadata:
-            kwargs[keyword] = getattr(self, keyword, None)
-
-        return self._constructor(signal_val, **kwargs)
-
-    def plot(self):
-        """
-        Plot the function's hp and hc components.
-        Remember that the value of this timeseries is h = hp -1j*hc
-        """
-        fig,ax = subplots(1)
-        ax.plot(self.time, self.hp,label="hp")
-        ax.plot(self.time, self.hc, label="hc")
+        if ax is None:
+            fig, ax = subplots(1)
+        ax.plot(self.time, self._hp, label="$h_+$")
+        ax.plot(self.time, self._hc, label=r"$h_\times$")
+        if envelope:
+            ax.plot(self.time, abs(self), label="$h$", ls='--', c='k')
         legend(loc='best')
-        show()
+        return ax
 
 
 class IMR(Signal):

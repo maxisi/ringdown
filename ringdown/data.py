@@ -102,10 +102,15 @@ class Series(pd.Series):
         """
         kws = self._DEF_INTERP_KWS.copy()
         kws.update(**kwargs)
-        interp_func = interp1d(self.time, self.values, **kws)
-        interp = interp_func(time)
+        if any(iscomplex(self.values)):
+            re_interp_func = interp1d(self.index, self.values.real, **kws)
+            im_interp_func = interp1d(self.index, self.values.imag, **kws)
+            interp = re_interp_func(new_index) + 1j*im_interp_func(new_index)
+        else:
+            interp_func = interp1d(self.index, self.values, **kws)
+            interp = interp_func(new_index)
         info = {a: getattr(self, a) for a in getattr(self, '_metadata', [])}
-        return self._constructor(interp, index=time, **info)
+        return self._constructor(interp, index=new_index, **info)
     interpolate_to_index.__doc__ = interpolate_to_index.__doc__.format(_DEF_INTERP_KWS)
 
 
