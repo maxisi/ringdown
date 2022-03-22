@@ -1,4 +1,4 @@
-__all__ = ['TimeSeries', 'FrequencySeries', 'Data',
+__all__ = ['Series', 'TimeSeries', 'FrequencySeries', 'Data',
            'AutoCovariance', 'PowerSpectrum']
 
 from pylab import *
@@ -12,97 +12,37 @@ import h5py
 import os
 import logging
 
-# def get_raw_time_ifo(tgps, raw_time, duration=None, ds=None):
-#     ds = ds or 1
-#     duration = inf if duration is None else duration
-#     m = abs(raw_time - tgps) < 0.5*duration
-#     i = argmin(abs(raw_time - tgps))
-#     return roll(raw_time, -(i % ds))[m]
-
-class TimeSeries(pd.Series):
-    """ A container for time series data based on `pandas.Series`;
-    the index should contain time stamps for uniformly-sampled data.
+class Series(pd.Series):
+    """ A wrapper of :class:`pandas.Series` with some additional functionality.
     """
 
     @property
     def _constructor(self):
-        return TimeSeries
-
-    @property
-    def delta_t(self) -> float:
-        """Sampling time interval."""
-        return self.index[1] - self.index[0]
-
-    @property
-    def fsamp(self) -> float:
-        """Sampling frequency (`1/delta_t`)."""
-        return 1/self.delta_t
-
-    @property
-    def duration(self) -> float:
-        """Time series duration (time spanned between first and last samples).
-        """
-        return self.delta_t * len(self)
-
-    @property
-    def delta_f(self) -> float:
-        """Fourier frequency spacing."""
-        return 1/self.duration
-
-    @property
-    def time(self) -> pd.Index:
-        """Time stamps."""
-        return self.index
-
-    def interpolate(self, time=None, t0=None, duration=None, fsamp=None,
-                    **kwargs):
-        """Reinterpolate the :class:`TimeSeries` to new index.
-
-        Makes use of :func:`scipy.interpolate.interp1d` to which additional
-        arguments are passed (by default ``kind='cubic', fill_value=0,
-        bounds_error=False``)
-
-        Arguments
-        ---------
-        time : list or numpy array or pd.Series
-            array of GPS times (seconds) to label the times
-        t0 : float
-            instead of an array of times, one can provide the start time ``t0`` the
-            duration and sample rate. If these and ``time`` are provided then
-            the duration and sampling rate are taken from the ``time`` array, setting
-            ``t0`` to be the original one
-        duration: float
-            duration of the new interpolated signal
-        fsamp: float
-            sample rate of the new interpolated signal
-        """
-        if time is None:
-            t0 = t0 or self.time.min()
-            duration = duration or (self.time.max() - t0)
-            fsamp = fsamp or self.fsamp
-
-            # Create the timing array
-            time = np.arange(0.0, duration, 1/fsamp) + t0
-
-            # Make sure we don't include points outside of the index
-            if time.max() > self.time.max():
-                time = time[time <= self.time.max()]
-        elif t0 is not None:
-            # Use the time array for the delta_t and duration, but set 
-            # the t0 provided
-            time = time - time[0] + t0
-            
-        # Interpolate to the new time
-        kws = dict(kind='cubic', fill_value=0, bounds_error=False)
-        kws.update(**kwargs)
-        interp_func = interp1d(self.time, self.values, **kws)
-        interp = interp_func(time)
-
-        kwargs = {a: getattr(self, a) for a in getattr(self, '_metadata', [])}
-        return self._constructor(interp, index=time, **kwargs)
+        return Series
 
     @classmethod
     def read(cls, path, kind=None, **kws):
+        """Load data from disk.
+        
+        If ``kind`` is `gwosc` assumes input is an strain HDF5 file downloaded
+        from `GWOSC <https://www.gw-openscience.org>`_. Otherwise, it is a
+        wrapper around :func:`pandas.read_hdf` or :func:`pandas.read_csv`
+        functions, for ``kind = 'hdf'`` or ``kind = 'csv'``.
+
+        If ``kind`` is ``None``, guesses filetype from extension.
+
+        Arguments
+        ---------
+        path : str
+            path to file
+        kind : str
+            kind of file to load: `gwsoc`, `hdf` or `csv`
+
+        Returns
+        -------
+        series : Series
+            series loaded from disk
+        """
         kind = (kind or '').lower()
         if not kind:
             # attempt to guess filetype
@@ -142,8 +82,111 @@ class TimeSeries(pd.Series):
         else:
             raise ValueError("unrecognized file kind: {}".format(kind))
 
+    _DEF_INTERP_KWS = dict(kind='cubic', fill_value=0, bounds_error=False)
 
-class FrequencySeries(pd.Series):
+    def interpolate_to_index(self, new_index, **kwargs):
+        """Reinterpolate the :class:`Series` to new index.
+
+        Makes use of :func:`scipy.interpolate.interp1d` to which additional
+        arguments are passed (by default ``{}``)
+
+        Arguments
+        ---------
+        new_index : list or numpy array or pd.Series
+            new index over which to interpolate
+
+        Returns
+        -------
+        new_series : Series
+            interpolated :class:`Series`
+        """
+        kws = self._DEF_INTERP_KWS.copy()
+        kws.update(**kwargs)
+        interp_func = interp1d(self.time, self.values, **kws)
+        interp = interp_func(time)
+        info = {a: getattr(self, a) for a in getattr(self, '_metadata', [])}
+        return self._constructor(interp, index=time, **info)
+    interpolate_to_index.__doc__ = interpolate_to_index.__doc__.format(_DEF_INTERP_KWS)
+
+
+class TimeSeries(Series):
+    """ A container for time series data based on `pandas.Series`;
+    the index should contain time stamps for uniformly-sampled data.
+    """
+
+    @property
+    def _constructor(self):
+        return TimeSeries
+
+    @property
+    def delta_t(self) -> float:
+        """Sampling time interval."""
+        return self.index[1] - self.index[0]
+
+    @property
+    def fsamp(self) -> float:
+        """Sampling frequency (`1/delta_t`)."""
+        return 1/self.delta_t
+
+    @property
+    def duration(self) -> float:
+        """Time series duration (time spanned between first and last samples).
+        """
+        return self.delta_t * len(self)
+
+    @property
+    def delta_f(self) -> float:
+        """Fourier frequency spacing."""
+        return 1/self.duration
+
+    @property
+    def time(self) -> pd.Index:
+        """Time stamps."""
+        return self.index
+
+    def interpolate_to_index(self, time=None, t0=None, duration=None,
+                             fsamp=None, **kws):
+        """Reinterpolate the :class:`TimeSeries` to new index. Inherits from
+        :func:`Series.interpolate_to_index`.
+
+        Arguments
+        ---------
+        time : list or numpy array or pd.Series
+            new times over which to interpolate
+        t0 : float
+            instead of an array of times, one can provide the start time ``t0``
+            the duration and sample rate. If these and ``time`` are provided
+            then the duration and sampling rate are taken from the ``time``
+            array, setting ``t0`` to be the original one
+        duration: float
+            duration of the new interpolated signal
+        fsamp: float
+            sample rate of the new interpolated signal
+
+        Returns
+        -------
+        new_series : TimeSeries
+            interpolated series
+        """
+        if time is None:
+            t0 = t0 or self.time.min()
+            duration = duration or (self.time.max() - t0)
+            fsamp = fsamp or self.fsamp
+
+            # Create the timing array
+            time = np.arange(0.0, duration, 1/fsamp) + t0
+
+            # Make sure we don't include points outside of the index
+            if time.max() > self.time.max():
+                time = time[time <= self.time.max()]
+        elif t0 is not None:
+            # Use the time array for the delta_t and duration, but set 
+            # the t0 provided
+            time = time - time[0] + t0
+        return super(TimeSeries, self).interpolate_to_index(time, **kws)
+
+
+class FrequencySeries(Series):
     """ A container for frequency domain data based on `pandas.Series`;
     the index should contain frequency stamps for uniformly-sampled data.
     """
@@ -179,12 +222,10 @@ class FrequencySeries(pd.Series):
         """Frequency stamps."""
         return self.index
 
-    def interpolate(self, freq=None, fmin=None, fmax=None, delta_f=None, **kwargs):
-        """Reinterpolate the :class:`FrequencySeries` to new index.
-
-        Makes use of :func:`scipy.interpolate.interp1d` to which additional
-        arguments are passed (by default ``kind='cubic', fill_value=0,
-        bounds_error=False``)
+    def interpolate_to_index(self, freq=None, fmin=None, fmax=None,
+                             delta_f=None, **kws):
+        """Reinterpolate the :class:`FrequencySeries` to new index. Inherits
+        from :func:`Series.interpolate_to_index`.
 
         Arguments
         ---------
@@ -192,12 +233,17 @@ class FrequencySeries(pd.Series):
             array of frequency bins to label the new frequencies
         fmin : float
             instead of an array of frequencies, one can provide the starting
-            frequency ``fmin``, the highest frequency ``fmax`` and the frequency
-            spacing ``delta_f``. 
+            frequency ``fmin``, the highest frequency ``fmax`` and the
+            frequency spacing ``delta_f``. 
         fmax: float
             max frequency of the new interpolated signal
         delta_f: float
             frequency steps of the new interpolated signal
+
+        Returns
+        -------
+        new_series : FrequencySeries
+            interpolated series
         """
         if freq is None:
             fmin = fmin or self.freq.min()
@@ -205,48 +251,7 @@ class FrequencySeries(pd.Series):
             delta_f = delta_f or self.delta_f
             N = (1 + (fmax-fmin)/delta_f) or len(self.freq)
             freq = np.linspace(fmin, fmax, int(N))
-            
-        # Interpolate to the new times
-        kws = dict(kind='linear', fill_value=0, bounds_error=False)
-        kws.update(**kwargs)
-        interp_func = interp1d(self.freq, self.values, **kws)
-        interp = interp_func(freq)
-
-        kwargs = {a: gattr(self, a) for a in getattr(self, '_metadata', [])}
-        return self._constructor(interp, index=freq, **kwargs)
-
-    def read(cls, path, kind=None, **kws):
-        kind = (kind or '').lower()
-        if not kind:
-            # attempt to guess filetype
-            ext = os.path.splitext(path)[1].lower().strip('.')
-            if ext in ['h5', 'hdf5', 'hdf']:
-                kind = 'hdf'
-            elif ext in ['txt', 'gz', 'dat', 'csv']:
-                kind = 'csv'
-            else:
-                raise ValueError("unrecognized extension: {}".format(ext))
-        if kind in ['hdf', 'csv']:
-            read_func = getattr(pd, 'read_{}'.format(kind))
-            # get list of arguments accepted by pandas read function in order
-            # to filter out extraneous arguments that should go to cls
-            read_vars = read_func.__code__.co_varnames
-            # define some defaults to ensure we get a Series and not a DataFrame
-            read_kws = dict(sep=None, index_col=0, squeeze=True)
-            if 'sep' in kws:
-                # gymnastics to be able to support `sep = \t` (e.g., when
-                # reading a config file)
-                kws['sep'] = kws['sep'].encode('raw_unicode_escape').decode('unicode_escape')
-            read_kws.update({k: v for k,v in kws.items() if k in read_vars})
-            cls_kws = {k: v for k,v in kws.items() if k not in read_vars}
-            if kind == 'csv' and 'float_precision' not in read_kws:
-                logging.warning("specify `float_precision='round_trip'` or risk "
-                                "strange errors due to precission loss")
-            return cls(read_func(path, **read_kws), **cls_kws)
-        else:
-            raise ValueError("unrecognized file kind: {}".format(kind))
-
-
+        return super(FrequencySeries, self).interpolate_to_index(freq, **kws)
 
 class Data(TimeSeries):
     """Container for time-domain strain data from a given GW detector.
