@@ -52,6 +52,14 @@ ringdown.injection module
    :undoc-members:
    :show-inheritance:
 
+ringdown.imr module
+--------------------
+
+.. automodule:: ringdown.imr
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
