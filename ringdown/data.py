@@ -1,3 +1,7 @@
+"""Utilities for handling and manipulating strain data from gravitational-wave
+detectors.
+"""
+
 __all__ = ['Series', 'TimeSeries', 'FrequencySeries', 'Data',
            'AutoCovariance', 'PowerSpectrum']
 

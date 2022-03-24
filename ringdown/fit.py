@@ -5,7 +5,7 @@ import copy as cp
 from pylab import *
 from .data import *
 from . import qnms
-from . import injection
+from . import waveforms
 import lal
 from collections import namedtuple
 import pkg_resources
@@ -513,8 +513,8 @@ class Fit(object):
         parameters. Can be used to generate waveforms from model samples.
 
         Additional arguments are passed to 
-        :meth:`ringdown.injection.Ringdown.from_parameters` and
-        :meth:`ringdown.injection.Ringdown.project`.
+        :meth:`waveforms.Ringdown.from_parameters` and
+        :meth:`waveforms.Ringdown.project`.
 
         Arguments
         ---------
@@ -529,7 +529,7 @@ class Fit(object):
             to avoid doing so over a very long time array (for speed). By
             default, ``window='auto'`` sets this to a multiple of the analysis
             duration; otherwise this should be a float, or `inf` for no window.
-            (see docs for :meth:`ringdown.injection.Ringdown.from_parameters`).
+            (see docs for :meth:`waveforms.Ringdown.from_parameters`).
         """
         # parse GW and projection arguments
         if window == 'auto':
@@ -541,7 +541,7 @@ class Fit(object):
         all_kws.update(all_kws.pop('kws'))
         s_kws = all_kws.copy()
         p_kws ={k: s_kws.pop(k) for k in kws.keys() if k in 
-                getfullargspec(injection.Signal.project)[0][1:]}
+                getfullargspec(waveforms.Signal.project)[0][1:]}
         if all([k in p_kws for k in ['ra', 'dec']]):
             # a sky location was explicitly provided, so compute APs from that
             aps = {}
@@ -561,7 +561,7 @@ class Fit(object):
             p_kws['delay'] = 'from_geo'
             # get baseline signal (by default at geocenter)
             t = self.data[self.ifos[0]].time.values
-            gw = injection.Ringdown.from_parameters(t, **s_kws)
+            gw = waveforms.Ringdown.from_parameters(t, **s_kws)
             # project onto each detector
             injections = {i: gw.project(antenna_patterns=aps.get(i, None),
                                         t0=s_kws['t0'] + dts.get(i, 0),
@@ -573,7 +573,7 @@ class Fit(object):
             for ifo, d in self.data.items():
                 s_kws['t0'] = all_kws.get('t0', self.start_times[ifo] +
                                                 dts.get(ifo, 0))
-                gw = injection.Ringdown.from_parameters(d.time.values, **s_kws)
+                gw = waveforms.Ringdown.from_parameters(d.time.values, **s_kws)
                 injections[ifo] = gw.project(antenna_patterns=aps[ifo],
                                              ifo=ifo, **p_kws)
         return injections

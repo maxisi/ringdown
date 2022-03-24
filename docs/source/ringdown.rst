@@ -44,21 +44,14 @@ ringdown.qnms module
    :undoc-members:
    :show-inheritance:
 
-ringdown.injection module
+ringdown.waveforms module
 --------------------
 
-.. automodule:: ringdown.injection
+.. automodule:: ringdown.waveforms
    :members:
    :undoc-members:
    :show-inheritance:
-
-ringdown.imr module
---------------------
-
-.. automodule:: ringdown.imr
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   :imported-members:
 
 Module contents
 ---------------
