@@ -116,14 +116,14 @@ class Parameters:
     def to_dict(self) -> dict:
             return asdict(self)
 
-    def items(self):
-        return self.to_dict().items()
+    def items(self, *args, **kwargs):
+        return self.to_dict().items(*args, **kwargs)
     
-    def keys(self):
-        return self.to_dict().keys()
+    def keys(self, *args, **kwargs):
+        return self.to_dict().keys(*args, **kwargs)
     
-    def values(self):
-        return self.to_dict().values()
+    def values(self, *args, **kwargs):
+        return self.to_dict().values(*args, **kwargs)
 
     _EXTRINSIC_KEYS = ['ra', 'dec', 'geocent_time']
 
@@ -142,8 +142,9 @@ class Parameters:
         'mass_ratio': ['q'],
         'luminosity_distance': ['dist', 'dl', 'distance'],
     }
-    for k in _SPIN_KEYS_LALINF:
-        _ALIASES[k] = [k.replace('_', '')]
+    for _k in _SPIN_KEYS_LALINF:
+        _ALIASES[_k] = [_k.replace('_', '')]
+    del _k
     
     @property
     def intrinsic(self):
