@@ -353,7 +353,7 @@ class Coalescence(Signal):
         window : float, bool
             window signal from the left to avoid sharp turn ons in time-domain
             approximants; numerical value is interpreted as fraction of time
-            for :func:`tukey` window ramp up. Defaults to 0.125.
+            for :func:`tukey` window ramp up. Defaults to {0}.
         manual_epoch : bool
             align waveform based on empirically found waveform peak (i.e., peak
             of :math:`h_+^2 + h_\\times^2`), not the epoch reported by
