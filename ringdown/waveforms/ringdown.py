@@ -10,6 +10,7 @@ import warnings
 
 class Ringdown(Signal):
     _metadata = ['modes']
+    _MODELS =  ['mchi', 'mchi_aligned', 'ftau', 'elliptical', 'default']
 
     def __init__(self, *args, modes=None, **kwargs):
         super(Ringdown, self).__init__(*args, **kwargs)
@@ -182,6 +183,7 @@ class Ringdown(Signal):
         pars = {k: self.parameters[k][n] for k in self._MODE_PARS}
         return pars
 
+Signal._register_model(Ringdown)
 
 # #############################################################################
 

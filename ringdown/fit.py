@@ -530,6 +530,11 @@ class Fit(object):
             default, ``window='auto'`` sets this to a multiple of the analysis
             duration; otherwise this should be a float, or `inf` for no window.
             (see docs for :meth:`waveforms.Ringdown.from_parameters`).
+        
+        Returns
+        -------
+        waveforms : dict
+            dictionary of :class:`Data` waveforms for each detector.
         """
         # parse GW and projection arguments
         if window == 'auto':

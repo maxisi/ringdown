@@ -28,6 +28,7 @@ def _ishift(hp_t, hc_t):
 
 class Signal(TimeSeries):
     _metadata = ['parameters']
+    _MODEL_REGISTER = {}
 
     def __init__(self, *args, parameters=None, **kwargs):
         super(Signal, self).__init__(*args, **kwargs)
@@ -44,6 +45,11 @@ class Signal(TimeSeries):
         """
         return self.get_parameter('t0',
                                   self.get_parameter('geocent_time', None))
+
+    @staticmethod
+    def _register_model(obj):
+        for m in obj._MODELS:
+            Signal._MODEL_REGISTER[m] = obj.from_parameters
 
     def get_parameter(self, k, *args):
         return self.parameters.get(k.lower(), *args) 

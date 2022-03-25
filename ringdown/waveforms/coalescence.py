@@ -294,6 +294,15 @@ class Parameters:
 class Coalescence(Signal):
     """An inspiral-merger-ringdown signal from a compact binary coalescence.
     """
+    _DEF_TUKEY_ALPHA = 0.125
+
+    # register names of all available LALSimulation approximants
+    _MODELS = [
+        ls.GetStringFromApproximant(a) for a in range(ls.NumApproximants) if
+        ls.SimInspiralImplementedFDApproximants(a) or
+        ls.SimInspiralImplementedTDApproximants(a)
+    ]
+
     def __init__(self, *args, modes=None, **kwargs):
         super(Coalescence, self).__init__(*args, **kwargs)
 
@@ -301,13 +310,12 @@ class Coalescence(Signal):
     def _constructor(self):
         return Coalescence
 
-    _DEF_TUKEY_ALPHA = 0.125
 
     @classmethod
     @docstring_parameter(_DEF_TUKEY_ALPHA)
-    def from_parameters(cls, time, approximant, ell_max=None, single_mode=None,
-                        window=_DEF_TUKEY_ALPHA, manual_epoch=False,
-                        subsample_placement=False, **kws):
+    def from_parameters(cls, time, model=None, approximant=None, ell_max=None,
+                        single_mode=None, window=_DEF_TUKEY_ALPHA,
+                        manual_epoch=False, subsample_placement=False, **kws):
         """Construct coalescence waveform from compact-binary parameters.
 
         Additional keyword arguments are passed to :class:`Parameters` to
@@ -340,8 +348,10 @@ class Coalescence(Signal):
         ---------
         time : array
             time array over which to evaluate waveform.
-        approximant : str
+        model : str
             name of waveform approximant (e.g., "NRSur7dq4").
+        approximant : str
+            alias for `model`.
         ell_max : int
             highest angular harmonic ``ell`` mode to include, defined in the
             coprecessing frame per the convention inherited from LALSimulation
@@ -371,7 +381,8 @@ class Coalescence(Signal):
         h : Coalescence
             compact binary coalescence signal.
         """
-            
+        approximant = model or approximant
+
         all_kws = {k: v for k,v in locals().items() if k not in ['cls','time']}
         all_kws.update(all_kws.pop('kws'))
 
@@ -493,6 +504,7 @@ class Coalescence(Signal):
                                        1j*hc_d[waveStartIndex:waveStartIndex+bufWaveLength])
         all_kws.update(pars.to_dict())
         return cls(h, index=time, parameters=all_kws)
+Signal._register_model(Coalescence)
 
 
 class IMR(Signal):
