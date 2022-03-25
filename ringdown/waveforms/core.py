@@ -80,6 +80,16 @@ class Signal(TimeSeries):
         tpeak = self.delta_t*ipeak + float(self.time[0])
         return tpeak
 
+    @classmethod
+    def from_parameters(cls, *args, **kwargs):
+        if not cls._MODEL_REGISTER:
+            raise ValueError("no models registered: reload or reinstall ringdown")
+        m = kwargs.get('model', 'default')
+        if m in cls._MODEL_REGISTER:
+            return cls._MODEL_REGISTER[m](*args, **kwargs)
+        else:
+            raise ValueError("unrecognized model: {}".format(m))
+
     def project(self, ifo=None, t0=None, antenna_patterns=None, delay=None,
                 ra=None, dec=None, psi=None, fd_shift=False, interpolate=False):
         """Project waveform onto detector, multiplying by antenna patterns and 
