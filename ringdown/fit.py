@@ -944,10 +944,11 @@ class Fit(object):
             for i, t0_i in self.start_times.items():
                 if t0_i < self.data[i].time[0] or t0_i > self.data[i].time[-1]:
                     raise ValueError("{} start time not in data".format(i))
-            # find sample closest to requested start time
+            # find sample closest to (but no later than) requested start time
             for ifo, d in self.data.items():
                 t0 = self.start_times[ifo]
-                i0_dict[ifo] = argmin(abs(d.time - t0))
+                t = d.time.values - t0
+                i0_dict[ifo] = where(t==amin(abs(t), where=t>=0, initial=inf))[0][0]
         return i0_dict
 
     @property
