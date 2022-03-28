@@ -11,7 +11,6 @@ from collections import namedtuple
 import pkg_resources
 import arviz as az
 from ast import literal_eval
-from inspect import getfullargspec
 import configparser
 import logging
 
@@ -508,80 +507,49 @@ class Fit(object):
         self.update_info('condition', **kwargs)
     condition_data.__doc__ += Data.condition.__doc__
 
-    def get_templates(self, fast_projection=False, window='auto', **kws):
-        """Produce templates at each detector for a given set of ringdown
-        parameters. Can be used to generate waveforms from model samples.
+    def get_templates(self, signal_buffer='auto', **kws):
+        """Produce templates at each detector for a given set of parameters.
+        Can be used to generate waveforms from model samples, or a full
+        coalescence.
 
-        Additional arguments are passed to 
-        :meth:`waveforms.Ringdown.from_parameters` and
-        :meth:`waveforms.Ringdown.project`.
+        This is a wrapper around
+        :func:`ringdown.waveforms.get_detector_signals`.
 
         Arguments
         ---------
-        fast_projection : bool
-            if true, evaluates polarization functions only once using the time
-            array of the first interferometer and then projects onto each
-            detector by time shifiting; otherwise, evaluates polarizations for
-            each detector, ensuring that there are no off-by-one alignment
-            errors. (Def. False)
-        window : float, str
-            window of time around target for which to evaluate polarizations,
-            to avoid doing so over a very long time array (for speed). By
-            default, ``window='auto'`` sets this to a multiple of the analysis
-            duration; otherwise this should be a float, or `inf` for no window.
-            (see docs for :meth:`waveforms.Ringdown.from_parameters`).
+        signal_buffer : float, str
+            span of time around target for which to evaluate polarizations, to
+            avoid doing so over a very long time array (for speed). By default,
+            ``signal_buffer='auto'`` sets this to a multiple of the analysis
+            duration; otherwise this should be a float, or `inf` for no
+            signal_buffer.  (see docs for
+            :meth:`ringdown.waveforms.Ringdown.from_parameters`; this option
+            has no effect for coalescence signals)
+        \*\*kws :
+            arguments passed to :func:`ringdown.waveforms.get_detector_signals`.
         
         Returns
         -------
         waveforms : dict
             dictionary of :class:`Data` waveforms for each detector.
         """
-        # parse GW and projection arguments
-        if window == 'auto':
+        if signal_buffer == 'auto':
             if self.duration is not None:
-                kws['window'] = 10*self.duration
+                kws['signal_buffer'] = 10*self.duration
         else:
-            kws['window'] = window
-        all_kws = {k: v for k,v in locals().items() if k not in ['self']}
-        all_kws.update(all_kws.pop('kws'))
-        s_kws = all_kws.copy()
-        p_kws ={k: s_kws.pop(k) for k in kws.keys() if k in 
-                getfullargspec(waveforms.Signal.project)[0][1:]}
-        if all([k in p_kws for k in ['ra', 'dec']]):
-            # a sky location was explicitly provided, so compute APs from that
-            aps = {}
-        else:
-            # no sky location given, so use provided APs or default to target
-            aps = p_kws.pop('antenna_patterns', None) or self.antenna_patterns
+            kws['signal_buffer'] = signal_buffer
+
+        # if no sky location given, use provided APs or default to target
+        if not all([k in kws for k in ['ra', 'dec']]):
+            kws['antenna_patterns'] = kws.pop('antenna_patterns', None) or \
+                                      self.antenna_patterns
         for k in ['ra', 'dec', 'psi']:
-            p_kws[k] = p_kws.get(k, self.target._asdict()[k])
+            kws[k] = kws.get(k, self.target._asdict()[k])
 
-        # some models allow for a `dts` parameter which shift t0 for detectors
-        # other than the first (i.e., a relative shift wrt the first detector)
-        dts = dict(zip(self.ifos[1:], kws.get('dts', zeros(len(self.ifos)-1))))
-
-        if fast_projection:
-            # evaluate GW polarizations once and timeshift for each detector
-            s_kws['t0'] = p_kws.pop('t0', self.t0)
-            p_kws['delay'] = 'from_geo'
-            # get baseline signal (by default at geocenter)
-            t = self.data[self.ifos[0]].time.values
-            gw = waveforms.Ringdown.from_parameters(t, **s_kws)
-            # project onto each detector
-            injections = {i: gw.project(antenna_patterns=aps.get(i, None),
-                                        t0=s_kws['t0'] + dts.get(i, 0),
-                                        ifo=i, **p_kws) for i in self.ifos}
-        else:
-            # revaluate the template from scratch for each detector
-            p_kws['delay'] = 'from_geo' if 't0' in all_kws else None
-            injections = {}
-            for ifo, d in self.data.items():
-                s_kws['t0'] = all_kws.get('t0', self.start_times[ifo] +
-                                                dts.get(ifo, 0))
-                gw = waveforms.Ringdown.from_parameters(d.time.values, **s_kws)
-                injections[ifo] = gw.project(antenna_patterns=aps[ifo],
-                                             ifo=ifo, **p_kws)
-        return injections
+        kws['times'] = {ifo: d.time.values for ifo,d in self.data.items()}
+        kws['t0_default'] = self.t0
+        kws['trigger_times'] = self.start_times
+        return waveforms.get_detector_signals(**kws)
 
     def inject(self, no_noise=False, **kws):
         """Add simulated signal to data, and records it in
@@ -1002,7 +970,7 @@ class Fit(object):
         else:
             return self._n_analyze
 
-    def whiten(self, datas, drifts=None):
+    def whiten(self, datas, drifts=None) -> dict:
         """Return whiten data for all detectors.
 
         See also :meth:`ringdown.data.AutoCovariance.whiten`.
@@ -1068,7 +1036,7 @@ class Fit(object):
         return i, pars
 
     @property
-    def whitened_templates(self):
+    def whitened_templates(self) -> np.ndarray:
         """Whitened templates corresponding to each posterior sample, as
         were seen by the sampler.
 
@@ -1088,7 +1056,7 @@ class Fit(object):
         # (ifo, time, time). the resulting object will have shape (ifo, time, sample)
         return linalg.solve(self.result.constant_data.L, hs)
 
-    def compute_posterior_snrs(self, optimal=True, network=True):
+    def compute_posterior_snrs(self, optimal=True, network=True) -> np.ndarray:
         """Efficiently computes signal-to-noise ratios from posterior samples,
         reproducing the computation internally carried out by the sampler.
 

@@ -74,7 +74,7 @@ class Parameters:
 #        source right ascension in rad
 #    dec : float
 #        source declination in rad
-#    geocent_time : float
+#    trigger_time : float
 #        trigger time at geocenter
 
     # masses
@@ -101,7 +101,7 @@ class Parameters:
     psi: float = 0
     ra: float = None
     dec: float = None
-    geocent_time: float = 0
+    trigger_time: float = 0
 
     def __post_init__(self):
         # make sure all values are floats, or LALSim will complain
@@ -125,7 +125,7 @@ class Parameters:
     def values(self, *args, **kwargs):
         return self.to_dict().values(*args, **kwargs)
 
-    _EXTRINSIC_KEYS = ['ra', 'dec', 'geocent_time']
+    _EXTRINSIC_KEYS = ['ra', 'dec', 'trigger_time']
 
     _SPIN_KEYS_LALINF = ['theta_jn', 'phi_jl', 'tilt_1', 'tilt_2', 'phi_12',
                          'a_1' 'a_2']
@@ -134,7 +134,7 @@ class Parameters:
     _SPIN_KEYS_LALSIM = ['iota'] + _SPIN_COMP_KEYS
     
     _ALIASES = {
-        'geocent_time': ['triggertime', 'time', 'tc'],
+        'trigger_time': Signal._T0_ALIASES,
         'mass_1': ['m1'],
         'mass_2': ['m2'],
         'total_mass': ['mtot', 'm'],
@@ -442,7 +442,7 @@ class Coalescence(Signal):
         tEnd = tStart + dt * bufLength
 
         # /* The nearest sample in model buffer to the desired tc. */
-        tcSample = round((pars['geocent_time'] - tStart)/dt)
+        tcSample = round((pars['trigger_time'] - tStart)/dt)
 
         # /* The actual coalescence time that corresponds to the buffer
         #    sample on which the waveform's tC lands. */

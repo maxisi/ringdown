@@ -40,6 +40,8 @@ class Ringdown(Signal):
         pars = {k: array(kws.pop(k), ndmin=ndmin) for k in list(kws.keys())
                 if k in keys}
         # possibly interpret parameters as coming from a specific stan model
+        # (only required if the model introduces polarization parameters other
+        # than A, ellip, theta, phi)
         if 'model' in kws:
             if kws['model'] == 'mchi_aligned':
                 # this assumes a template for the oscillatory part like
@@ -108,7 +110,7 @@ class Ringdown(Signal):
     _MODE_PARS = ['omega', 'gamma', 'a', 'ellip', 'theta', 'phi']
 
     @classmethod
-    def from_parameters(cls, time, t0=0, window=inf, two_sided=True, df_pre=0,
+    def from_parameters(cls, time, t0=0, signal_buffer=inf, two_sided=True, df_pre=0,
                         dtau_pre=0, mode_isel=None, **kws):
         """Create injection: a sinusoid up to t0, then a damped sinusoiud. The
         (A_pre, df_pre, dtau_pre) parameters can turn the initial sinusoid into
@@ -134,7 +136,7 @@ class Ringdown(Signal):
 
         # define some masks (pre and post t0) to avoid evaluating the waveform
         # over extremely long time arrays [optional]
-        mpost = (time >= t0) & (time < t0 + 0.5*window) 
+        mpost = (time >= t0) & (time < t0 + 0.5*signal_buffer) 
 
         # each mode will be a sinusoid up to t0, then a damped sinusoid
         if mode_isel == None:
@@ -150,7 +152,7 @@ class Ringdown(Signal):
         if two_sided:
             margs['omega'] = margs['omega']*exp(df_pre)
             margs['gamma'] = -margs['gamma']*exp(-dtau_pre)
-            mpre = (time < t0) & (time > t0 - 0.5*window)
+            mpre = (time < t0) & (time > t0 - 0.5*signal_buffer)
             signal[mpre] = sum(cls.complex_mode(t[mpre]-t0, *margs.values()),
                                axis=1)
         return cls(signal, index=time, parameters=pars, modes=modes)

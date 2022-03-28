@@ -1,9 +1,10 @@
-__all__ = ['Signal', '_ishift']
+__all__ = ['Signal', '_ishift', 'get_detector_signals']
 
 from pylab import *
 import lal
 from ..data import Data, TimeSeries
 from scipy.interpolate import interp1d
+from inspect import getfullargspec
 
 def _ishift(hp_t, hc_t):
     hmag = np.sqrt(hp_t*hp_t + hc_t*hc_t)
@@ -28,6 +29,10 @@ def _ishift(hp_t, hc_t):
 
 class Signal(TimeSeries):
     _metadata = ['parameters']
+    _T0_ALIASES = ['t0', 'geocent_time', 'trigger_time', 'triggertime',
+                   'time', 'tc']
+    _FROM_GEO_KEY = 'from_geo'
+
     _MODEL_REGISTER = {}
 
     def __init__(self, *args, parameters=None, **kwargs):
@@ -40,11 +45,13 @@ class Signal(TimeSeries):
 
     @property
     def t0(self):
-        """Reference time `t0`, or otherwise `geocent_time`, from
-        :attr:`Signal.parameters`.
+        """Reference time `t0`, or alias, from :attr:`Signal.parameters`.
+        Valid aliases are: `{}`.
         """
-        return self.get_parameter('t0',
-                                  self.get_parameter('geocent_time', None))
+        for k in self._T0_ALIASES:
+            if k in self.parameters:
+                return self.get_parameter(k)
+    t0.__doc__ = t0.__doc__.format(_T0_ALIASES)
 
     @staticmethod
     def _register_model(obj):
@@ -82,6 +89,24 @@ class Signal(TimeSeries):
 
     @classmethod
     def from_parameters(cls, *args, **kwargs):
+        """Produce a gravitational wave from parameters, for either a full
+        compact binary coalescence, or the ringdown alone.
+
+        Input is passed to the corresponding constructor method, depending on
+        the `model` specified in arguments. Assumes signal is ringdown by default.
+
+        Arguments
+        ---------
+        \*args :
+            arguments passed to constructor.
+        \*\*kwargs:
+            keyword arguments passed to constructor.
+
+        Returns
+        -------
+        signal : Signal
+            subclass of signal.
+        """
         if not cls._MODEL_REGISTER:
             raise ValueError("no models registered: reload or reinstall ringdown")
         m = kwargs.get('model', 'default')
@@ -143,12 +168,7 @@ class Signal(TimeSeries):
         Fp, Fc = antenna_patterns
         h = Fp*self._hp + Fc*self._hc
         if isinstance(delay, str):
-            if delay.lower() == 'from_geo':
-                tgps = tgps or lal.LIGOTimeGPS(t0 or self.t0)
-                det = det or lal.cached_detector_by_prefix[ifo]
-                delay = lal.TimeDelayFromEarthCenter(det.location,ra,dec,tgps)
-            else:
-                raise ValueError("invalid delay reference: {}".format(delay))
+            delay = get_delay(ifo, tgps or t0 or self.t0, ra, dec, delay)
         else:
             delay = delay or 0
         if fd_shift:
@@ -179,4 +199,147 @@ class Signal(TimeSeries):
         legend(loc='best')
         return ax
 
+
+def get_detector_signals(times=None, ifos=None, antenna_patterns=None,
+                         trigger_times=None, t0_default=None,
+                         fast_projection=False, **kws):
+    """Produce templates at each detector for a given set of parameters. Can be
+    used to generate waveforms from model samples, or to obtain IMR injections.
+
+    Additional keyword arguments are passed to :meth:`Signal.from_parameters`
+    and :meth:`Signal.project`.
+
+    Arguments
+    ---------
+    times : dict, array
+        a dictionary with time stamps for each detector, or a single array of
+        time stamps to be shared by all detectors
+    ifos : list
+        list of detector names, only required if `times` is a single array
+    antenna_patterns : dict, None
+        optional dictionary of tuples with pluss and cross antenna patterns for
+        each detector, `(Fp, Fc)`; computed from sky location if not given.
+    trigger_times : dict, None
+        dictionary of arrival-times at each detector; computed from sky
+        location and reference trigger time if not given.
+    t0_default : float
+        optional default trigger time, to be used if no other valid trigger time
+        argument is provided.
+    fast_projection : bool
+        if true, evaluates polarization functions only once using the time
+        array of the first interferometer and then projects onto each
+        detector by time shifiting; otherwise, evaluates polarizations for
+        each detector, ensuring that there are no off-by-one alignment
+        errors. (Def. False)
+    \*\*kws :
+        arguments passed to :meth:`Signal.from_parameters` and/or
+        :meth:`Signal.project`.
+    
+    Returns
+    -------
+    sdict : dict
+        dictionary of :class:`Data` waveforms for each detector.
+    """
+    # parse GW and projection arguments
+    all_kws = {k: v for k,v in locals().items() if k not in ['times', 'ifos']}
+    all_kws.update(all_kws.pop('kws'))
+
+    # arguments for signal generation
+    s_kws = all_kws.copy()
+
+    # check if a trigger time was provided
+    t0 = [s_kws.pop(k, None) for k in Signal._T0_ALIASES][0]
+    if t0 is None:
+        t0 = t0_default
+    # get other arguments for signal projection
+    p_kws ={k: s_kws.pop(k) for k in kws.keys() if k in 
+            getfullargspec(Signal.project)[0][1:]}
+
+    # parse detectors and time arrays
+    if isinstance(times, dict):
+        # assume `times` is a dictionary with entries for each detector
+        # (define `time` anyway, to be used in case of `fast_projection`)
+        ifos = ifos or list(times.keys())
+        time = times[ifos[0]]
+    elif ifos is not None:
+        # assume `times` is a single time array to be used for all detectors
+        time = times
+        times = {ifo: time for ifo in ifos}
+    else:
+        raise ValueError("must provide interferometers")
+
+    # check if antenna patterns were provided
+    if antenna_patterns is None:
+        antenna_patterns = {}
+    sky_provided = all([k in p_kws for k in ['ra', 'dec']])
+    if not antenna_patterns and not sky_provided:
+        raise ValueError("must provide antenna patterns or sky location")
+
+    # parse time options: first, could provide individual start times explicitly
+    # if so, this will take precedence over all other options
+    trigger_times = trigger_times or {}
+
+    if all([i in trigger_times for i in ifos]):
+        # all start times given, compute relative delays
+        if t0 is None:
+            # set reference time to the first start time
+            t0 = trigger_times[ifos[0]]
+    elif trigger_times:
+        # some start times given, but not all: fail
+        x = [i for i in ifos if i not in trigger_times]
+        raise ValueError(f"missing trigger times for some detectors: {x!r}")
+    elif sky_provided:
+        # no trigger times given, compute from sky location
+        if t0 is None:
+            raise ValueError("missing reference time for sky location")
+        else:
+            trigger_times = {i: t0 + get_delay(i, t0, p_kws['ra'],
+                                               p_kws['dec']) for i in ifos}
+    else:
+        raise ValueError("must provide trigger times or sky location")
+        
+    # some models allow for a `dts` parameter which shift t0 for detectors
+    # other than the first (i.e., a relative shift wrt the first detector)
+    # Note: this is not to be confused with the time-of-flight delay!
+    dts = dict(zip(ifos[1:], kws.get('dts', zeros(len(ifos)-1))))
+
+    if fast_projection:
+        # evaluate GW polarizations once and timeshift for each detector:
+        # first, get the trigger time and assume it refers to geocenter
+        # generate signal, evaluating at geocenter timestamps
+        h = Signal.from_parameters(time, t0=t0, **s_kws)
+        # project onto each detector: we provide a target geocenter time from
+        # which delays to each individual detectors will be computed
+        # (potentially plus an additional `dt` defined above); we also provide
+        # antenna patterns for the projection, or let them be computed from the
+        # sky location and time.
+        sdict = {i: h.project(antenna_patterns=antenna_patterns.get(i, None),
+                              delay=trigger_times[i] + dts.get(i, 0) - t0,
+                              t0=t0, ifo=i, **p_kws) for i in ifos}
+    else:
+        # revaluate the template from scratch for each detector first,
+        # check if a trigger time was provided: if so, assume this
+        # reference time refers to geocenter
+        sdict = {}
+        for i, time in times.items():
+            # target time will be the start time at this detector
+            # (potentially plus an arbitrary `dt` shift as above)
+            s_kws['t0'] = trigger_times[i] + dts.get(i, 0)
+            h = Signal.from_parameters(time, **s_kws)
+            sdict[i] = h.project(antenna_patterns=antenna_patterns.get(i, None),
+                                 delay=0, ifo=i, **p_kws)
+    return sdict
+
+def get_delay(ifo, t0, ra, dec, reference=Signal._FROM_GEO_KEY):
+    """ Establish truncation target, stored to `self.target`.
+    """
+    if not isinstance(t0, lal.LIGOTimeGPS):
+        t0 = lal.LIGOTimeGPS(t0)
+    d = lal.cached_detector_by_prefix[ifo]
+    if reference.lower() == Signal._FROM_GEO_KEY:
+        dt = lal.TimeDelayFromEarthCenter(d.location, ra, dec, t0)
+    else:
+        # TODO: implement delay from given detector
+        raise ValueError(f"unrecognized time reference {reference!r}")
+    return dt
 
