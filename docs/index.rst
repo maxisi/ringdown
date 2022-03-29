@@ -10,7 +10,7 @@ ringdown
 
 `ringdown` contains basic utilities to manipulate strain data and easily set up your own inference analyses quickly. The current implementation relies on `Stan <https://mc-stan.org>`_ for sampling.
 
-This documentation is being actively developed. In the meantime, usage examples can be found `here <https://github.com/maxisi/ringdown/tree/main/examples>`_ and API documentation in the :ref:`modindex`.
+This documentation is being actively developed. In the meantime, usage examples can be found `here <https://github.com/maxisi/ringdown/tree/main/docs/examples>`_ and API documentation in the :ref:`modindex`.
 
 .. image:: https://badge.fury.io/py/ringdown.svg
     :target: https://badge.fury.io/py/ringdown
@@ -57,7 +57,7 @@ We ask that scientific users of this code cite the corresponding Zenodo entry (s
    :maxdepth: 2
    :caption: Contents:
 
-   examples
+   gallery
 
 
 Indices and tables
