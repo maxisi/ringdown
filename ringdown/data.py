@@ -271,14 +271,15 @@ class Data(TimeSeries):
         detector identifier (e.g., 'H1' for LIGO Hanford).
     """
 
-    _metadata = ['ifo']
+    _metadata = ['ifo', 'info']
 
-    def __init__(self, *args, ifo=None, **kwargs):
+    def __init__(self, *args, ifo=None, info=None,  **kwargs):
         if ifo is not None:
             ifo = ifo.upper()
         kwargs['name'] = kwargs.get('name', ifo)
         super(Data, self).__init__(*args, **kwargs)
         self.ifo = ifo
+        self.info = info or {}
 
     @property
     def _constructor(self):

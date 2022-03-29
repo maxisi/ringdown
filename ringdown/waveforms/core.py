@@ -30,7 +30,7 @@ def _ishift(hp_t, hc_t):
 class Signal(TimeSeries):
     _metadata = ['parameters']
     _T0_ALIASES = ['t0', 'geocent_time', 'trigger_time', 'triggertime',
-                   'time', 'tc']
+                   'tc', 'tgps_geo', 'tgps_geocent']
     _FROM_GEO_KEY = 'from_geo'
 
     _MODEL_REGISTER = {}
@@ -184,7 +184,11 @@ class Signal(TimeSeries):
                 dt = (idt - delay*self.fsamp)*self.delta_t
                 h = hint(self.time + dt)
             h = np.roll(h, idt)
-        return Data(h, ifo=ifo, index=self.time)
+        info = self.parameters
+        info.update({k: v for k,v in locals().items() if k in
+                     ['antenna_patterns', 'ra', 'dec', 'psi', 'delay', 
+                     'fd_shift', 'interpolate']})
+        return Data(h, ifo=ifo, index=self.time, info=info)
 
     def plot(self, ax=None, envelope=False):
         """Plot the series' plus and cross components.
@@ -248,12 +252,14 @@ def get_detector_signals(times=None, ifos=None, antenna_patterns=None,
     s_kws = all_kws.copy()
 
     # check if a trigger time was provided
-    t0 = [s_kws.pop(k, None) for k in Signal._T0_ALIASES][0]
+    t0 = None
+    for k in Signal._T0_ALIASES:
+        t0 = t0 if t0 is not None else s_kws.pop(k, None)
     if t0 is None:
         t0 = t0_default
     # get other arguments for signal projection
     p_kws ={k: s_kws.pop(k) for k in kws.keys() if k in 
-            getfullargspec(Signal.project)[0][1:]}
+            getfullargspec(Signal.project)[0][1:] and k != 't0'}
 
     # parse detectors and time arrays
     if isinstance(times, dict):

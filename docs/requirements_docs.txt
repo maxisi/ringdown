@@ -1,3 +1,6 @@
 # docs/requirements_docs.txt
 sphinx
 sphinx-autobuild
+ipykernel
+nbsphinx
+sphinx-gallery

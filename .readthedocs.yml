@@ -1,7 +1,7 @@
 version: 2
 
 sphinx:
-  configuration: docs/source/conf.py
+  configuration: docs/conf.py
 
 formats: all
 
@@ -13,6 +13,7 @@ python:
       extra_requirements:
         - all
     - requirements: docs/requirements_docs.txt
+  system_packages: true
 
 submodules:
   include: all

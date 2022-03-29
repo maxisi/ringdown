@@ -947,8 +947,7 @@ class Fit(object):
             # find sample closest to (but no later than) requested start time
             for ifo, d in self.data.items():
                 t0 = self.start_times[ifo]
-                t = d.time.values - t0
-                i0_dict[ifo] = where(t==amin(abs(t), where=t>=0, initial=inf))[0][0]
+                i0_dict[ifo] = argmin(abs(d.time - t0))
         return i0_dict
 
     @property

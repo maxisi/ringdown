@@ -8,6 +8,7 @@ import lal
 import lalsimulation as ls
 from dataclasses import dataclass, asdict, fields
 import inspect
+import h5py
 
 def docstring_parameter(*args, **kwargs):
     def dec(obj):
@@ -113,6 +114,9 @@ class Parameters:
     def __getitem__(self, *args, **kwargs):
         return getattr(self, *args, **kwargs)
     
+    def __setitem__(self, *args, **kwargs):
+        return setattr(self, *args, **kwargs)
+    
     def to_dict(self) -> dict:
             return asdict(self)
 
@@ -128,7 +132,7 @@ class Parameters:
     _EXTRINSIC_KEYS = ['ra', 'dec', 'trigger_time']
 
     _SPIN_KEYS_LALINF = ['theta_jn', 'phi_jl', 'tilt_1', 'tilt_2', 'phi_12',
-                         'a_1' 'a_2']
+                         'a_1', 'a_2']
     
     _SPIN_COMP_KEYS = ['spin_{}{}'.format(i,x) for i in [1,2] for x in 'xyz']
     _SPIN_KEYS_LALSIM = ['iota'] + _SPIN_COMP_KEYS
@@ -141,10 +145,15 @@ class Parameters:
         'chirp_mass': ['mc', 'mchirp'],
         'mass_ratio': ['q'],
         'luminosity_distance': ['dist', 'dl', 'distance'],
+        'iota': ['inclination', 'inc'],
     }
+    _ALIASES_STR = ''
+    for _k,_v in _ALIASES.items():
+        _ALIASES_STR += f"* `{_k}`: ``{_v}\n``"
+
     for _k in _SPIN_KEYS_LALINF:
         _ALIASES[_k] = [_k.replace('_', '')]
-    del _k
+    del _k, _v
     
     @property
     def intrinsic(self):
@@ -167,19 +176,24 @@ class Parameters:
         angles) and automatically convert them to the `LALSimulation`
         convention (Cartesian components) for storage.
 
-        Unrecognized arguments are ignored. Missing parameters will be set to
-        default.
+        A number of aliases for common parameters are recognized (e.g., ``mc``
+        is an alias of ``chirp_mass``); all valid aliases are listed below.
+        Unrecognized arguments are ignored.  Missing parameters will be set to
+        default (see :class:`Parameters` docs).
+
+        Valid aliases:
+        {}
 
         Arguments
         ---------
-        kws
+        \*\*kws
             parameter names and values
 
         Returns
         -------
         pars : Parameters
             coalescence parameters container object
-        """
+        """.format(cls._ALIASES_STR)
         kws['f_ref'] = kws.get('f_ref', kws.get('f_low'))
         for par, aliases in cls._ALIASES.items():
             for k in aliases:
@@ -194,10 +208,15 @@ class Parameters:
                 kws['mass_1'], kws['mass_2'] = m1m2_from_mcq(kws['chirp_mass'],
                                                              kws['mass_ratio'])
         # compose spins
-        if not all([k in kws for k in cls._SPIN_KEYS_LALSIM if k != 'iota']):
-            a = [kws[k] for k in cls._SPIN_KEYS_LALINF] + \
-                   [kws['mass_1']*lal.MSUN_SI, kws['mass_2']*lal.MSUN_SI,
-                    kws['fref'], kws['phase']]
+        lsim_given = [k in kws for k in cls._SPIN_KEYS_LALSIM if k!='iota']
+        linf_given = [k in kws for k in cls._SPIN_KEYS_LALINF if k!='theta_jn']
+        if not all(lsim_given) and any(linf_given):
+            try:
+                a = [kws[k] for k in cls._SPIN_KEYS_LALINF] + \
+                       [kws['mass_1']*lal.MSUN_SI, kws['mass_2']*lal.MSUN_SI,
+                        kws['fref'], kws['phase']]
+            except KeyError as e:
+                raise ValueError(f"unable to parse spins, missing: {e}")
             b = lalsim.SimInspiralTransformPrecessingNewInitialConditions(*a)
             kws.update(dict(zip(cls._SPIN_KEYS_LALSIM, b)))
             
