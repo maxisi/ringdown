@@ -1,5 +1,5 @@
-ringdown models
-===============
+Models
+======
 
 The :class:`ringdown.fit.Fit` object interfaces with a number of `Stan <https://mc-stan.org>`_ models for sampling. These models define the likelihood, prior and signal templates, and are contained in text files shipped with `ringdown` and accessed internally. The available models are described below.
 
@@ -17,7 +17,7 @@ although this is internally parameterized in terms of cosine and sine quadrature
    This model is not currently suitable for the analysis of real data. The
    `ftau` model currently has no notion of  polarizations, so it cannot support
    multiple detectors. Additionally, the :math:`\gamma_n < \gamma_{n+1}` can
-   make it innefficient for cases in which :math:`\gamma_n \apporx
+   make it innefficient for cases in which :math:`\gamma_n \approx
    \gamma_{n+1}` (as would be the case, for example, for different angular
    harmonics).
 

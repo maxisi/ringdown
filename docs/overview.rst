@@ -1,4 +1,4 @@
-ringdown overview
+Overview
 ========
 
 The `ringdown` package is composed of three modules: :mod:`ringdown.fit`, :mod:`ringdown.data` and :mod:`ringdown.waveforms`. The single most important object in the package is the :class:`ringdown.fit.Fit` class, which contains all information and settings required to set up and execute an analysis. Several examples of its use are provided in the :ref:`gallery`.
