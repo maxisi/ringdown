@@ -1,4 +1,4 @@
-ringdown
+API reference
 ========
 
 .. toctree::

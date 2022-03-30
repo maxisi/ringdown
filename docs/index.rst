@@ -58,6 +58,7 @@ We ask that scientific users of this code cite the corresponding Zenodo entry (s
    :caption: Contents:
 
    gallery
+   modules
 
 
 Indices and tables
