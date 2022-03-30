@@ -37,6 +37,7 @@ extensions = [
     'nbsphinx',
     'sphinx_gallery.load_style',
     'sphinx.ext.autodoc', 'sphinx.ext.napoleon',
+    'sphinx.ext.autosectionlabel',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -65,3 +66,5 @@ nbsphinx_epilog = """
 .. note:: This page was generated from a Jupyter notebook that can be
           `downloaded here <https://github.com/maxisi/ringdown/tree/main/docs/{{ docname }}>`_.
 """
+
+nbsphinx_timeout = 30

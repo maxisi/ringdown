@@ -8,7 +8,7 @@ ringdown
 
 **ringdown** is a Python package for the Bayesian analysis of black hole ringdowns in data from gravitational-wave detectors, like `LIGO <https://www.ligo.caltech.edu>`_ and `Virgo <https://www.virgo-gw.eu>`_.
 
-`ringdown` contains basic utilities to manipulate strain data and easily set up your own inference analyses quickly. The current implementation relies on `Stan <https://mc-stan.org>`_ for sampling.
+`ringdown` contains basic utilities to manipulate strain data and easily set up your own inference analyses quickly. The current implementation relies on `Stan <https://mc-stan.org>`_ for sampling the posterior.
 
 This documentation is being actively developed. In the meantime, usage examples can be found `here <https://github.com/maxisi/ringdown/tree/main/docs/examples>`_ and API documentation in the :ref:`modindex`.
 
@@ -57,6 +57,8 @@ We ask that scientific users of this code cite the corresponding Zenodo entry (s
    :maxdepth: 2
    :caption: Contents:
 
+   overview
+   models
    gallery
    modules
 

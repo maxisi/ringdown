@@ -1,4 +1,4 @@
-__all__ = ['Signal', '_ishift', 'get_detector_signals']
+__all__ = ['Signal', '_ishift', 'get_detector_signals', 'get_delay']
 
 from pylab import *
 import lal
@@ -299,6 +299,7 @@ def get_detector_signals(times=None, ifos=None, antenna_patterns=None,
         if t0 is None:
             raise ValueError("missing reference time for sky location")
         else:
+            print("HERE")
             trigger_times = {i: t0 + get_delay(i, t0, p_kws['ra'],
                                                p_kws['dec']) for i in ifos}
     else:
@@ -309,6 +310,7 @@ def get_detector_signals(times=None, ifos=None, antenna_patterns=None,
     # Note: this is not to be confused with the time-of-flight delay!
     dts = dict(zip(ifos[1:], kws.get('dts', zeros(len(ifos)-1))))
 
+    print(t0)
     if fast_projection:
         # evaluate GW polarizations once and timeshift for each detector:
         # first, get the trigger time and assume it refers to geocenter
@@ -319,9 +321,11 @@ def get_detector_signals(times=None, ifos=None, antenna_patterns=None,
         # (potentially plus an additional `dt` defined above); we also provide
         # antenna patterns for the projection, or let them be computed from the
         # sky location and time.
+        print({i: trigger_times[i] + dts.get(i, 0) - t0 for i in ifos})
+        print({i: trigger_times[i] for i in ifos})
         sdict = {i: h.project(antenna_patterns=antenna_patterns.get(i, None),
                               delay=trigger_times[i] + dts.get(i, 0) - t0,
-                              t0=t0, ifo=i, **p_kws) for i in ifos}
+                              ifo=i, **p_kws) for i in ifos}
     else:
         # revaluate the template from scratch for each detector first,
         # check if a trigger time was provided: if so, assume this
@@ -331,6 +335,7 @@ def get_detector_signals(times=None, ifos=None, antenna_patterns=None,
             # target time will be the start time at this detector
             # (potentially plus an arbitrary `dt` shift as above)
             s_kws['t0'] = trigger_times[i] + dts.get(i, 0)
+            print(s_kws['t0'])
             h = Signal.from_parameters(time, **s_kws)
             sdict[i] = h.project(antenna_patterns=antenna_patterns.get(i, None),
                                  delay=0, ifo=i, **p_kws)

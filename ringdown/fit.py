@@ -1047,7 +1047,7 @@ class Fit(object):
 
           fit.result.posterior.h_det.stack(sample=('chain', 'draw'))
         """
-        if self.posterior is None:
+        if self.result is None:
             return None
         # get reconstructions from posterior, shaped as (chain, draw, ifo, time)
         # and stack into (ifo, time, sample)
@@ -1083,7 +1083,7 @@ class Fit(object):
             True``, or ``(ifo, samples)`` otherwise; the number of samples
             equals the number of chains times the number of draws.
         """
-        if self.posterior is None:
+        if self.result is None:
             raise RuntimeError("no results available")
         # get whitened reconstructions from posterior (ifo, time, sample)
         whs = self.whitened_templates
