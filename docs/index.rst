@@ -53,18 +53,18 @@ We ask that scientific users of this code cite the corresponding Zenodo entry (s
       year = "2021"
   }
 
+Contents
+--------
+
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
 
    overview
    models
    gallery
    modules
 
-
 Indices and tables
-------------------
 
 * :ref:`genindex`
 * :ref:`modindex`

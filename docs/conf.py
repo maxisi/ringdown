@@ -38,6 +38,7 @@ extensions = [
     'sphinx_gallery.load_style',
     'sphinx.ext.autodoc', 'sphinx.ext.napoleon',
     'sphinx.ext.autosectionlabel',
+    'sphinxemoji.sphinxemoji',
 ]
 
 # Add any paths that contain templates here, relative to this directory.

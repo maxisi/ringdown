@@ -23,7 +23,7 @@ although this is internally parameterized in terms of cosine and sine quadrature
 
 Priors are flat in :math:`A_n, \phi_n, f_n, \tau_n`, modulo the :math:`\gamma_n < \gamma_{n+1}` restriction.
 
-See this model in use in the following example: :doc:`examples/single_damped_sinusoid.ipynb`.
+|:point_right:| **See this model in action!** :doc:`examples/single_damped_sinusoid`.
 
 Kerr ringdowns (``mchi``)
 --------------------------
@@ -67,7 +67,7 @@ This model supports deviations from the Kerr spectrum, which can be turned on vi
    \tau_j &= \tau_j(M,\chi) \exp(\delta \tau_j) \, .
    \end{eqnarray}
 
-See this model in use in the following example: :doc:`examples/GW150914.ipynb`.
+|:point_right:| **See this model in action!** :doc:`examples/GW150914`.
 
 Kerr ringdowns with restricted polarizations (``mchi_aligned``)
 ---------------------------------------------------------------
@@ -78,13 +78,13 @@ In this more restricted version of the ``mchi`` model, the polarizations are giv
 
 .. math::
    \begin{eqnarray}
-   h^{(+)} &= \left(1 + \cos^2\iota\right) \sum_n A_n \cos(\omega_n t - \phi_n) \exp(-t/\tau_n)\, ,\\
+   h^{(+)} &= \left(1 + \cos^2\iota\right) \sum_n A_n \cos(\omega_n t - \phi_n) \exp(-t/\tau_n)\, , \\
    h^{(\times)} &= 2 \cos\iota \sum_n A_n \sin(\omega_n t - \phi_n) \exp(-t/\tau_n)\, .
    \end{eqnarray}
 
 and we label the modes by overtone number :math:`n`. Other options are analogous to those in `mchi`.
 
-See this model in use in the following example: :doc:`examples/GW150914_circular`.
+|:point_right:| **See this model in action!** :doc:`examples/GW150914_circular`.
 
 .. note::
    The ``mchi_aligned`` model only supports :math:`\ell=|m|=2` overtones because the inclination dependence would be different for other harmonics, which is not currently implemented.
