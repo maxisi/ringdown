@@ -23,7 +23,7 @@ although this is internally parameterized in terms of cosine and sine quadrature
 
 Priors are flat in :math:`A_n, \phi_n, f_n, \tau_n`, modulo the :math:`\gamma_n < \gamma_{n+1}` restriction.
 
-See this model in use in the following example: :ref:`examples/single_damped_sinusoid`.
+See this model in use in the following example: :ref:`examples/single_damped_sinusoid.ipynb`.
 
 Kerr ringdowns (``mchi``)
 --------------------------
@@ -67,7 +67,7 @@ This model supports deviations from the Kerr spectrum, which can be turned on vi
    \tau_j &= \tau_j(M,\chi) \exp(\delta \tau_j) \, .
    \end{eqnarray}
 
-See this model in use in the following example: :ref:`examples/GW150914`.
+See this model in use in the following example: :ref:`examples/GW150914.ipynb`.
 
 Kerr ringdowns with restricted polarizations (``mchi_aligned``)
 ---------------------------------------------------------------
@@ -75,6 +75,7 @@ Kerr ringdowns with restricted polarizations (``mchi_aligned``)
 Fit an arbitrary number of Kerr overtones with :math:`\ell=|m|=2` and polarizations parameterized by a single "inclination" parameter :math:`\cos\iota`, controlling the degree of circular polarization for all modes. This is equivalent to assuming all :math:`m=+2` and :math:`m=-2` components are equally excited, so that the ellipticity of the observed signal is only a function of the viewing angle (see appendix in `Isi & Farr (2021) <https://arxiv.org/abs/2107.05609>`_); we might expect this in the case of nonprecessing systems, which possess equatorial reflection symmetry (hence the naming ``aligned``).
 
 In this more restricted version of the ``mchi`` model, the polarizations are given by
+
 .. math::
    \begin{eqnarray}
    h^{(+)} &= \left(1 + \cos^2\iota\right) \sum_n A_n \cos(\omega_n t - \phi_n) \exp(-t/\tau_n)\, ,\\
@@ -82,6 +83,8 @@ In this more restricted version of the ``mchi`` model, the polarizations are giv
    \end{eqnarray}
 
 and we label the modes by overtone number :math:`n`. Other options are analogous to those in `mchi`.
+
+See this model in use in the following example: :ref:`examples/GW150914_circular.ipynb`.
 
 .. note::
    The ``mchi_aligned`` model only supports :math:`\ell=|m|=2` overtones because the inclination dependence would be different for other harmonics, which is not currently implemented.
