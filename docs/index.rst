@@ -32,7 +32,7 @@ You can get an analysis going with just a few lines of code. For example, assumi
     fit.set_prior(A_scale=1e-21, M_min=50, M_max=150)
     fit.run()
 
-See more examples in the example gallery.
+See more examples in the :doc:`gallery`.
 
 
 How to cite
