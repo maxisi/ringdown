@@ -57,7 +57,7 @@ summing over the requested mode indices :math:`j`. The antenna patterns :math:`(
 In the ``mchi`` model, the mode frequencies and damping rates are parameterized by two parameters: the Kerr black-hole mass :math:`M` and dimensionless spin magnitude :math:`\chi`.
 To replicate this functional dependence, the Stan model makes use of fitting coefficients precomputed through the `qnm <https://qnm.readthedocs.io/en/latest/>`_ package.
 
-The priors are uniform in :math:`M` and :math:`\chi`. The priors can also be made uniform on :math:`A_j` and :math:`\epsilon_j` using the ``flat_A`` and ``flat_A_ellip`` options (see :met:`Fit.update_prior <ringdown.fit.Fit.update_prior>`); by default, however, they correspond to Gaussian priors on the cosine and sine quadratures of each polarization (see Appendix of `Isi & Farr (2021) <https://arxiv.org/abs/2107.05609>`_).
+The priors are uniform in :math:`M` and :math:`\chi`. The priors can also be made uniform on :math:`A_j` and :math:`\epsilon_j` using the ``flat_A`` and ``flat_A_ellip`` options (see :meth:`Fit.update_prior <ringdown.fit.Fit.update_prior>`); by default, however, they correspond to Gaussian priors on the cosine and sine quadratures of each polarization (see Appendix of `Isi & Farr (2021) <https://arxiv.org/abs/2107.05609>`_).
 
 This model supports deviations from the Kerr spectrum, which can be turned on via the ``perturb_f`` and ``perturb_tau`` options. This activates deviation parameters :math:`\delta f_j` and :math:`\delta\tau_j` that modify the frequencies and damping times such that
 
