@@ -184,10 +184,12 @@ class Signal(TimeSeries):
                 dt = (idt - delay*self.fsamp)*self.delta_t
                 h = hint(self.time + dt)
             h = np.roll(h, idt)
-        info = self.parameters
-        info.update({k: v for k,v in locals().items() if k in
-                     ['antenna_patterns', 'ra', 'dec', 'psi', 'delay', 
-                     'fd_shift', 'interpolate']})
+        # record projection information
+        info = self.parameters.copy()
+        pars = locals()
+        info.update({k: pars[k] for k in ['tgps', 'antenna_patterns', 'delay',
+                                          'ra', 'dec', 'psi', 'fd_shift',
+                                          'interpolate']})
         return Data(h, ifo=ifo, index=self.time, info=info)
 
     def plot(self, ax=None, envelope=False):
@@ -299,7 +301,6 @@ def get_detector_signals(times=None, ifos=None, antenna_patterns=None,
         if t0 is None:
             raise ValueError("missing reference time for sky location")
         else:
-            print("HERE")
             trigger_times = {i: t0 + get_delay(i, t0, p_kws['ra'],
                                                p_kws['dec']) for i in ifos}
     else:
@@ -310,7 +311,7 @@ def get_detector_signals(times=None, ifos=None, antenna_patterns=None,
     # Note: this is not to be confused with the time-of-flight delay!
     dts = dict(zip(ifos[1:], kws.get('dts', zeros(len(ifos)-1))))
 
-    print(t0)
+    sdict = {}
     if fast_projection:
         # evaluate GW polarizations once and timeshift for each detector:
         # first, get the trigger time and assume it refers to geocenter
@@ -321,21 +322,18 @@ def get_detector_signals(times=None, ifos=None, antenna_patterns=None,
         # (potentially plus an additional `dt` defined above); we also provide
         # antenna patterns for the projection, or let them be computed from the
         # sky location and time.
-        print({i: trigger_times[i] + dts.get(i, 0) - t0 for i in ifos})
-        print({i: trigger_times[i] for i in ifos})
-        sdict = {i: h.project(antenna_patterns=antenna_patterns.get(i, None),
-                              delay=trigger_times[i] + dts.get(i, 0) - t0,
-                              ifo=i, **p_kws) for i in ifos}
+        for i in ifos:
+            sdict[i] = h.project(antenna_patterns=antenna_patterns.get(i, None),
+                                 delay=trigger_times[i] + dts.get(i, 0) - t0,
+                                 ifo=i, **p_kws)
     else:
         # revaluate the template from scratch for each detector first,
         # check if a trigger time was provided: if so, assume this
         # reference time refers to geocenter
-        sdict = {}
         for i, time in times.items():
             # target time will be the start time at this detector
             # (potentially plus an arbitrary `dt` shift as above)
             s_kws['t0'] = trigger_times[i] + dts.get(i, 0)
-            print(s_kws['t0'])
             h = Signal.from_parameters(time, **s_kws)
             sdict[i] = h.project(antenna_patterns=antenna_patterns.get(i, None),
                                  delay=0, ifo=i, **p_kws)
