@@ -4,6 +4,14 @@ ringdown package
 Submodules
 ----------
 
+ringdown.fit module
+-------------------
+
+.. automodule:: ringdown.fit
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 ringdown.data module
 --------------------
 
@@ -12,10 +20,19 @@ ringdown.data module
    :undoc-members:
    :show-inheritance:
 
-ringdown.fit module
--------------------
+ringdown.waveforms module
+-------------------------
 
-.. automodule:: ringdown.fit
+.. automodule:: ringdown.waveforms
+   :members:
+   :undoc-members:
+   :show-inheritance:
+   :imported-members:
+
+ringdown.qnms module
+--------------------
+
+.. automodule:: ringdown.qnms
    :members:
    :undoc-members:
    :show-inheritance:
@@ -28,30 +45,6 @@ ringdown.kde\_contour module
    :undoc-members:
    :show-inheritance:
 
-ringdown.peak module
---------------------
-
-.. automodule:: ringdown.peak
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-ringdown.qnms module
---------------------
-
-.. automodule:: ringdown.qnms
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-ringdown.waveforms module
---------------------
-
-.. automodule:: ringdown.waveforms
-   :members:
-   :undoc-members:
-   :show-inheritance:
-   :imported-members:
 
 Module contents
 ---------------

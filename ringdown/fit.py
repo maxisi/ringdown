@@ -1,3 +1,6 @@
+"""Module defining the core :class:`Fit` class.
+"""
+
 __all__ = ['Target', 'Fit', 'MODELS']
 
 import os
@@ -19,7 +22,18 @@ Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 MODELS = ('ftau', 'mchi', 'mchi_aligned', 'mchiq')
 
 class Fit(object):
-    """ A ringdown fit.
+    """ A ringdown fit. Contains all the information required to setup and run
+    a ringdown inference analysis, as well as to manipulate the result.
+
+    Example usage::
+
+        import ringdown as rd
+        fit = rd.Fit('mchi', modes=[(1,-2,2,2,0), (1,-2,2,2,1)])
+        fit.load_data('{i}-{i}1_GWOSC_16KHZ_R1-1126259447-32.hdf5', ifos=['H1', 'L1'], kind='gwosc')
+        fit.set_target(1126259462.4083147, ra=1.95, dec=-1.27, psi=0.82, duration=0.05)
+        fit.condition_data(ds=8)
+        fit.set_prior(A_scale=1e-21, M_min=50, M_max=150)
+        fit.run()
 
     Attributes
     ----------
@@ -66,7 +80,6 @@ class Fit(object):
         outer (inner) keys will be interpreted as sections (options) when
         creating a configuration file through :meth:`Fit.to_config`.
     """
-
 
     _compiled_models = {}
 
