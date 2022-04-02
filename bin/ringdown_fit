@@ -34,66 +34,72 @@ import logging
 ##############################################################################
 
 DEFOUT = "ringdown_fit.nc"
-parser = argparse.ArgumentParser(description="ringdown analysis from config")
-parser.add_argument('config', help="path to configuration file")
-parser.add_argument('-o', '--output', default=None,
-                    help="output result path (def. {}).".format(DEFOUT))
-parser.add_argument('--prior', action='store_true', help="sample from prior")
-parser.add_argument('--force', action='store_true',
-                    help="overwrites output file if it already exists")
-parser.add_argument('-v', '--verbose', action='store_true')
+_HELP = "Set up and run ringdown analysis from a configuration file."
 
-args = parser.parse_args()
+def get_parser():
+    p = argparse.ArgumentParser(description=_HELP)
+    p.add_argument('config', help="path to configuration file.")
+    p.add_argument('-o', '--output', default=None,
+                   help="output result path (default: `{}`).".format(DEFOUT))
+    p.add_argument('--prior', action='store_true', help="sample from prior.")
+    p.add_argument('--force', action='store_true',
+                   help="overwrites output file if it already exists.")
+    p.add_argument('-v', '--verbose', action='store_true')
+    return p
 
-if args.verbose:
-    logging.getLogger().setLevel(logging.INFO)
-
-print("Loading: {}".format(os.path.abspath(args.config)))
-
-config = configparser.ConfigParser()
-config.read(args.config)
-
-def try_parse(x):
-    try:
-        return float(x)
-    except (TypeError,ValueError):
+if __name__ == "__main__":
+    parser = get_parser()
+    args = parser.parse_args()
+    
+    if args.verbose:
+        logging.getLogger().setLevel(logging.INFO)
+    
+    print("Loading: {}".format(os.path.abspath(args.config)))
+    
+    config = configparser.ConfigParser()
+    config.read(args.config)
+    
+    def try_parse(x):
         try:
-            return literal_eval(x)
-        except (TypeError,ValueError,SyntaxError):
-            return x
-
-if config.has_section('run'):
-    run_kws = {k: try_parse(v) for k,v in config['run'].items()}
-else:
-    run_kws = {}
-run_kws['prior'] = args.prior or run_kws.get('prior', False)
-
-if run_kws['prior']:
-    DEFOUT = DEFOUT.replace('fit', 'prior')
-out = args.output or DEFOUT
-
-if os.path.exists(out):
-    if args.force:
-        logging.warning("overwriting output file: {}".format(out))
+            return float(x)
+        except (TypeError,ValueError):
+            try:
+                return literal_eval(x)
+            except (TypeError,ValueError,SyntaxError):
+                return x
+    
+    if config.has_section('run'):
+        run_kws = {k: try_parse(v) for k,v in config['run'].items()}
     else:
-        raise FileExistsError("output file already exists: {}".format(out))
-
-##############################################################################
-# RUN FIT
-##############################################################################
-
-fit = rd.Fit.from_config(config)
-fit.run(**run_kws)
-
-if run_kws['prior']:
-    result = fit.prior
-else:
-    result = fit.result
-
-ext = os.path.splitext(out)[-1]
-if ext.lower() == '.nc':
-    result.to_netcdf(out)
-else:
-    result.to_json(out)
-
-print("Saved ringdown fit: {}".format(out))
+        run_kws = {}
+    run_kws['prior'] = args.prior or run_kws.get('prior', False)
+    
+    if run_kws['prior']:
+        DEFOUT = DEFOUT.replace('fit', 'prior')
+    out = args.output or DEFOUT
+    
+    if os.path.exists(out):
+        if args.force:
+            logging.warning("overwriting output file: {}".format(out))
+        else:
+            raise FileExistsError("output file already exists: {}".format(out))
+    
+    ############################################################################
+    # RUN FIT
+    ############################################################################
+    
+    fit = rd.Fit.from_config(config)
+    fit.run(**run_kws)
+    
+    if run_kws['prior']:
+        result = fit.prior
+    else:
+        result = fit.result
+    
+    ext = os.path.splitext(out)[-1]
+    if ext.lower() == '.nc':
+        result.to_netcdf(out)
+    else:
+        result.to_json(out)
+    
+    print("Saved ringdown fit: {}".format(out))

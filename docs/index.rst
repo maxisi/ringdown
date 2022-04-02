@@ -32,7 +32,7 @@ You can get an analysis going with just a few lines of code. For example, assumi
     fit.set_prior(A_scale=1e-21, M_min=50, M_max=150)
     fit.run()
 
-Or run using a configuration file from the command line:
+Or run using a configuration file from the :doc:`command line <exe_ringdown_fit>`:
 
 .. code-block:: console
 
@@ -68,6 +68,7 @@ Contents
    overview
    models
    gallery
+   exe_ringdown_fit
    modules
 
 Indices and tables
