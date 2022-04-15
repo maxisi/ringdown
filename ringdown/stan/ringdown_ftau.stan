@@ -1,6 +1,5 @@
 functions {
   vector rd(vector t, real f, real gamma, real Ax, real Ay) {
-    int n = rows(t);
     return exp(-gamma*t).*(Ax*cos(2*pi()*f*t) + Ay*sin(2*pi()*f*t));
   }
 }

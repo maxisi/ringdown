@@ -4,13 +4,13 @@ from .data import *
 from .fit import *
 from .kde_contour import *
 from .peak import *
-from .injection import *
+from .waveforms import *
 from pylab import *
 from . import qnms
 from . import data
 from . import fit
 from . import peak
-from . import injection
+from . import waveforms
 
 # ############################################################################
 # rcParams

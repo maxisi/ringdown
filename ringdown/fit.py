@@ -1,3 +1,6 @@
+"""Module defining the core :class:`Fit` class.
+"""
+
 __all__ = ['Target', 'Fit', 'MODELS']
 
 import os
@@ -5,28 +8,32 @@ import copy as cp
 from pylab import *
 from .data import *
 from . import qnms
-from . import injection
+from . import waveforms
 import lal
 from collections import namedtuple
 import pkg_resources
 import arviz as az
 from ast import literal_eval
-from inspect import getfullargspec
 import configparser
-
-# def get_raw_time_ifo(tgps, raw_time, duration=None, ds=None):
-#     ds = ds or 1
-#     duration = inf if duration is None else duration
-#     m = abs(raw_time - tgps) < 0.5*duration
-#     i = argmin(abs(raw_time - tgps))
-#     return roll(raw_time, -(i % ds))[m]
+import logging
 
 Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 
-MODELS = ('ftau', 'mchi', 'mchi_aligned')
+MODELS = ('ftau', 'mchi', 'mchi_aligned', 'mchiq')
 
 class Fit(object):
-    """ A ringdown fit.
+    """ A ringdown fit. Contains all the information required to setup and run
+    a ringdown inference analysis, as well as to manipulate the result.
+
+    Example usage::
+
+        import ringdown as rd
+        fit = rd.Fit('mchi', modes=[(1,-2,2,2,0), (1,-2,2,2,1)])
+        fit.load_data('{i}-{i}1_GWOSC_16KHZ_R1-1126259447-32.hdf5', ifos=['H1', 'L1'], kind='gwosc')
+        fit.set_target(1126259462.4083147, ra=1.95, dec=-1.27, psi=0.82, duration=0.05)
+        fit.condition_data(ds=8)
+        fit.set_prior(A_scale=1e-21, M_min=50, M_max=150)
+        fit.run()
 
     Attributes
     ----------
@@ -73,7 +80,6 @@ class Fit(object):
         outer (inner) keys will be interpreted as sections (options) when
         creating a configuration file through :meth:`Fit.to_config`.
     """
-
 
     _compiled_models = {}
 
@@ -160,7 +166,7 @@ class Fit(object):
     def sky(self) -> tuple:
         """ Tuple of source right ascension, declination and polarization angle
         (all in radians). This can be set using
-        :meth:`ringdown.fit.Fit.set_target`.
+        :meth:`Fit.set_target`.
         """
         return (self.target.ra, self.target.dec, self.target.psi)
 
@@ -170,6 +176,8 @@ class Fit(object):
         """Regression coefficients used by sampler to obtain mode frequencies
         and damping times as a function of physical black hole parameters.
         """
+        if self.modes is None:
+            return
         f_coeffs = []
         g_coeffs = []
         for mode in self.modes:
@@ -181,8 +189,8 @@ class Fit(object):
     @property
     def analysis_data(self) -> dict:
         """Slice of data to be analyzed for each detector. Extracted from
-        :attr:`ringdown.fit.Fit.data` based on information in analysis target
-        :attr:`ringdown.fit.Fit.target`.
+        :attr:`Fit.data` based on information in analysis target
+        :attr:`Fit.target`.
         """
         data = {}
         i0s = self.start_indices
@@ -229,6 +237,19 @@ class Fit(object):
                 cosi_max=1,
                 flat_A=0
             ))
+        elif self.model == 'mchiq':
+             default.update(dict(
+                 M_min=None,
+                 M_max=None,
+                 r2_qchi_min=0.0,
+                 r2_qchi_max=1.0,
+                 theta_qchi_min=0.0,
+                 theta_qchi_max=pi/2,
+                 df_coeffs=[],
+                 dg_coeffs=[],
+                 flat_A=0,
+                 flat_A_ellip=0
+             ))
         return default
 
     @property
@@ -242,7 +263,7 @@ class Fit(object):
     @property
     def valid_model_options(self) -> list:
         """Valid prior parameters for the selected model. These can be set
-        through :meth:`ringdown.fit.Fit.update_prior`.
+        through :meth:`Fit.update_prior`.
         """
         return list(self._default_prior.keys())
 
@@ -253,7 +274,7 @@ class Fit(object):
         `1e-21`.
 
         Valid arguments for the selected model can be found in
-        :attr:`ringdown.fit.Fit.valid_model_options`.
+        :attr:`Fit.valid_model_options`.
         """
         valid_keys = self.valid_model_options
         valid_keys_low = [k.lower() for k in valid_keys]
@@ -270,7 +291,7 @@ class Fit(object):
         """Arguments to be passed to sampler.
         """
         if not self.acfs:
-            print('WARNING: computing ACFs with default settings.')
+            logging.warning("computing ACFs with default settings")
             self.compute_acfs()
 
         data_dict = self.analysis_data
@@ -283,7 +304,7 @@ class Fit(object):
             t0=list(self.start_times.values()),
             times=[d.time for d in data_dict.values()],
             strain=list(data_dict.values()),
-            L=[acf.iloc[:self.n_analyze].cholesky for acf in self.acfs.values()],
+            L=[a.iloc[:self.n_analyze].cholesky for a in self.acfs.values()],
             FpFc = list(self.antenna_patterns.values()),
             # default priors
             dt_min=-1E-6,
@@ -291,6 +312,8 @@ class Fit(object):
         )
 
         if 'mchi' in self.model:
+            if self.modes is None:
+                raise RuntimeError("fit has no modes (see fit.set_modes)")
             f_coeff, g_coeff = self.spectral_coefficients
             stan_data.update(dict(
                 f_coeffs=f_coeff,
@@ -364,7 +387,16 @@ class Fit(object):
         # inject signal if requested
         if config.has_section('injection'):
             inj_kws = {k: try_parse(v) for k,v in config['injection'].items()}
-            fit.inject(**inj_kws)
+            no_noise = inj_kws.get('no_noise', False)
+            if no_noise:
+                # create injection but do not add it to data quite yet, in case
+                # we need to estimate ACFs from data first
+                fit.injections = fit.get_templates(**inj_kws)
+                fit.update_info('injection', **inj_kws)
+            else:
+                fit.inject(**inj_kws)
+        else:
+            no_noise = False
         # condition data if requested
         if config.has_section('condition'):
             cond_kws = {k: try_parse(v) for k,v in config['condition'].items()}
@@ -377,6 +409,11 @@ class Fit(object):
         else:
             acf_kws = {} if 'acf' not in config else config['acf']
             fit.compute_acfs(**{k: try_parse(v) for k,v in acf_kws.items()})
+        # if no-noise injection, replace data by conditioned injection
+        if no_noise:
+            fit.data = fit.injections
+            if config.has_section('condition'):
+                fit.condition_data(preserve_acfs=True, **cond_kws)
         return fit
 
     def to_config(self, path=None):
@@ -461,9 +498,13 @@ class Fit(object):
         """
         return cp.deepcopy(self)
 
-    def condition_data(self, **kwargs):
+    def condition_data(self, preserve_acfs=False, **kwargs):
         """Condition data for all detectors by calling
-        :meth:`ringdown.data.Data.condition`. Docstring for that function below.
+        :meth:`ringdown.data.Data.condition`. Docstring for that function
+        below.
+
+        The `preserve_acfs` argument determines whether to preserve original
+        ACFs in fit after conditioning.
 
         """
         new_data = {}
@@ -471,97 +512,81 @@ class Fit(object):
             t0 = self.start_times[k]
             new_data[k] = d.condition(t0=t0, **kwargs)
         self.data = new_data
-        self.acfs = {} # Just to be sure that these stay consistent
+        if not preserve_acfs:
+            self.acfs = {} # Just to be sure that these stay consistent
+        elif self.acfs:
+            logging.warning("preserving existing ACFs after conditioning")
         # record conditioning settings
         self.update_info('condition', **kwargs)
     condition_data.__doc__ += Data.condition.__doc__
 
-    def get_templates(self, fast_projection=False, window='auto', **kws):
-        """Produce templates at each detector for a given set of ringdown
-        parameters. Can be used to generate waveforms from model samples.
+    def get_templates(self, signal_buffer='auto', **kws):
+        """Produce templates at each detector for a given set of parameters.
+        Can be used to generate waveforms from model samples, or a full
+        coalescence.
 
-        Additional arguments are passed to 
-        :meth:`ringdown.injection.Ringdown.from_parameters` and
-        :meth:`ringdown.injection.Ringdown.project`.
+        This is a wrapper around
+        :func:`ringdown.waveforms.get_detector_signals`.
 
         Arguments
         ---------
-        fast_projection : bool
-            if true, evaluates polarization functions only once using the time
-            array of the first interferometer and then projects onto each
-            detector by time shifiting; otherwise, evaluates polarizations for
-            each detector, ensuring that there are no off-by-one alignment
-            errors. (Def. False)
-        window : float, str
-            window of time around target for which to evaluate polarizations,
-            to avoid doing so over a very long time array (for speed). By
-            defauly, ``window='auto'`` sets this to a multiple of the analysis
-            duration; otherwise this should be a float, or `inf` for no window.
-            (see docs for :meth:`ringdown.injection.Ringdown.from_parameters`).
+        signal_buffer : float, str
+            span of time around target for which to evaluate polarizations, to
+            avoid doing so over a very long time array (for speed). By default,
+            ``signal_buffer='auto'`` sets this to a multiple of the analysis
+            duration; otherwise this should be a float, or `inf` for no
+            signal_buffer.  (see docs for
+            :meth:`ringdown.waveforms.Ringdown.from_parameters`; this option
+            has no effect for coalescence signals)
+        \*\*kws :
+            arguments passed to :func:`ringdown.waveforms.get_detector_signals`.
+        
+        Returns
+        -------
+        waveforms : dict
+            dictionary of :class:`Data` waveforms for each detector.
         """
-        # parse GW and projection arguments
-        if window == 'auto':
+        if signal_buffer == 'auto':
             if self.duration is not None:
-                kws['window'] = 10*self.duration
+                kws['signal_buffer'] = 10*self.duration
         else:
-            kws['window'] = window
-        all_kws = {k: v for k,v in locals().items() if k not in ['self']}
-        all_kws.update(all_kws.pop('kws'))
-        s_kws = all_kws.copy()
-        p_kws ={k: s_kws.pop(k) for k in kws.keys() if k in 
-                getfullargspec(injection.Signal.project)[0][1:]}
-        if all([k in p_kws for k in ['ra', 'dec']]):
-            # a sky location was explicitly provided, so compute APs from that
-            aps = {}
-        else:
-            # no sky location given, so use provided APs or default to target
-            aps = p_kws.pop('antenna_patterns', None) or self.antenna_patterns
+            kws['signal_buffer'] = signal_buffer
+
+        # if no sky location given, use provided APs or default to target
+        if not all([k in kws for k in ['ra', 'dec']]):
+            kws['antenna_patterns'] = kws.pop('antenna_patterns', None) or \
+                                      self.antenna_patterns
         for k in ['ra', 'dec', 'psi']:
-            p_kws[k] = p_kws.get(k, self.target._asdict()[k])
+            kws[k] = kws.get(k, self.target._asdict()[k])
 
-        # some models allow for a `dts` parameter which shift t0 for detectors
-        # other than the first (i.e., a relative shift wrt the first detector)
-        dts = dict(zip(self.ifos[1:], kws.get('dts', zeros(len(self.ifos)-1))))
+        kws['times'] = {ifo: d.time.values for ifo,d in self.data.items()}
+        kws['t0_default'] = self.t0
+        kws['trigger_times'] = self.start_times
+        return waveforms.get_detector_signals(**kws)
 
-        if fast_projection:
-            # evaluate GW polarizations once and timeshift for each detector
-            s_kws['t0'] = p_kws.pop('t0', self.t0)
-            p_kws['delay'] = 'from_geo'
-            # get baseline signal (by default at geocenter)
-            t = self.data[self.ifos[0]].time.values
-            gw = injection.Ringdown.from_parameters(t, **s_kws)
-            # project onto each detector
-            injections = {i: gw.project(antenna_patterns=aps.get(i, None),
-                                        t0=s_kws['t0'] + dts.get(i, 0),
-                                        ifo=i, **p_kws) for i in self.ifos}
-        else:
-            # revaluate the template from scratch for each detector
-            p_kws['delay'] = 'from_geo' if 't0' in all_kws else None
-            injections = {}
-            for ifo, d in self.data.items():
-                s_kws['t0'] = all_kws.get('t0', self.start_times[ifo] +
-                                                dts.get(ifo, 0))
-                gw = injection.Ringdown.from_parameters(d.time.values, **s_kws)
-                injections[ifo] = gw.project(antenna_patterns=aps[ifo],
-                                             ifo=ifo, **p_kws)
-        return injections
-
-    def inject(self, **kws):
+    def inject(self, no_noise=False, **kws):
         """Add simulated signal to data, and records it in
-        :attr:`ringdown.fit.Fit.injections`.
+        :attr:`Fit.injections`.
 
         .. warning::
           This method overwrites data stored in in :attr:`Fit.data`.
 
-        Arguments are passed to :meth:`Fit.get_templates`, whose documentation
-        is reproduced below.
+        Arguments are passed to :meth:`Fit.get_templates`.
+
+        Arguments
+        ---------
+        no_noise : bool
+            if true, replaces data with injection, instead of adding the two.
+            (def. False)
 
         """
         self.injections = self.get_templates(**kws)
         for i, h in self.injections.items():
-            self.data[i] = self.data[i] + h
-        self.update_info('injection', **kws)
-    inject.__doc__ += get_templates.__doc__
+            if no_noise:
+                self.data[i] = h
+            else:
+                self.data[i] = self.data[i] + h
+        self.update_info('injection', no_noise=no_noise, **kws)
 
     def run(self, prior=False, **kws):
         """Fit model.
@@ -574,11 +599,11 @@ class Fit(object):
         prior : bool
             whether to sample the prior (def. False).
         """
-        #check if delta_t of ACFs is equal to delta_t of data
+        # ensure delta_t of ACFs is equal to delta_t of data
         for ifo in self.ifos:
             if self.acfs[ifo].delta_t != self.data[ifo].delta_t:
                 e = "{} ACF delta_t ({:.1e}) does not match data ({:.1e})."
-                raise ValueError(e.format(ifo, self.acfs[ifo].delta_t,
+                raise AssertionError(e.format(ifo, self.acfs[ifo].delta_t,
                                           self.data[ifo].delta_t))
         # get model input
         stan_data = self.model_input
@@ -600,7 +625,7 @@ class Fit(object):
         }
         stan_kws.update(kws)
         # run model and store
-        print('Running {}'.format(self.model))
+        logging.info('running {}'.format(self.model))
         result = self._model.sampling(data=stan_data, **stan_kws)
         if prior:
             self.prior = az.convert_to_inference_data(result)
@@ -745,7 +770,7 @@ class Fit(object):
         """ Set template modes to be a sequence of overtones with a given
         angular structure.
 
-        To set an arbitrary set of modes, use :meth:`ringdown.fit.Fit.set_modes`
+        To set an arbitrary set of modes, use :meth:`Fit.set_modes`
 
         Arguments
         ---------
@@ -887,7 +912,7 @@ class Fit(object):
     # TODO: warn or fail if self.results is not None?
     def update_target(self, **kws):
         """Modify analysis target. See also
-        :meth:`ringdown.fit.Fit.set_target`.
+        :meth:`Fit.set_target`.
         """
         target = self.target._asdict()
         target.update({k: getattr(self,k) for k in
@@ -898,18 +923,18 @@ class Fit(object):
     @property
     def duration(self) -> float:
         """Analysis duration in the units of time presumed by the
-        :attr:`ringdown.fit.Fit.data` and :attr:`ringdown.fit.Fit.acfs` objects
+        :attr:`Fit.data` and :attr:`Fit.acfs` objects
         (usually seconds). Defined as :math:`T = N\\times\Delta t`, where
         :math:`N` is the number of analysis samples
-        (:attr:`ringdown.fit.n_analyze`) and :math:`\Delta t` is the time
+        (:attr:`n_analyze`) and :math:`\Delta t` is the time
         sample spacing.
         """
         if self._n_analyze and not self._duration:
             if self.data:
                 return self._n_analyze*self.data[self.ifos[0]].delta_t
             else:
-                print("Add data to compute duration (n_analyze = {})".format(
-                      self._n_analyze))
+                logging.warning("add data to compute duration "
+                                "(n_analyze = {})".format(self._n_analyze))
                 return None
         else:
             return self._duration
@@ -917,13 +942,13 @@ class Fit(object):
     @property
     def has_target(self) -> bool:
         """Whether an analysis target has been set with
-        :meth:`ringdown.fit.Fit.set_target`.
+        :meth:`Fit.set_target`.
         """
         return self.target.t0 is not None
 
     @property
     def start_indices(self) -> dict:
-        """Locations of first samples in :attr:`ringdown.fit.Fit.data`
+        """Locations of first samples in :attr:`Fit.data`
         to be included in the ringdown analysis for each detector.
         """
         i0_dict = {}
@@ -932,7 +957,7 @@ class Fit(object):
             for i, t0_i in self.start_times.items():
                 if t0_i < self.data[i].time[0] or t0_i > self.data[i].time[-1]:
                     raise ValueError("{} start time not in data".format(i))
-            # find sample closest to requested start time
+            # find sample closest to (but no later than) requested start time
             for ifo, d in self.data.items():
                 t0 = self.start_times[ifo]
                 i0_dict[ifo] = argmin(abs(d.time - t0))
@@ -948,8 +973,8 @@ class Fit(object):
                 dt = self.data[self.ifos[0]].delta_t
                 return int(round(self._duration/dt))
             else:
-                print("Add data to compute n_analyze (duration = {})".format(
-                      self._duration))
+                logging.warning("add data to compute n_analyze "
+                                "(duration = {})".format(self._duration))
                 return None
         elif self.data and self.has_target:
             # set n_analyze to fit shortest data set
@@ -958,7 +983,7 @@ class Fit(object):
         else:
             return self._n_analyze
 
-    def whiten(self, datas, drifts=None):
+    def whiten(self, datas, drifts=None) -> dict:
         """Return whiten data for all detectors.
 
         See also :meth:`ringdown.data.AutoCovariance.whiten`.
@@ -980,3 +1005,114 @@ class Fit(object):
             drifts = {i : 1 for i in datas.keys()}
         return {i: Data(self.acfs[i].whiten(d, drift=drifts[i]), ifo=i) 
                 for i,d in datas.items()}
+
+    def draw_sample(self, map=False, prior=False, rng=None, seed=None):
+        """Draw a sample from the posterior.
+
+        Arguments
+        ---------
+        map : bool
+           return maximum-probability sample; otherwise, returns random draw
+           (def., `False`) 
+        prior : bool
+            draw from prior instead of posterior samples
+        rng : numpy.random._generator.Generator
+            random number generator (optional)
+        seed : int
+            seed to initialize new random number generator (optional)
+        
+        Returns
+        -------
+        i : int
+            location of draw in stacked samples (i.e., samples obtained by
+            calling ``posterior.stack(sample=('chain', 'draw'))``)
+        pars : xarray.core.dataset.DataVariables
+            object containing drawn parameters (can be treated as dict)
+        """
+        if prior and not self.prior:
+            raise ValueError("no prior samples available")
+        elif not prior and not self.result:
+            raise ValueError("no posterior samples available")
+        # stack samples (prior or result)
+        result = self.prior if prior else self.result
+        samples = result.posterior.stack(sample=('chain', 'draw'))
+        if map:
+            # select maximum probability sample
+            logp = result.sample_stats.lp.stack(sample=('chain', 'draw'))
+            i = argmax(logp.values)
+        else:
+            # pick random sample
+            rng = rng or np.random.default_rng(seed)
+            i = rng.integers(len(samples['sample']))
+        sample = samples.isel(sample=i)
+        pars = sample.data_vars
+        return i, pars
+
+    @property
+    def whitened_templates(self) -> np.ndarray:
+        """Whitened templates corresponding to each posterior sample, as
+        were seen by the sampler.
+
+        Dimensions will be ``(ifo, time, sample)``.
+
+        Corresponding unwhitened templates can be obtained from posterior by
+        doing::
+
+          fit.result.posterior.h_det.stack(sample=('chain', 'draw'))
+        """
+        if self.result is None:
+            return None
+        # get reconstructions from posterior, shaped as (chain, draw, ifo, time)
+        # and stack into (ifo, time, sample)
+        hs = self.result.posterior.h_det.stack(samples=('chain', 'draw'))
+        # whiten the reconstructions using the Cholesky factors, L, with shape
+        # (ifo, time, time). the resulting object will have shape (ifo, time, sample)
+        return linalg.solve(self.result.constant_data.L, hs)
+
+    def compute_posterior_snrs(self, optimal=True, network=True) -> np.ndarray:
+        """Efficiently computes signal-to-noise ratios from posterior samples,
+        reproducing the computation internally carried out by the sampler.
+
+        Depending on the ``optimal`` argument, returns either the optimal SNR::
+
+          snr_opt = sqrt(dot(template, template))
+
+        or the matched filter SNR::
+
+          snr_mf = dot(data, template) / snr_opt
+
+        Arguments
+        ---------
+        optimal : bool
+            return optimal SNR, instead of matched filter SNR (def., ``True``)
+        network : bool
+            return network SNR, instead of individual-detector SNRs (def.,
+            ``True``)
+
+        Returns
+        -------
+        snrs : array
+            stacked array of SNRs, with shape ``(samples,)`` if ``network =
+            True``, or ``(ifo, samples)`` otherwise; the number of samples
+            equals the number of chains times the number of draws.
+        """
+        if self.result is None:
+            raise RuntimeError("no results available")
+        # get whitened reconstructions from posterior (ifo, time, sample)
+        whs = self.whitened_templates
+        # take the norm across time to get optimal snrs for each (ifo, sample)
+        opt_ifo_snrs = linalg.norm(whs, axis=1)
+        if optimal:
+            snrs = opt_ifo_snrs
+        else:
+            # get analysis data, shaped as (ifo, time)
+            ds = self.result.observed_data.strain
+            # whiten it with the Cholesky factors, so shape will remain (ifo, time)
+            wds = linalg.solve(self.result.constant_data.L, ds)
+            # take inner product between whitened template and data, and normalize
+            snrs = einsum('ijk,ij->ik', whs, wds)/opt_ifo_snrs
+        if network:
+            # take norm across detectors
+            return linalg.norm(snrs, axis=0)
+        else:
+            return snrs

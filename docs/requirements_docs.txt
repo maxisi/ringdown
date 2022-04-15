@@ -1,3 +1,8 @@
 # docs/requirements_docs.txt
 sphinx
 sphinx-autobuild
+ipykernel
+nbsphinx
+sphinx-gallery
+sphinxemoji
+sphinx-argparse
