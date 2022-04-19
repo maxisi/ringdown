@@ -298,7 +298,8 @@ class Data(TimeSeries):
         return d
 
     def condition(self, t0=None, ds=None, flow=None, fhigh=None, trim=0.25,
-                  digital_filter=False, remove_mean=True, decimate_kws=None):
+                  digital_filter=False, remove_mean=True, decimate_kws=None,
+                  scipy_dec=None):
         """Condition data.
 
         Arguments
@@ -355,6 +356,10 @@ class Data(TimeSeries):
             cond_data = raw_data
 
         # Decimate
+        if scipy_dec is not None:
+            logging.warn("scipy_dec arg is deprecated, use digital_filter")
+            digital_filter = not scipy_dec
+
         if ds and ds > 1:
             if digital_filter:
                 # fft data
