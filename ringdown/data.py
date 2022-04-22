@@ -514,12 +514,12 @@ class PowerSpectrum(FrequencySeries):
             psd = self.copy()
         fref = freq[freq >= flow][0]
         psd_ref = self[fref]
-        def get_low_freqs(f, simple):
+        def get_low_freqs(f, smooth):
             if smooth:
                 return self._pad_low_freqs(f, fref, psd_ref)
             else:
                 return psd_ref
-        psd[freq < flow] = get_low_freqs(freq[freq < flow], simple)
+        psd[freq < flow] = get_low_freqs(freq[freq < flow], smooth)
         if not inplace:
             return psd
 
