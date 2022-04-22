@@ -16,12 +16,12 @@ functions {
     return f;
   }
 
-  vector rd(vector t, real f, real gamma, real Apx, real Apy, real Acx, real Acy, real Fp, real Fc) {
+  vector rd(vector t, real f, real gamma, real A, real ellip, real theta, real phi, real Fp, real Fc) {
     int n = rows(t);
-    vector[n] ct = cos(2*pi()*f*t);
-    vector[n] st = sin(2*pi()*f*t);
-    vector[n] p = exp(-gamma*t).*(Apx*ct + Apy*st);
-    vector[n] c = exp(-gamma*t).*(Acx*ct + Acy*st);
+    vector[n] hc = cos(2*pi()*f*t - phi);
+    vector[n] hs = sin(2*pi()*f*t - phi);
+    vector[n] p = exp(-gamma*t).*(hc*cos(theta) - ellip*hs*sin(theta));
+    vector[n] c = exp(-gamma*t).*(hc*sin(theta) + ellip*hs*cos(theta));
     return Fp*p + Fc*c;
   }
 }
@@ -75,10 +75,9 @@ parameters {
   real<lower=M_min, upper=M_max> M;
   real<lower=chi_min, upper=chi_max> chi;
 
-  vector[nmode] Apx_unit;
-  vector[nmode] Apy_unit;
-  vector[nmode] Acx_unit;
-  vector[nmode] Acy_unit;
+  vector<lower=-1,upper=1>[nmode] ellip;
+  unit_vector[2] phi_plus_vec[nmode];
+  unit_vector[2] phi_minus_vec[nmode];
 
   vector<lower=dt_min, upper=dt_max>[nobs-1] dts;
 
@@ -90,30 +89,26 @@ transformed parameters {
   real drift[nobs];
   vector[nmode] gamma;
   vector[nmode] f;
-  vector[nsamp] h_det_mode[nobs,nmode];
-  vector[nsamp] h_det[nobs];
+  vector[nmode] theta;
+  vector[nmode] phi;
+  vector[nsamp] h_det_mode_unit[nobs,nmode];
 
-  vector[nmode] Apx;
-  vector[nmode] Apy;
-  vector[nmode] Acx;
-  vector[nmode] Acy;
+  vector[nmode] mu_amplitudes;
+  matrix[nmode,nmode] amplitudes_R;
 
-  vector[nmode] A;
-  vector[nmode] ellip;
+  real log_det_amplitudes;
+  real rss;
 
   for (i in 1:nobs) {
     drift[i] = exp(log_drift_unit[i]*drift_scale);
   }
 
   for (i in 1:nmode) {
-    Apx[i] = A_scale*Apx_unit[i];
-    Apy[i] = A_scale*Apy_unit[i];
-    Acx[i] = A_scale*Acx_unit[i];
-    Acy[i] = A_scale*Acy_unit[i];
+    real phi_plus = atan2(phi_plus_vec[i][2], phi_plus_vec[i][1]);
+    real phi_minus = atan2(phi_minus_vec[i][2], phi_minus_vec[i][1]);
 
-    A[i] = 0.5*(sqrt((Acy[i] + Apx[i])^2 + (Acx[i] - Apy[i])^2) + sqrt((Acy[i] - Apx[i])^2 + (Acx[i] + Apy[i])^2));
-
-    ellip[i] = (sqrt((Acy[i] + Apx[i])^2 + (Acx[i] - Apy[i])^2) -  sqrt((Acy[i] - Apx[i])^2 + (Acx[i] + Apy[i])^2))/( sqrt((Acy[i] + Apx[i])^2 + (Acx[i] - Apy[i])^2) +  sqrt((Acy[i] - Apx[i])^2 + (Acx[i] + Apy[i])^2));
+    theta[i] = -(phi_plus + phi_minus)/2;
+    phi[i] = (phi_plus - phi_minus)/2;
   }
 
   {
@@ -126,16 +121,14 @@ transformed parameters {
     gamma = f0*chi_factors(chi, nmode, g_coeffs) .* exp(-dtau .* perturb_tau);
   }
 
-  if (((flat_A) || (flat_A_ellip)) && (only_prior)) {
-      for (i in 1:nmode) {
-          if (A[i] > 2*A_scale) reject("A", i-1, " > 2*A_scale");
-      }
-  }
-
   if ( only_prior == 0 ) {
+    matrix[nobs*nsamp, nmode] Mw;
+    matrix[nobs*nsamp, nmode] amplitudes_Q;
+    vector[nobs*nsamp] dw;
+    vector[nobs*nsamp] rw;
+
     for (i in 1:nobs) {
       real torigin;
-      h_det[i] = rep_vector(0.0, nsamp);
 
       if (i > 1) {
         torigin = t0[i] + dts[i-1];
@@ -143,57 +136,61 @@ transformed parameters {
         torigin = t0[i];
       }
 
-    for (j in 1:nmode) {
-      h_det_mode[i, j] = rd(times[i] - torigin, f[j], gamma[j], Apx[j], Apy[j], Acx[j], Acy[j], FpFc[i][1], FpFc[i][2]);
-      h_det[i] = h_det[i] + h_det_mode[i,j];
+      for (j in 1:nmode) {
+        h_det_mode_unit[i, j] = rd(times[i] - torigin, f[j], gamma[j], 1.0, ellip[j], theta[j], phi[j], FpFc[i][1], FpFc[i][2]);
+
+        Mw[(i-1)*nsamp+1:i*nsamp, j] = mdivide_left_tri_low(L[i], h_det_mode_unit[i,j]);
+      }
+      dw[(i-1)*nsamp+1:i*nsamp] = mdivide_left_tri_low(L[i], strain[i]);
     }
-  }
+
+    amplitudes_R = qr_thin_R(Mw);
+    amplitudes_Q = qr_thin_Q(Mw); 
+    mu_amplitudes = mdivide_right_tri_low(dw' * amplitudes_Q, amplitudes_R')';
+    rw = dw - Mw * mu_amplitudes;
+    rss = rw' * rw;
+    log_det_amplitudes = nmode*log(2*pi()) - 2*sum(log(diagonal(amplitudes_R)));
   }
 }
 
 model {
+  vector[nsamp] resid[nobs];
   /* drift ~ lognormal(0, drift_scale) */
   log_drift_unit ~ std_normal();
 
-  /* Amplitude prior */
-  if (flat_A) {
-    for (i in 1:nmode) {
-      target += -3*log(A[i]);
-    }
-  } else if (flat_A_ellip) {
-    for (i in 1:nmode) {
-      target += -3*log(A[i]) - log1m(ellip[i]^2);
-    }
-  } else {
-    Apx_unit ~ std_normal();
-    Apy_unit ~ std_normal();
-    Acx_unit ~ std_normal();
-    Acy_unit ~ std_normal();
-  }
+  /* Amplitude prior is flat, ellip prior is flat, angle prior is isotropic. */
 
   /* Flat prior on M, chi */
 
   /* Flat prior on the delta-fs, delta-taus. */
 
+  /* Marginalized likelihood */
+
   /* Likelihood */
   if ( only_prior == 0 ) {
-      for (i in 1:nobs) {
-        strain[i] ~ multi_normal_cholesky(h_det[i], drift[i]*L[i]);
-      }
+      target += -rss/2 + log_det_amplitudes/2;
   }
 }
 
 generated quantities {
+  vector[nmode] A = mu_amplitudes + (mdivide_right_tri_low(multi_normal_rng(rep_vector(0, nmode), diag_matrix(rep_vector(1, nmode)))', amplitudes_R'))';
+  vector[nsamp] h_det_mode[nobs, nmode];
+  vector[nsamp] h_det[nobs];
   vector[nmode] tau = 1.0 ./ gamma;
   vector[nmode] Q = pi() * f .* tau;
   vector[nmode] phiR;
   vector[nmode] phiL;
-  vector[nmode] theta;
-  vector[nmode] phi;
   for (i in 1:nmode) {
-    phiR[i] = atan2(-Acx[i] + Apy[i], Acy[i] + Apx[i]);
-    phiL[i] = atan2(-Acx[i] - Apy[i], -Acy[i] + Apx[i]);
+    phiR[i] = atan2(phi_plus_vec[i][2], phi_plus_vec[i][1]);
+    phiL[i] = atan2(phi_minus_vec[i][2], phi_minus_vec[i][1]);
   }
-  theta = -0.5*(phiR + phiL);
-  phi = 0.5*(phiR - phiL);
+
+  for (i in 1:nobs) {
+    h_det[i] = rep_vector(0, nsamp);
+    for (j in 1:nmode) {
+      h_det_mode[i,j] = A[j]*h_det_mode_unit[i,j];
+      h_det[i] = h_det[i] + h_det_mode[i,j];
+    }
+  }
+
 }
