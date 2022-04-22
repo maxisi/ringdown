@@ -648,17 +648,13 @@ class AutoCovariance(TimeSeries):
         ow_x = sl.solve_toeplitz(self.iloc[:len(x)], x)
         return dot(ow_x, y)/sqrt(dot(x, ow_x))
 
-    def whiten(self, data, drift=1):
+    def whiten(self, data):
         """Whiten stretch of data using ACF.
 
         Arguments
         ---------
         data : array, TimeSeries
             unwhitened data.
-
-        drift : float, default=1
-            factor to apply to noise amplitude before whitening (accounts for
-            short-term noise drift)
 
         Returns
         -------
@@ -669,7 +665,7 @@ class AutoCovariance(TimeSeries):
             assert (data.delta_t == self.delta_t)
         # whiten stretch of data using Cholesky factor
         L = self.iloc[:len(data)].cholesky
-        w_data = np.linalg.solve(drift*L, data)
+        w_data = np.linalg.solve(L, data)
         # return same type as input
         if isinstance(data, Data):
             w_data = Data(w_data, index=data.index, ifo=data.ifo)
