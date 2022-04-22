@@ -200,8 +200,7 @@ class Fit(object):
 
     @property
     def _default_prior(self):
-        # turn off ACF drift correction by default.
-        default = {'A_scale': None, 'drift_scale': 0.0}
+        default = {'A_scale': None}
         if self.model == 'ftau':
             # TODO: set default priors based on sampling rate and duration
             default.update(dict(
@@ -305,10 +304,7 @@ class Fit(object):
             times=[d.time for d in data_dict.values()],
             strain=list(data_dict.values()),
             L=[a.iloc[:self.n_analyze].cholesky for a in self.acfs.values()],
-            FpFc = list(self.antenna_patterns.values()),
-            # default priors
-            dt_min=-1E-6,
-            dt_max=1E-6
+            FpFc = list(self.antenna_patterns.values())
         )
 
         if 'mchi' in self.model:
@@ -983,7 +979,7 @@ class Fit(object):
         else:
             return self._n_analyze
 
-    def whiten(self, datas, drifts=None) -> dict:
+    def whiten(self, datas) -> dict:
         """Return whiten data for all detectors.
 
         See also :meth:`ringdown.data.AutoCovariance.whiten`.
@@ -992,8 +988,6 @@ class Fit(object):
         ---------
         datas : dict
             dictionary of data to be whitened for each detector.
-        drifts : dict
-            optional ACF scale drift factors for each detector.
 
         Returns
         -------
@@ -1001,9 +995,7 @@ class Fit(object):
             dictionary of :class:`ringdown.data.Data` with whitned data for
             each detector.
         """
-        if drifts is None:
-            drifts = {i : 1 for i in datas.keys()}
-        return {i: Data(self.acfs[i].whiten(d, drift=drifts[i]), ifo=i) 
+        return {i: Data(self.acfs[i].whiten(d), ifo=i) 
                 for i,d in datas.items()}
 
     def draw_sample(self, map=False, prior=False, rng=None, seed=None):
