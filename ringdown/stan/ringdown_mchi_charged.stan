@@ -48,9 +48,6 @@ data {
   real M_max;
   real A_scale;
 
-  real dt_min;
-  real dt_max;
-
   real r2_qchi_min;
   real r2_qchi_max;
 
@@ -75,8 +72,6 @@ parameters {
   vector[nmode] Apy_unit;
   vector[nmode] Acx_unit;
   vector[nmode] Acy_unit;
-
-  vector<lower=dt_min, upper=dt_max>[nobs-1] dts;
 }
 
 transformed parameters {
@@ -132,14 +127,8 @@ transformed parameters {
       real torigin;
       h_det[i] = rep_vector(0.0, nsamp);
 
-      if (i > 1) {
-        torigin = t0[i] + dts[i-1];
-      } else {
-        torigin = t0[i];
-      }
-
     for (j in 1:nmode) {
-      h_det_mode[i, j] = rd(times[i] - torigin, f[j], gamma[j], Apx[j], Apy[j], Acx[j], Acy[j], FpFc[i][1], FpFc[i][2]);
+      h_det_mode[i, j] = rd(times[i] - t0[i], f[j], gamma[j], Apx[j], Apy[j], Acx[j], Acy[j], FpFc[i][1], FpFc[i][2]);
       h_det[i] = h_det[i] + h_det_mode[i,j];
     }
   }

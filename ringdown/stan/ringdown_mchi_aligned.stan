@@ -54,9 +54,6 @@ data {
   real cosi_min;
   real cosi_max;
 
-  real dt_min;
-  real dt_max;
-
   real df_max;
   real dtau_max;
 
@@ -76,8 +73,6 @@ parameters {
 
   vector[nmode] Ax_unit;
   vector[nmode] Ay_unit;
-
-  vector<lower=dt_min, upper=dt_max>[nobs-1] dts;
 
   vector<lower=-df_max,upper=df_max>[nmode] df;
   vector<lower=-dtau_max,upper=dtau_max>[nmode] dtau;
@@ -118,14 +113,8 @@ transformed parameters {
     real torigin;
     h_det[i] = rep_vector(0.0, nsamp);
 
-    if (i > 1) {
-      torigin = t0[i] + dts[i-1];
-    } else {
-      torigin = t0[i];
-    }
-
     for (j in 1:nmode) {
-      h_det_mode[i, j] = rd(times[i] - torigin, f[j], gamma[j], A[j], cosi, phi[j], FpFc[i][1], FpFc[i][2]);
+      h_det_mode[i, j] = rd(times[i] - t0[i], f[j], gamma[j], A[j], cosi, phi[j], FpFc[i][1], FpFc[i][2]);
       h_det[i] = h_det[i] + h_det_mode[i,j];
     }
   }

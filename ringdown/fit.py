@@ -304,10 +304,7 @@ class Fit(object):
             times=[d.time for d in data_dict.values()],
             strain=list(data_dict.values()),
             L=[a.iloc[:self.n_analyze].cholesky for a in self.acfs.values()],
-            FpFc = list(self.antenna_patterns.values()),
-            # default priors
-            dt_min=-1E-6,
-            dt_max=1E-6
+            FpFc = list(self.antenna_patterns.values())
         )
 
         if 'mchi' in self.model:
