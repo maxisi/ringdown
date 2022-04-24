@@ -324,7 +324,7 @@ class Fit(object):
         return stan_data
 
     @classmethod
-    def from_config(cls, config_input):
+    def from_config(cls, config_input,no_cond=False):
         """Creates a :class:`Fit` instance from a configuration file.
         
         Has the ability to load and condition data, as well as to inject a
@@ -336,6 +336,8 @@ class Fit(object):
         config_input : str, configparser.ConfigParser
             path to config file on disk, or preloaded
             :class:`configparser.ConfigParser`
+        no_cond : bool
+            option to ignore conditioning
 
         Returns
         -------
@@ -362,7 +364,7 @@ class Fit(object):
         fit = cls(config['model']['name'], modes=config['model']['modes'])
         # add priors
         prior = config['prior']
-        fit.update_prior(**{k: literal_eval(v) for k,v in prior.items()})
+        fit.update_prior(**{k: literal_eval(v) for k,v in prior.items() if "drift" not in k})
         if 'data' not in config:
             # the rest of the options require loading data, so if no pointer to
             # data was provided, just exit
@@ -394,7 +396,7 @@ class Fit(object):
         else:
             no_noise = False
         # condition data if requested
-        if config.has_section('condition'):
+        if config.has_section('condition') and no_cond == False:
             cond_kws = {k: try_parse(v) for k,v in config['condition'].items()}
             fit.condition_data(**cond_kws)
         # load or produce ACFs
