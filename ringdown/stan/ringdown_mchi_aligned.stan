@@ -69,7 +69,6 @@ parameters {
   real<lower=M_min, upper=M_max> M;
   real<lower=chi_min, upper=chi_max> chi;
   real<lower=cosi_min, upper=cosi_max> cosi;
-  unit_vector[2] iota_unit;
 
   vector[nmode] Ax_unit;
   vector[nmode] Ay_unit;
