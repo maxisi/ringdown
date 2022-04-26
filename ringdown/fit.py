@@ -602,8 +602,9 @@ class Fit(object):
         # run model and store
         logging.info('running {}'.format(self.model))
         init = kws.pop('init', 'jitter+adapt_full')
+        target_accept = kws.pop('target_accept', 0.9)
         with self.pymc_model:
-            result = pm.sample(init=init, **kws)
+            result = pm.sample(init=init, target_accept=0.9, **kws)
 
         od = {'strains': self.model_input['strains']}
         cd = {k: v for k,v in self.model_input.items() if k != 'strains'}
