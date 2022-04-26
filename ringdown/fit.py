@@ -396,7 +396,7 @@ class Fit(object):
         else:
             no_noise = False
         # condition data if requested
-        if config.has_section('condition') and no_cond == False:
+        if config.has_section('condition') and not no_cond:
             cond_kws = {k: try_parse(v) for k,v in config['condition'].items()}
             fit.condition_data(**cond_kws)
         # load or produce ACFs
