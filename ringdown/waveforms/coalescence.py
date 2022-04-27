@@ -543,7 +543,7 @@ class Coalescence(Signal):
         Arguments
         ---------
         ell_max : int
-            maximum ell to include in the computation
+            maximum :math:`\ell` to include in the computation of the peak
         force : bool
             redo the computation ignoring cached results
 
@@ -552,16 +552,18 @@ class Coalescence(Signal):
         t_peak : float
             peak time of the invariant strain
         """
+        # NOTE: there are functions in LALSimulation to obtain a list of
+        # individual modes for a given source but these do not work with all
+        # approximants; here I take the simpler, fail safe approach, which is
+        # to call ChooseTDWaveform several times with different mode content.
         if self._invariant_peak is None or force:
-            approx = self.parameters.get("model", self.parameters.get("approximant"))
-            pars = Parameters.construct(**self.parameters)
+            pars = self.parameters.copy()
             sum_h_squared = 0
             for l in range(2, ell_max+1):
                 for m in range(-l, l+1):
-                    pars["single_mode"] = (l, m)
+                    pars["simple_mode"] = (l, m)
                     try:
-                        hlm = self.__class__.from_parameters(self.index, model=approx,
-                                                             **pars)
+                        hlm = self.__class__.from_parameters(self.index, **pars)
                         sum_h_squared += hlm.envelope**2
                     except RuntimeError:
                         logging.warning("unavailable mode l,m = {},{}".format(l, m))
