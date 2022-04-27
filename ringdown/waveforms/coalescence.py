@@ -146,6 +146,8 @@ class Parameters:
         'mass_ratio': ['q'],
         'luminosity_distance': ['dist', 'dl', 'distance'],
         'iota': ['inclination', 'inc'],
+        'f_ref': ['fref', 'reference_frequency'],
+        'f_low': ['flow', 'fmin', 'f_min'],
     }
     _ALIASES_STR = ''
     for _k,_v in _ALIASES.items():
@@ -214,10 +216,10 @@ class Parameters:
             try:
                 a = [kws[k] for k in cls._SPIN_KEYS_LALINF] + \
                        [kws['mass_1']*lal.MSUN_SI, kws['mass_2']*lal.MSUN_SI,
-                        kws['fref'], kws['phase']]
+                        kws['f_ref'], kws['phase']]
             except KeyError as e:
                 raise ValueError(f"unable to parse spins, missing: {e}")
-            b = lalsim.SimInspiralTransformPrecessingNewInitialConditions(*a)
+            b = ls.SimInspiralTransformPrecessingNewInitialConditions(*a)
             kws.update(dict(zip(cls._SPIN_KEYS_LALSIM, b)))
             
         return cls(**{k: v for k,v in kws.items() 
@@ -324,11 +326,11 @@ class Coalescence(Signal):
 
     def __init__(self, *args, modes=None, **kwargs):
         super(Coalescence, self).__init__(*args, **kwargs)
+        self._invariant_peak = None
 
     @property
     def _constructor(self):
         return Coalescence
-
 
     @classmethod
     @docstring_parameter(_DEF_TUKEY_ALPHA)
@@ -523,6 +525,48 @@ class Coalescence(Signal):
                                        1j*hc_d[waveStartIndex:waveStartIndex+bufWaveLength])
         all_kws.update(pars.to_dict())
         return cls(h, index=time, parameters=all_kws)
+
+    def get_invariant_peak_time(self, ell_max=4, force=False):
+        """Compute time of the peak of the invariant strain :math:`H^2`, which
+        is defined as
+
+        .. math::
+            H^2(t) \equiv \sum_{\ell m} H_{\ell m}^2(t)
+
+        where :math:`H_{\ell m}(t)` are the coefficients associated with the
+        spherical harmonic factors :math:`{}_{-2} Y_{\ell m}` in the strain,
+        namely
+
+        .. math::
+            h(t) = \sum_{\ell m} H_{\ell m}(t) {}_{-2} Y_{\ell m}
+
+        Arguments
+        ---------
+        ell_max : int
+            maximum ell to include in the computation
+        force : bool
+            redo the computation ignoring cached results
+
+        Returns
+        -------
+        t_peak : float
+            peak time of the invariant strain
+        """
+        if self._invariant_peak is None or force:
+            approx = self.parameters.get("model", self.parameters.get("approximant"))
+            pars = Parameters.construct(**self.parameters)
+            sum_h_squared = 0
+            for l in range(2, ell_max+1):
+                for m in range(-l, l+1):
+                    pars["single_mode"] = (l, m)
+                    try:
+                        hlm = self.__class__.from_parameters(self.index, model=approx,
+                                                             **pars)
+                        sum_h_squared += hlm.envelope**2
+                    except RuntimeError:
+                        logging.warning("unavailable mode l,m = {},{}".format(l, m))
+            self._invariant_peak = sum_h_squared.peak_time
+        return self._invariant_peak
 Signal._register_model(Coalescence)
 
 
