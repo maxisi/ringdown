@@ -58,6 +58,24 @@ def get_snr(h, d, L):
 
     return at.dot(wh, wd) / at.sqrt(at.dot(wh, wh))
 
+def compute_h_det_mode(t0s, ts, Fps, Fcs, fs, gammas, Apxs, Apys, Acxs, Acys):
+    ndet = len(t0s)
+    nmode = fs.shape[0]
+    nsamp = len(ts[0])
+
+    t0s = at.as_tensor_variable(t0s).reshape((ndet, 1, 1))
+    ts = at.as_tensor_variable(ts).reshape((ndet, 1, nsamp))
+    Fps = at.as_tensor_variable(Fps).reshape((ndet, 1, 1))
+    Fcs = at.as_tensor_variable(Fcs).reshape((ndet, 1, 1))
+    fs = at.as_tensor_variable(fs).reshape((1, nmode, 1))
+    gammas = at.as_tensor_variable(gammas).reshape((1, nmode, 1))
+    Apxs = at.as_tensor_variable(Apxs).reshape((1, nmode, 1))
+    Apys = at.as_tensor_variable(Apys).reshape((1, nmode, 1))
+    Acxs = at.as_tensor_variable(Acxs).reshape((1, nmode, 1))
+    Acys = at.as_tensor_variable(Acys).reshape((1, nmode, 1))
+
+    return rd(ts - t0s, fs, gammas, Apxs, Apys, Acxs, Acys, Fps, Fcs)
+
 def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwargs):
     M_min = kwargs.pop("M_min", 35.0)
     M_max = kwargs.pop("M_max", 140.0)
@@ -109,13 +127,7 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwar
         theta = pm.Deterministic("theta", -0.5*(phiR + phiL))
         phi = pm.Deterministic("phi", 0.5*(phiR - phiL))
 
-        hdms = []
-        for i in range(ndet):
-            hdms_row = []
-            for j in range(nmode):
-                hdms_row.append(rd(times[i]-t0[i], f[j], gamma[j], Apx[j], Apy[j], Acx[j], Acy[j], Fps[i], Fcs[i]))
-            hdms.append(hdms_row)
-        h_det_mode = pm.Deterministic("h_det_mode", at.stack([at.stack(row) for row in hdms]))
+        h_det_mode = pm.Deterministic("h_det_mode", compute_h_det_mode(t0, times, Fps, Fcs, f, gamma, Apx, Apy, Acx, Acy))
         h_det = pm.Deterministic("h_det", at.sum(h_det_mode, axis=1))
 
         # Priors:
@@ -187,13 +199,7 @@ def make_mchi_aigned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
         Acx = -2*cosi*A*at.sin(phi)
         Acy = 2*cosi*A*at.cos(phi)
 
-        hdms = []
-        for i in range(ndet):
-            hdms_row = []
-            for j in range(nmode):
-                hdms_row.append(rd(times[i]-t0[i], f[j], gamma[j], Apx[j], Apy[j], Acx[j], Acy[j], Fps[i], Fcs[i]))
-            hdms.append(hdms_row)
-        h_det_mode = pm.Deterministic("h_det_mode", at.stack([at.stack(row) for row in hdms]))
+        h_det_mode = pm.Deterministic("h_det_mode", compute_h_det_mode(t0, times, Fps, Fcs, f, gamma, Apx, Apy, Acx, Acy))
         h_det = pm.Deterministic("h_det", at.sum(h_det_mode, axis=1))
 
         # Priors:

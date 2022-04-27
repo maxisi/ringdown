@@ -17,6 +17,7 @@ from . import model
 import os
 import pymc as pm
 from . import qnms
+import warnings
 from . import waveforms
 
 Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
@@ -590,7 +591,10 @@ class Fit(object):
         Arguments
         ---------
         prior : bool
-            whether to sample the prior (def. False).
+            whether to sample the prior (def. `False`).
+
+        supress_warnings : bool
+            supress some annoying warnings from pymc (def. `True`)
         """
         # ensure delta_t of ACFs is equal to delta_t of data
         for ifo in self.ifos:
@@ -603,8 +607,17 @@ class Fit(object):
         logging.info('running {}'.format(self.model))
         init = kws.pop('init', 'jitter+adapt_full')
         target_accept = kws.pop('target_accept', 0.9)
-        with self.pymc_model:
-            result = pm.sample(init=init, target_accept=0.9, **kws)
+
+        spwarn = kws.pop('supress_warnings', True)
+        if spwarn:
+            filter = 'ignore'
+        else:
+            filter = 'default'
+
+        with warnings.catch_warnings():
+            warnings.simplefilter(filter)
+            with self.pymc_model:
+                result = pm.sample(init=init, target_accept=0.9, **kws)
 
         od = {'strains': self.model_input['strains']}
         cd = {k: v for k,v in self.model_input.items() if k != 'strains'}
