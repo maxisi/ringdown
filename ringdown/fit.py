@@ -617,7 +617,7 @@ class Fit(object):
         with warnings.catch_warnings():
             warnings.simplefilter(filter)
             with self.pymc_model:
-                result = pm.sample(init=init, target_accept=0.9, **kws)
+                result = pm.sample(init=init, target_accept=target_accept, **kws)
 
         od = {'strains': self.model_input['strains']}
         cd = {k: v for k,v in self.model_input.items() if k != 'strains'}
