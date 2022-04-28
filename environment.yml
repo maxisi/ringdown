@@ -3,22 +3,15 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - arviz
-  - astropy
-  - corner
-  - h5py
-  - ipython
-  - jupyterlab
-  - lalsuite
-  - matplotlib
   - numpy
+  - h5py
+  - arviz
+  - matplotlib
   - pandas
-  - pip
-  - pystan=2
-  - python=3
+  - pymc
   - scipy
-  - seaborn
-  - numexpr
+  - lalsuite
   - qnm
-  - parse
-  - wget
+  - seaborn
+  - python=3
+  - jupyterlab
