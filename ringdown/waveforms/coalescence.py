@@ -292,7 +292,7 @@ class Parameters:
         """
         return self.mass_2 * lal.MSUN_SI
 
-    def get_choosetd_args(self, delta_t):
+    def get_choosetdwaveform_args(self, delta_t):
         """Construct input for :func:`ls.SimInspiralChooseTDWaveform`.
         
         Arguments
@@ -311,6 +311,40 @@ class Parameters:
                 float(delta_t), self.f_low, self.f_ref]
         return args 
 
+    def get_choosetdmodes_args(self, delta_t):
+        """Construct input for :func:`ls.SimInspiralChooseTDModes`.
+        
+        Arguments
+        ---------
+        delta_t: float
+            time spacing for waveform array
+
+        Returns
+        -------
+        args : list
+            list of arguments ready for :func:`ls.SimInspiralChooseTDModes`
+        """
+        # Arguments taken by ChooseTDModes (from docstring):
+        # UNUSED REAL8 phiRef,                        /**< reference orbital phase (rad). This variable is not used and only kept here for backwards compatibility */
+        # REAL8 deltaT,                               /**< sampling interval (s) */
+        # REAL8 m1,                                   /**< mass of companion 1 (kg) */
+        # REAL8 m2,                                   /**< mass of companion 2 (kg) */
+        # REAL8 S1x,                                  /**< x-component of the dimensionless spin of object 1 */
+        # REAL8 S1y,                                  /**< y-component of the dimensionless spin of object 1 */
+        # REAL8 S1z,                                  /**< z-component of the dimensionless spin of object 1 */
+        # REAL8 S2x,                                  /**< x-component of the dimensionless spin of object 2 */
+        # REAL8 S2y,                                  /**< y-component of the dimensionless spin of object 2 */
+        # REAL8 S2z,                                  /**< z-component of the dimensionless spin of object 2 */
+        # REAL8 f_min,                                /**< starting GW frequency (Hz) */
+        # REAL8 f_ref,                                /**< reference GW frequency (Hz) */
+        # REAL8 r,                                    /**< distance of source (m) */
+        # LALDict *LALpars,                           /**< LAL dictionary containing accessory parameters */
+        # int lmax,                                   /**< generate all modes with l <= lmax */
+        # Approximant approximant                     /**< post-Newtonian approximant to use for waveform production */
+        args = [0.0, float(delta_t), self.mass_1_si, self.mass_2_si,
+                *self.spin_1, *self.spin_2, self.f_low, self.f_ref,
+                self.luminosity_distance_si]
+        return args 
 
 class Coalescence(Signal):
     """An inspiral-merger-ringdown signal from a compact binary coalescence.
@@ -452,8 +486,8 @@ class Coalescence(Signal):
             # then insert the ModeArray into the LALDict params
             ls.SimInspiralWaveformParamsInsertModeArray(param_dict, ma)
 
-        hp, hc = ls.SimInspiralChooseTDWaveform(*pars.get_choosetd_args(dt),
-                                                param_dict, approx)
+        args = pars.get_choosetdwaveform_args(dt)
+        hp, hc = ls.SimInspiralChooseTDWaveform(*args, param_dict, approx)
 
         # align waveform to trigger time, following LALInferenceTemplate
         # https://git.ligo.org/lscsoft/lalsuite/blob/master/lalinference/lib/LALInferenceTemplate.c#L1124
@@ -526,7 +560,7 @@ class Coalescence(Signal):
         all_kws.update(pars.to_dict())
         return cls(h, index=time, parameters=all_kws)
 
-    def get_invariant_peak_time(self, ell_max=4, force=False):
+    def get_invariant_peak_time(self, ell_max=None, force=False):
         """Compute time of the peak of the invariant strain :math:`H^2`, which
         is defined as
 
@@ -539,6 +573,10 @@ class Coalescence(Signal):
 
         .. math::
             h(t) = \sum_{\ell m} H_{\ell m}(t) {}_{-2} Y_{\ell m}
+
+        .. note::
+            This currently only works with some time domain approximants (e.g.,
+            `NRSur7dq4`), as it relies on :func:`ls.SimInspiralChooseTDModes`.
 
         Arguments
         ---------
@@ -556,18 +594,44 @@ class Coalescence(Signal):
         # individual modes for a given source but these do not work with all
         # approximants; here I take the simpler, fail safe approach, which is
         # to call ChooseTDWaveform several times with different mode content.
-        if self._invariant_peak is None or force:
-            pars = self.parameters.copy()
-            sum_h_squared = 0
-            for l in range(2, ell_max+1):
-                for m in range(-l, l+1):
-                    pars["simple_mode"] = (l, m)
-                    try:
-                        hlm = self.__class__.from_parameters(self.index, **pars)
-                        sum_h_squared += hlm.envelope**2
-                    except RuntimeError:
-                        logging.warning("unavailable mode l,m = {},{}".format(l, m))
-            self._invariant_peak = sum_h_squared.peak_time
+
+        #     LALDict *LALpars,                           /**< LAL dictionary containing accessory parameters */
+        #     int lmax,                                   /**< generate all modes with l <= lmax */
+        #     Approximant approximant                     /**< post-Newtonian approximant to use for waveform production */
+
+        if self._invariant_peak is None or ell_max or force:
+            kws = self.parameters.copy()
+            approximant = kws.get("model", kws.get("approximant"))
+            approx = ls.SimInspiralGetApproximantFromString(approximant)
+            # the ell_max argument is not actually used by
+            # `SimInspiralChooseTDModes`, which just returns all modes, so we
+            # need to handle this manually ourselves
+            dict_params = lal.CreateDict()
+            if ell_max is not None:
+                ma = ls.SimInspiralCreateModeArray()
+                for ell in range(2, ell_max+1):
+                    ls.SimInspiralModeArrayActivateAllModesAtL(ma, ell)
+                    ls.SimInspiralWaveformParamsInsertModeArray(dict_params, ma)
+
+            pars = Parameters.construct(**kws)
+            args = pars.get_choosetdmodes_args(self.delta_t)
+            hlms = ls.SimInspiralChooseTDModes(*args, dict_params, 5, approx)
+            # get the time array corresponding to this waveform, such that the
+            # reference time (wrt which epoch is defined) is placed at the
+            # requested trigger time
+            t = np.arange(len(hlms.mode.data.data))*self.delta_t + \
+                (float(hlms.mode.epoch) + pars['trigger_time'])
+            # iterate over modes and compute magnitude squared
+            sum_h_squared = Coalescence(zeros_like(t), index=t,
+                                        parameters=self.parameters)
+            while hlms is not None:
+                sum_h_squared += real(hlms.mode.data.data)**2 + imag(hlms.mode.data.data)**2
+                hlms = hlms.next
+            t_peak = sum_h_squared.peak_time
+            if ell_max is not None:
+                # return value without caching
+                return t_peak
+            self._invariant_peak = t_peak
         return self._invariant_peak
 Signal._register_model(Coalescence)
 
