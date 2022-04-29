@@ -582,7 +582,7 @@ class Fit(object):
                 self.data[i] = self.data[i] + h
         self.update_info('injection', no_noise=no_noise, **kws)
 
-    def run(self, **kws):
+    def run(self, prior=False, **kws):
         """Fit model.
 
         Additional keyword arguments not listed below are passed to
@@ -596,6 +596,8 @@ class Fit(object):
         supress_warnings : bool
             supress some annoying warnings from pymc (def. `True`)
         """
+        if prior:
+            raise NotImplementedError
         # ensure delta_t of ACFs is equal to delta_t of data
         for ifo in self.ifos:
             if self.acfs[ifo].delta_t != self.data[ifo].delta_t:
