@@ -555,7 +555,6 @@ class Fit(object):
 
         kws['times'] = {ifo: d.time.values for ifo,d in self.data.items()}
         kws['t0_default'] = self.t0
-        kws['trigger_times'] = self.start_times
         return waveforms.get_detector_signals(**kws)
 
     def inject(self, no_noise=False, **kws):
