@@ -620,10 +620,7 @@ class Fit(object):
             with self.pymc_model:
                 result = pm.sample(init=init, target_accept=target_accept, **kws)
 
-        od = {'strains': self.model_input['strains']}
-        cd = {k: v for k,v in self.model_input.items() if k != 'strains'}
-        self.result = az.convert_to_inference_data(result, observed_data=od,
-                                                   constant_data=cd)
+        self.result = az.convert_to_inference_data(result)
 
     def add_data(self, data, time=None, ifo=None, acf=None):
         """Add data to fit.

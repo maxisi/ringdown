@@ -61,7 +61,7 @@ def get_snr(h, d, L):
 def compute_h_det_mode(t0s, ts, Fps, Fcs, fs, gammas, Apxs, Apys, Acxs, Acys):
     ndet = len(t0s)
     nmode = fs.shape[0]
-    nsamp = len(ts[0])
+    nsamp = ts[0].shape[0]
 
     t0s = at.as_tensor_variable(t0s).reshape((ndet, 1, 1))
     ts = at.as_tensor_variable(ts).reshape((ndet, 1, nsamp))
@@ -98,6 +98,10 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwar
     mref = 68.0
 
     with pm.Model() as model:
+        pm.ConstantData('times', times)
+        pm.ConstantData('t0', t0)
+        pm.ConstantData('L', Ls)
+
         M = pm.Uniform("M", M_min, M_max)
         chi = pm.Uniform("chi", chi_min, chi_max)
 
@@ -146,7 +150,7 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwar
 
         # Likelihood:
         for i in range(ndet):
-            _ = pm.MvNormal(f"likelihood_detector_{i}", mu=h_det[i,:], chol=Ls[i], observed=strains[i])
+            _ = pm.MvNormal(f"strain_{i}", mu=h_det[i,:], chol=Ls[i], observed=strains[i])
         
         return model
         
@@ -171,6 +175,10 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs
     mref = 68.0
 
     with pm.Model() as model:
+        pm.ConstantData('times', times)
+        pm.ConstantData('t0', t0)
+        pm.ConstantData('L', Ls)
+
         M = pm.Uniform("M", M_min, M_max)
         chi = pm.Uniform("chi", chi_min, chi_max)
 
@@ -216,7 +224,7 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs
 
         # Likelihood
         for i in range(ndet):
-            _ = pm.MvNormal(f"likelihood_detector_{i}", mu=h_det[i,:], chol=Ls[i], observed=strains[i])
+            _ = pm.MvNormal(f"strain_{i}", mu=h_det[i,:], chol=Ls[i], observed=strains[i])
         
         return model
 
