@@ -315,7 +315,7 @@ class Fit(object):
         if self.model == 'mchi':
             return model.make_mchi_model(**self.model_input)
         elif self.model == 'mchi_aligned':
-            return model.make_mchi_aigned_model(**self.model_input)
+            return model.make_mchi_aligned_model(**self.model_input)
         else:
             raise NotImplementedError('models other than mchi not currently implemented')
 

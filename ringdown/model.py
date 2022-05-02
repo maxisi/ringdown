@@ -150,7 +150,7 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwar
         
         return model
         
-def make_mchi_aigned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwargs):
+def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwargs):
     M_min = kwargs.pop("M_min", 35.0)
     M_max = kwargs.pop("M_max", 140.0)
     chi_min = kwargs.pop("chi_min", 0.0)
