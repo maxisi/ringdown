@@ -1089,7 +1089,12 @@ class Fit(object):
             snrs = opt_ifo_snrs
         else:
             # get analysis data, shaped as (ifo, time)
-            ds = self.result.observed_data.strain
+            if "strain" in self.result.observed_data:
+                # strain values stored in "old" PyStan structure
+                ds = self.result.observed_data.strain
+            else:
+                # strain values stored in "new" PyMC structure
+                ds = array([d.values for d in self.result.observed_data.values()])
             # whiten it with the Cholesky factors, so shape will remain (ifo, time)
             wds = linalg.solve(self.result.constant_data.L, ds)
             # take inner product between whitened template and data, and normalize

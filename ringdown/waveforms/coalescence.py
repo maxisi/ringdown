@@ -141,10 +141,10 @@ class Parameters:
         'trigger_time': Signal._T0_ALIASES,
         'mass_1': ['m1'],
         'mass_2': ['m2'],
-        'total_mass': ['mtot', 'm'],
+        'total_mass': ['mtot', 'm', 'mtotal', 'mtot_msun', 'mtotal_msun'],
         'chirp_mass': ['mc', 'mchirp'],
         'mass_ratio': ['q'],
-        'luminosity_distance': ['dist', 'dl', 'distance'],
+        'luminosity_distance': ['dist', 'dl', 'distance', 'dist_mpc'],
         'iota': ['inclination', 'inc'],
     }
     _ALIASES_STR = ''
