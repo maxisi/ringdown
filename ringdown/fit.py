@@ -3,19 +3,22 @@
 
 __all__ = ['Target', 'Fit', 'MODELS']
 
-import os
-import copy as cp
 from pylab import *
-from .data import *
-from . import qnms
-from . import waveforms
-import lal
-from collections import namedtuple
-import pkg_resources
+
 import arviz as az
 from ast import literal_eval
+from collections import namedtuple
 import configparser
+import copy as cp
+from .data import *
+import lal
 import logging
+from . import model
+import os
+import pymc as pm
+from . import qnms
+import warnings
+from . import waveforms
 
 Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 
@@ -127,27 +130,6 @@ class Fit(object):
     @property
     def injection_parameters(self) -> dict:
         return self.info.get('injection', {})
-
-    def compile(self, verbose=False, force=False):
-        """ Compile `Stan` model.
-
-        Arguments
-        ---------
-        verbose : bool
-            print out all messages from compiler.
-        force : bool
-            force recompile.
-        """
-        if force or self.model not in self._compiled_models:
-            # compile model and cache in class variable
-            code = pkg_resources.resource_string(__name__,
-                'stan/ringdown_{}.stan'.format(self.model)
-            )
-            import pystan
-            kws = dict(model_code=code.decode("utf-8"))
-            if not verbose:
-                kws['extra_compile_args'] = ["-w"]
-            self._compiled_models[self.model] = pystan.StanModel(**kws)
 
     @property
     def ifos(self) -> list:
@@ -295,33 +277,47 @@ class Fit(object):
 
         data_dict = self.analysis_data
 
-        stan_data = dict(
+        fpfc = self.antenna_patterns.values()
+        fp = [x[0] for x in fpfc]
+        fc = [x[1] for x in fpfc]
+
+        input = dict(
             # data related quantities
             nsamp=self.n_analyze,
             nmode=self.n_modes,
             nobs=len(data_dict),
             t0=list(self.start_times.values()),
-            times=[d.time for d in data_dict.values()],
-            strain=list(data_dict.values()),
-            L=[a.iloc[:self.n_analyze].cholesky for a in self.acfs.values()],
-            FpFc = list(self.antenna_patterns.values())
+            times=[array(d.time) for d in data_dict.values()],
+            strains=[s.values for s in data_dict.values()],
+            Ls=[a.iloc[:self.n_analyze].cholesky for a in self.acfs.values()],
+            Fps = fp,
+            Fcs = fc
         )
 
         if 'mchi' in self.model:
             if self.modes is None:
                 raise RuntimeError("fit has no modes (see fit.set_modes)")
             f_coeff, g_coeff = self.spectral_coefficients
-            stan_data.update(dict(
+            input.update(dict(
                 f_coeffs=f_coeff,
                 g_coeffs=g_coeff,
         ))
 
-        stan_data.update(self.prior_settings)
+        input.update(self.prior_settings)
 
-        for k, v in stan_data.items():
+        for k, v in input.items():
             if v is None:
                 raise ValueError('please specify {}'.format(k))
-        return stan_data
+        return input
+
+    @property
+    def pymc_model(self):
+        if self.model == 'mchi':
+            return model.make_mchi_model(**self.model_input)
+        elif self.model == 'mchi_aligned':
+            return model.make_mchi_aligned_model(**self.model_input)
+        else:
+            raise NotImplementedError('models other than mchi not currently implemented')
 
     @classmethod
     def from_config(cls, config_input,no_cond=False):
@@ -559,7 +555,6 @@ class Fit(object):
 
         kws['times'] = {ifo: d.time.values for ifo,d in self.data.items()}
         kws['t0_default'] = self.t0
-        kws['trigger_times'] = self.start_times
         return waveforms.get_detector_signals(**kws)
 
     def inject(self, no_noise=False, **kws):
@@ -590,48 +585,42 @@ class Fit(object):
         """Fit model.
 
         Additional keyword arguments not listed below are passed to
-        :func:`pystan.model.sampling`.
+        :func:`pymc.sample`.
 
         Arguments
         ---------
         prior : bool
-            whether to sample the prior (def. False).
+            whether to sample the prior (def. `False`).
+
+        supress_warnings : bool
+            supress some annoying warnings from pymc (def. `True`)
         """
+        if prior:
+            raise NotImplementedError
         # ensure delta_t of ACFs is equal to delta_t of data
         for ifo in self.ifos:
             if self.acfs[ifo].delta_t != self.data[ifo].delta_t:
                 e = "{} ACF delta_t ({:.1e}) does not match data ({:.1e})."
                 raise AssertionError(e.format(ifo, self.acfs[ifo].delta_t,
                                           self.data[ifo].delta_t))
-        # get model input
-        stan_data = self.model_input
-        stan_data['only_prior'] = int(prior)
-        # get sampler settings
-        n = kws.pop('thin', 1)
-        chains = kws.pop('chains', 4)
-        n_jobs = kws.pop('n_jobs', chains)
-        n_iter = kws.pop('iter', 2000*n)
-        metric = kws.pop('metric', 'dense_e')
-        adapt_delta = kws.pop('adapt_delta', 0.8)
-        stan_kws = {
-            'iter': n_iter,
-            'thin': n,
-            'init': (kws.pop('init_dict', {}),)*chains,
-            'n_jobs': n_jobs,
-            'chains': chains,
-            'control': {'metric': metric, 'adapt_delta': adapt_delta}
-        }
-        stan_kws.update(kws)
+
         # run model and store
         logging.info('running {}'.format(self.model))
-        result = self._model.sampling(data=stan_data, **stan_kws)
-        if prior:
-            self.prior = az.convert_to_inference_data(result)
+        init = kws.pop('init', 'jitter+adapt_full')
+        target_accept = kws.pop('target_accept', 0.9)
+
+        spwarn = kws.pop('supress_warnings', True)
+        if spwarn:
+            filter = 'ignore'
         else:
-            od = {'strain': self.model_input['strain']}
-            cd = {k: v for k,v in self.model_input.items() if k != 'strain'}
-            self.result = az.convert_to_inference_data(result, observed_data=od,
-                                                       constant_data=cd)
+            filter = 'default'
+
+        with warnings.catch_warnings():
+            warnings.simplefilter(filter)
+            with self.pymc_model:
+                result = pm.sample(init=init, target_accept=target_accept, **kws)
+
+        self.result = az.convert_to_inference_data(result)
 
     def add_data(self, data, time=None, ifo=None, acf=None):
         """Add data to fit.
@@ -1100,7 +1089,12 @@ class Fit(object):
             snrs = opt_ifo_snrs
         else:
             # get analysis data, shaped as (ifo, time)
-            ds = self.result.observed_data.strain
+            if "strain" in self.result.observed_data:
+                # strain values stored in "old" PyStan structure
+                ds = self.result.observed_data.strain
+            else:
+                # strain values stored in "new" PyMC structure
+                ds = array([d.values for d in self.result.observed_data.values()])
             # whiten it with the Cholesky factors, so shape will remain (ifo, time)
             wds = linalg.solve(self.result.constant_data.L, ds)
             # take inner product between whitened template and data, and normalize
