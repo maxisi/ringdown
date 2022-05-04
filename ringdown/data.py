@@ -70,7 +70,7 @@ class Series(pd.Series):
             read_func = getattr(pd, 'read_{}'.format(kind))
             # get list of arguments accepted by pandas read function in order
             # to filter out extraneous arguments that should go to cls
-            read_vars = read_func.__code__.co_varnames
+            read_vars = inspect.signature(read_func).parameters.keys()
             # define some defaults to ensure we get a Series and not a DataFrame
             read_kws = dict(sep=None, index_col=0, squeeze=True)
             if 'sep' in kws:
