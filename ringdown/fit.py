@@ -35,7 +35,7 @@ class Fit(object):
         fit.load_data('{i}-{i}1_GWOSC_16KHZ_R1-1126259447-32.hdf5', ifos=['H1', 'L1'], kind='gwosc')
         fit.set_target(1126259462.4083147, ra=1.95, dec=-1.27, psi=0.82, duration=0.05)
         fit.condition_data(ds=8)
-        fit.set_prior(A_scale=1e-21, M_min=50, M_max=150)
+        fit.update_prior(A_scale=1e-21, M_min=50, M_max=150)
         fit.run()
 
     Attributes
