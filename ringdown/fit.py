@@ -607,13 +607,14 @@ class Fit(object):
 
         # run model and store
         logging.info('running {}'.format(self.model))
-        target_accept_prob = kws.pop('target_accept_prob', 0.9)
+        dense_mass = kws.pop('dense_mass', True)
+        target_accept_prob = kws.pop('target_accept_prob', 0.8)
         seed = kws.pop('seed', np.random.randint(1<<32))
 
         kwargs = dict(num_warmup=1000, num_samples=1000, num_chains=4)
         kwargs.update(kws)
 
-        sampler = NUTS(self.numpyro_model, dense_mass=True, target_accept_prob=target_accept_prob)
+        sampler = NUTS(self.numpyro_model, dense_mass=dense_mass, target_accept_prob=target_accept_prob)
         mcmc = MCMC(sampler, **kwargs)
         mcmc.run(jax.random.PRNGKey(seed), **self.model_input)
         

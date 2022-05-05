@@ -1,6 +1,6 @@
 __all__ = ['mchi_model']
 
-# Ensure Float64, because otherwise squaring 1e-22 is not representable(!!)
+# # Ensure Float64, because otherwise squaring 1e-22 is not representable(!!)
 from jax.config import config
 config.update("jax_enable_x64", True)
 
@@ -127,8 +127,8 @@ def mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwargs):
     Acx = numpyro.deterministic("Acx", A_scale*Acx_unit)
     Acy = numpyro.deterministic("Acy", A_scale*Acy_unit)
 
-    A = numpyro.deterministic("A", 0.5*(jnp.sqrt(jnp.square(Acy + Apx) + jnp.square(Acx - Apy)) + jnp.sqrt(jnp.square(Acy - Apx) + jnp.square(Acx + Apy))))
-    ellip = numpyro.deterministic("ellip", (jnp.sqrt(jnp.square(Acy + Apx) + jnp.square(Acx - Apy)) - jnp.sqrt(jnp.square(Acy - Apx) + jnp.square(Acx + Apy))) / (jnp.sqrt(jnp.square(Acy + Apx) + jnp.square(Acx - Apy)) + jnp.sqrt(jnp.square(Acy - Apx) + jnp.square(Acx + Apy))))
+    A = numpyro.deterministic("A", A_scale*0.5*(jnp.sqrt(jnp.square(Acy_unit + Apx_unit) + jnp.square(Acx_unit - Apy_unit)) + jnp.sqrt(jnp.square(Acy_unit - Apx_unit) + jnp.square(Acx_unit + Apy_unit))))
+    ellip = numpyro.deterministic("ellip", (jnp.sqrt(jnp.square(Acy_unit + Apx_unit) + jnp.square(Acx_unit - Apy_unit)) - jnp.sqrt(jnp.square(Acy_unit - Apx_unit) + jnp.square(Acx_unit + Apy_unit))) / (jnp.sqrt(jnp.square(Acy_unit + Apx_unit) + jnp.square(Acx_unit - Apy_unit)) + jnp.sqrt(jnp.square(Acy_unit - Apx_unit) + jnp.square(Acx_unit + Apy_unit))))
 
     f0 = fref*mref/M
     f = numpyro.deterministic("f", f0*chi_factors(chi, f_coeffs) * jnp.exp(df * perturb_f))
