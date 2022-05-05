@@ -584,19 +584,25 @@ class Fit(object):
     def run(self, prior=False, **kws):
         """Fit model.
 
-        Additional keyword arguments not listed below are passed to
-        :func:`pymc.sample`.
+        Additional keyword arguments not listed below are passed to the
+        sampler.
 
         Arguments
         ---------
         prior : bool
-            whether to sample the prior (def. `False`).
+            whether to sample the prior (def. `False`) [currently unavailable
+            as we transition to `pymc`.
 
         supress_warnings : bool
             supress some annoying warnings from pymc (def. `True`)
         """
         if prior:
             raise NotImplementedError
+
+        if not self.acfs:
+            logging.warning("computing ACFs with default settings")
+            self.compute_acfs()
+
         # ensure delta_t of ACFs is equal to delta_t of data
         for ifo in self.ifos:
             if self.acfs[ifo].delta_t != self.data[ifo].delta_t:
