@@ -3,15 +3,18 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - numpy
-  - h5py
+  - seaborn
+  - lalsuite
+  - jupyterlab
   - arviz
   - matplotlib
-  - pandas
-  - pymc
-  - scipy
-  - lalsuite
-  - qnm
-  - seaborn
   - python=3
-  - jupyterlab
+  - scipy
+  - pymc
+  - h5py
+  - pandas
+  - numpy
+  - qnm
+  - numpyro
+  - ipywidgets
+prefix: /Users/wfarr/miniconda3/envs/ringdown
