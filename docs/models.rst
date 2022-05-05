@@ -1,7 +1,7 @@
 Models
 ======
 
-The :class:`Fit <ringdown.fit.Fit>` object interfaces with a number of `Stan <https://mc-stan.org>`_ models for sampling. These models define the likelihood, prior and signal templates, and are contained in text files shipped with `ringdown` and accessed internally. The available models are described below.
+The :class:`Fit <ringdown.fit.Fit>` object interfaces with a number of `PyMC <https://docs.pymc.io/>`_ models for sampling. These models define the likelihood, prior and signal templates, and are contained in text files shipped with `ringdown` and accessed internally. The available models are described below.
 
 Generic damped sinusoids (``ftau``)
 -----------------------------------
@@ -55,7 +55,7 @@ For each detector the template will thus be
 summing over the requested mode indices :math:`j`. The antenna patterns :math:`(F_+, F_\times)` are determined automatically by the :class:`Fit <ringdown.fit.Fit>` object based on the target sky location and polarization angle; these are currently fixed, and their only effect is to scale the relative amplitudes at different detectors (otherwise, they are degenerate with the mode amplitudes and phases).
 
 In the ``mchi`` model, the mode frequencies and damping rates are parameterized by two parameters: the Kerr black-hole mass :math:`M` and dimensionless spin magnitude :math:`\chi`.
-To replicate this functional dependence, the Stan model makes use of fitting coefficients precomputed through the `qnm <https://qnm.readthedocs.io/en/latest/>`_ package.
+To replicate this functional dependence efficiently, the model makes use of fitting coefficients precomputed through the `qnm <https://qnm.readthedocs.io/en/latest/>`_ package.
 
 The priors are uniform in :math:`M` and :math:`\chi`. The priors can also be made uniform on :math:`A_j` and :math:`\epsilon_j` using the ``flat_A`` and ``flat_A_ellip`` options (see :meth:`Fit.update_prior <ringdown.fit.Fit.update_prior>`); by default, however, they correspond to Gaussian priors on the cosine and sine quadratures of each polarization (see Appendix of `Isi & Farr (2021) <https://arxiv.org/abs/2107.05609>`_).
 

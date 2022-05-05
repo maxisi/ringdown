@@ -34,7 +34,7 @@ import logging
 ##############################################################################
 
 DEFOUT = "ringdown_fit.nc"
-_HELP = "Set up and run ringdown analysis from a configuration file."
+_HELP = "Set up and run a ringdown analysis from a configuration file."
 
 def get_parser():
     p = argparse.ArgumentParser(description=_HELP)
