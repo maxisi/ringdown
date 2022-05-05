@@ -119,17 +119,6 @@ class Fit(object):
         """ Number of damped sinusoids to be included in template.
         """
         return self._n_modes or len(self.modes)
-
-    @property
-    def _model(self):
-        if self.model is None:
-            raise ValueError('you must specify a model')
-        elif self.model not in self._compiled_models:
-            if self.model in MODELS:
-                self.compile()
-            else:
-                raise ValueError('unrecognized model %r' % self.model)
-        return self._compiled_models[self.model]
     
     @property
     def injection_parameters(self) -> dict:
@@ -319,9 +308,9 @@ class Fit(object):
         if self.model == 'mchi':
             return model.mchi_model
         elif self.model == 'mchi_aligned':
-            return model.make_mchi_aligned_model(**self.model_input)
+            return model.mchi_aligned_model
         else:
-            raise NotImplementedError('models other than mchi not currently implemented')
+            raise NotImplementedError('models other than mchi or mchi_aligned not currently implemented')
 
     @classmethod
     def from_config(cls, config_input,no_cond=False):
@@ -589,12 +578,16 @@ class Fit(object):
         """Fit model.
 
         Additional keyword arguments not listed below are passed to
-        :func:`pymc.sample`.
+        :func:`numpyro.MCMC`.
 
         Arguments
         ---------
-        prior : bool
-            whether to sample the prior (def. `False`).
+        dense_mass : bool
+            sample with a dense mass matrix (def. `True`)
+        target_accept_prob : float
+            acceptance probability targeted by adaptation (def. `0.9`)
+        seed : int
+            JAX PRNG seed (def. random)
         """
         if prior:
             raise NotImplementedError
@@ -608,7 +601,7 @@ class Fit(object):
         # run model and store
         logging.info('running {}'.format(self.model))
         dense_mass = kws.pop('dense_mass', True)
-        target_accept_prob = kws.pop('target_accept_prob', 0.8)
+        target_accept_prob = kws.pop('target_accept_prob', 0.9)
         seed = kws.pop('seed', np.random.randint(1<<32))
 
         kwargs = dict(num_warmup=1000, num_samples=1000, num_chains=4)
@@ -618,9 +611,6 @@ class Fit(object):
         mcmc = MCMC(sampler, **kwargs)
         mcmc.run(jax.random.PRNGKey(seed), **self.model_input)
         
-        # with self.pymc_model:
-        #     result = pm.sample(init=init, target_accept=target_accept, **kws)
-
         self.result = az.convert_to_inference_data(mcmc)
 
     def add_data(self, data, time=None, ifo=None, acf=None):

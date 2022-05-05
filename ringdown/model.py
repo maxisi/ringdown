@@ -107,9 +107,10 @@ def mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwargs):
     fref = 2985.668287014743
     mref = 68.0
 
-    # pm.ConstantData('times', times)
-    # pm.ConstantData('t0', t0)
-    # pm.ConstantData('L', Ls)
+    times = jnp.asarray(times)
+    t0 = jnp.asarray(t0)
+    Ls = jnp.asarray(Ls)
+    strains = jnp.asarray(strains)
 
     M = numpyro.sample('M', dist.Uniform(M_min, M_max))
     chi = numpyro.sample("chi", dist.Uniform(chi_min, chi_max))
@@ -158,9 +159,9 @@ def mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwargs):
     # Flat prior on the delta-fs and delta-taus
 
     # Likelihood:
-    numpyro.sample('strain', dist.MultivariateNormal(loc=h_det, scale_tril=jnp.asarray(Ls)), obs=jnp.asarray(strains))
+    numpyro.sample('strain', dist.MultivariateNormal(loc=h_det, scale_tril=Ls), obs=strains)
         
-def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwargs):
+def mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwargs):
     M_min = kwargs.pop("M_min", 35.0)
     M_max = kwargs.pop("M_max", 140.0)
     chi_min = kwargs.pop("chi_min", 0.0)
@@ -180,59 +181,55 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs
     fref = 2985.668287014743
     mref = 68.0
 
-    with pm.Model() as model:
-        pm.ConstantData('times', times)
-        pm.ConstantData('t0', t0)
-        pm.ConstantData('L', Ls)
+    times = jnp.asarray(times)
+    t0 = jnp.asarray(t0)
+    Ls = jnp.asarray(Ls)
+    strains = jnp.asarray(strains)
 
-        M = pm.Uniform("M", M_min, M_max)
-        chi = pm.Uniform("chi", chi_min, chi_max)
+    M = numpyro.sample("M", dist.Uniform(M_min, M_max))
+    chi = numpyro.sample("chi", dist.Uniform(chi_min, chi_max))
 
-        cosi = pm.Uniform("cosi", cosi_min, cosi_max)
+    cosi = numpyro.sample("cosi", dist.Uniform(cosi_min, cosi_max))
 
-        Ax_unit = pm.Flat("Ax_unit", shape=(nmode,))
-        Ay_unit = pm.Flat("Ay_unit", shape=(nmode,))
+    Ax_unit = numpyro.sample("Ax_unit", dist.ImproperUniform(dist.constraints.real, (), event_shape=(nmode,)))
+    Ay_unit = numpyro.sample("Ay_unit", dist.ImproperUniform(dist.constraints.real, (), event_shape=(nmode,)))
 
-        df = pm.Uniform("df", -df_max, df_max, shape=(nmode,))
-        dtau = pm.Uniform("dtau", -dtau_max, dtau_max, shape=(nmode,))
+    df = numpyro.sample("df", dist.Uniform(-df_max, df_max), sample_shape=(nmode,))
+    dtau = numpyro.sample("dtau", dist.Uniform(-dtau_max, dtau_max), sample_shape=(nmode,))
 
-        A = pm.Deterministic("A", A_scale*at.sqrt(at.square(Ax_unit)+at.square(Ay_unit)))
-        phi = pm.Deterministic("phi", at.arctan2(Ay_unit, Ax_unit))
+    A = numpyro.deterministic("A", A_scale*jnp.sqrt(jnp.square(Ax_unit)+jnp.square(Ay_unit)))
+    phi = numpyro.deterministic("phi", jnp.arctan2(Ay_unit, Ax_unit))
 
-        f0 = fref*mref/M
-        f = pm.Deterministic('f', f0*chi_factors(chi, f_coeffs)*at.exp(df * perturb_f))
-        gamma = pm.Deterministic('gamma', f0*chi_factors(chi, g_coeffs)*at.exp(-dtau * perturb_tau))
-        tau = pm.Deterministic('tau', 1/gamma)
-        Q = pm.Deterministic('Q', np.pi*f*tau)
-        Ap = pm.Deterministic('Ap', (1 + at.square(cosi))*A)
-        Ac = pm.Deterministic('Ac', 2*cosi*A)
-        ellip = pm.Deterministic('ellip', Ac/Ap)
+    f0 = fref*mref/M
+    f = numpyro.deterministic('f', f0*chi_factors(chi, f_coeffs)*jnp.exp(df * perturb_f))
+    gamma = numpyro.deterministic('gamma', f0*chi_factors(chi, g_coeffs)*jnp.exp(-dtau * perturb_tau))
+    tau = numpyro.deterministic('tau', 1/gamma)
+    Q = numpyro.deterministic('Q', np.pi*f*tau)
+    Ap = numpyro.deterministic('Ap', (1 + jnp.square(cosi))*A)
+    Ac = numpyro.deterministic('Ac', 2*cosi*A)
+    ellip = numpyro.deterministic('ellip', Ac/Ap)
 
-        Apx = (1 + at.square(cosi))*A*at.cos(phi)
-        Apy = (1 + at.square(cosi))*A*at.sin(phi)
-        Acx = -2*cosi*A*at.sin(phi)
-        Acy = 2*cosi*A*at.cos(phi)
+    Apx = (1 + jnp.square(cosi))*A*jnp.cos(phi)
+    Apy = (1 + jnp.square(cosi))*A*jnp.sin(phi)
+    Acx = -2*cosi*A*jnp.sin(phi)
+    Acy = 2*cosi*A*jnp.cos(phi)
 
-        h_det_mode = pm.Deterministic("h_det_mode", compute_h_det_mode(t0, times, Fps, Fcs, f, gamma, Apx, Apy, Acx, Acy))
-        h_det = pm.Deterministic("h_det", at.sum(h_det_mode, axis=1))
+    h_det_mode = numpyro.deterministic("h_det_mode", compute_h_det_mode(t0, times, Fps, Fcs, f, gamma, Apx, Apy, Acx, Acy))
+    h_det = numpyro.deterministic("h_det", jnp.sum(h_det_mode, axis=1))
 
-        # Priors:
+    # Priors:
 
-        # Flat in M-chi already
+    # Flat in M-chi already
 
-        # Amplitude prior
-        if flat_A:
-            pm.Potential("flat_A_prior", -at.sum(at.log(A)))
-        else:
-            pm.Potential("gaussian_A_quadratures_prior", -0.5*at.sum(at.square(Ax_unit) + at.square(Ay_unit)))
+    # Amplitude prior
+    if flat_A:
+        numpyro.factor("flat_A_prior", -jnp.sum(jnp.log(A)))
+    else:
+        numpyro.factor("gaussian_A_quadratures_prior", -0.5*jnp.sum(jnp.square(Ax_unit) + jnp.square(Ay_unit)))
 
-        # Flat prior on the delta-fs and delta-taus
+    # Flat prior on the delta-fs and delta-taus
 
-        # Likelihood
-        for i in range(ndet):
-            _ = pm.MvNormal(f"strain_{i}", mu=h_det[i,:], chol=Ls[i], observed=strains[i])
-        
-        return model
-
+    # Likelihood
+    numpyro.sample('likelihood', dist.MultivariateNormal(loc=h_det, scale_tril=Ls), obs=strains)
 
 
