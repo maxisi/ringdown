@@ -16,6 +16,10 @@ import logging
 from . import model
 import os
 import pymc as pm
+import jax
+import numpyro
+import numpyro.distributions as dist
+from numpyro.infer import NUTS, MCMC
 from . import qnms
 import warnings
 from . import waveforms
@@ -311,9 +315,9 @@ class Fit(object):
         return input
 
     @property
-    def pymc_model(self):
+    def numpyro_model(self):
         if self.model == 'mchi':
-            return model.make_mchi_model(**self.model_input)
+            return model.mchi_model
         elif self.model == 'mchi_aligned':
             return model.make_mchi_aligned_model(**self.model_input)
         else:
@@ -591,9 +595,6 @@ class Fit(object):
         ---------
         prior : bool
             whether to sample the prior (def. `False`).
-
-        supress_warnings : bool
-            supress some annoying warnings from pymc (def. `True`)
         """
         if prior:
             raise NotImplementedError
@@ -606,21 +607,20 @@ class Fit(object):
 
         # run model and store
         logging.info('running {}'.format(self.model))
-        init = kws.pop('init', 'jitter+adapt_full')
-        target_accept = kws.pop('target_accept', 0.9)
+        target_accept_prob = kws.pop('target_accept_prob', 0.9)
+        seed = kws.pop('seed', np.random.randint(1<<32))
 
-        spwarn = kws.pop('supress_warnings', True)
-        if spwarn:
-            filter = 'ignore'
-        else:
-            filter = 'default'
+        kwargs = dict(num_warmup=1000, num_samples=1000, num_chains=4)
+        kwargs.update(kws)
 
-        with warnings.catch_warnings():
-            warnings.simplefilter(filter)
-            with self.pymc_model:
-                result = pm.sample(init=init, target_accept=target_accept, **kws)
+        sampler = NUTS(self.numpyro_model, dense_mass=True, target_accept_prob=target_accept_prob)
+        mcmc = MCMC(sampler, **kwargs)
+        mcmc.run(jax.random.PRNGKey(seed), **self.model_input)
+        
+        # with self.pymc_model:
+        #     result = pm.sample(init=init, target_accept=target_accept, **kws)
 
-        self.result = az.convert_to_inference_data(result)
+        self.result = az.convert_to_inference_data(mcmc)
 
     def add_data(self, data, time=None, ifo=None, acf=None):
         """Add data to fit.
