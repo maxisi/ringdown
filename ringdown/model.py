@@ -5,8 +5,6 @@ import jax.scipy.linalg as jsl
 import numpyro
 import numpyro.distributions as dist
 
-import aesara.tensor as at
-import aesara.tensor.slinalg as atl
 import numpy as np
 
 def rd(ts, f, gamma, Apx, Apy, Acx, Acy, Fp, Fc):
@@ -104,6 +102,9 @@ def mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwargs):
     Ls = jnp.asarray(Ls)
     strains = jnp.asarray(strains)
 
+    perturb_f = jnp.asarray(perturb_f)
+    perturb_tau = jnp.asarray(perturb_tau)
+
     M = numpyro.sample('M', dist.Uniform(M_min, M_max))
     chi = numpyro.sample("chi", dist.Uniform(chi_min, chi_max))
 
@@ -176,6 +177,9 @@ def mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **k
     times = jnp.asarray(times - np.array(t0)[:,np.newaxis])
     Ls = jnp.asarray(Ls)
     strains = jnp.asarray(strains)
+
+    perturb_f = jnp.asarray(perturb_f)
+    perturb_tau = jnp.asarray(perturb_tau)
 
     M = numpyro.sample("M", dist.Uniform(M_min, M_max))
     chi = numpyro.sample("chi", dist.Uniform(chi_min, chi_max))
