@@ -1,8 +1,8 @@
 __all__ = ['mchi_model']
 
-# # Ensure Float64, because otherwise squaring 1e-22 is not representable(!!)
-from jax.config import config
-config.update("jax_enable_x64", True)
+# # # Ensure Float64, because otherwise squaring 1e-22 is not representable(!!)
+# from jax.config import config
+# config.update("jax_enable_x64", True)
 
 import jax
 import jax.numpy as jnp
@@ -68,12 +68,11 @@ def get_snr(h, d, L):
 
     return jnp.dot(wh, wd) / jnp.sqrt(jnp.dot(wh, wh))
 
-def compute_h_det_mode(t0s, ts, Fps, Fcs, fs, gammas, Apxs, Apys, Acxs, Acys):
-    ndet = len(t0s)
+def compute_h_det_mode(ts, Fps, Fcs, fs, gammas, Apxs, Apys, Acxs, Acys):
+    ndet = ts.shape[0]
     nmode = fs.shape[0]
     nsamp = ts[0].shape[0]
 
-    t0s = jnp.asarray(t0s).reshape((ndet, 1, 1))
     ts = jnp.asarray(ts).reshape((ndet, 1, nsamp))
     Fps = jnp.asarray(Fps).reshape((ndet, 1, 1))
     Fcs = jnp.asarray(Fcs).reshape((ndet, 1, 1))
@@ -84,7 +83,7 @@ def compute_h_det_mode(t0s, ts, Fps, Fcs, fs, gammas, Apxs, Apys, Acxs, Acys):
     Acxs = jnp.asarray(Acxs).reshape((1, nmode, 1))
     Acys = jnp.asarray(Acys).reshape((1, nmode, 1))
 
-    return rd(ts - t0s, fs, gammas, Apxs, Apys, Acxs, Acys, Fps, Fcs)
+    return rd(ts, fs, gammas, Apxs, Apys, Acxs, Acys, Fps, Fcs)
 
 def mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwargs):
     M_min = kwargs.pop("M_min", 35.0)
@@ -107,8 +106,7 @@ def mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwargs):
     fref = 2985.668287014743
     mref = 68.0
 
-    times = jnp.asarray(times)
-    t0 = jnp.asarray(t0)
+    times = jnp.asarray(times - np.array(t0)[:,np.newaxis])
     Ls = jnp.asarray(Ls)
     strains = jnp.asarray(strains)
 
@@ -141,7 +139,7 @@ def mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwargs):
     theta = numpyro.deterministic("theta", -0.5*(phiR + phiL))
     phi = numpyro.deterministic("phi", 0.5*(phiR - phiL))
 
-    h_det_mode = numpyro.deterministic("h_det_mode", compute_h_det_mode(t0, times, Fps, Fcs, f, gamma, Apx, Apy, Acx, Acy))
+    h_det_mode = numpyro.deterministic("h_det_mode", compute_h_det_mode(times, Fps, Fcs, f, gamma, Apx, Apy, Acx, Acy))
     h_det = numpyro.deterministic("h_det", jnp.sum(h_det_mode, axis=1))
 
     # Priors:
@@ -181,8 +179,7 @@ def mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **k
     fref = 2985.668287014743
     mref = 68.0
 
-    times = jnp.asarray(times)
-    t0 = jnp.asarray(t0)
+    times = jnp.asarray(times - np.array(t0)[:,np.newaxis])
     Ls = jnp.asarray(Ls)
     strains = jnp.asarray(strains)
 
@@ -214,7 +211,7 @@ def mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **k
     Acx = -2*cosi*A*jnp.sin(phi)
     Acy = 2*cosi*A*jnp.cos(phi)
 
-    h_det_mode = numpyro.deterministic("h_det_mode", compute_h_det_mode(t0, times, Fps, Fcs, f, gamma, Apx, Apy, Acx, Acy))
+    h_det_mode = numpyro.deterministic("h_det_mode", compute_h_det_mode(times, Fps, Fcs, f, gamma, Apx, Apy, Acx, Acy))
     h_det = numpyro.deterministic("h_det", jnp.sum(h_det_mode, axis=1))
 
     # Priors:
