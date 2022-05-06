@@ -1,10 +1,5 @@
-__all__ = ['mchi_model']
+__all__ = ['mchi_model', 'mchi_aligned_model']
 
-# # # Ensure Float64, because otherwise squaring 1e-22 is not representable(!!)
-# from jax.config import config
-# config.update("jax_enable_x64", True)
-
-import jax
 import jax.numpy as jnp
 import jax.scipy.linalg as jsl
 import numpyro
@@ -13,7 +8,6 @@ import numpyro.distributions as dist
 import aesara.tensor as at
 import aesara.tensor.slinalg as atl
 import numpy as np
-import pymc as pm
 
 def rd(ts, f, gamma, Apx, Apy, Acx, Acy, Fp, Fc):
     """Generate a ringdown waveform as it appears in a detector.

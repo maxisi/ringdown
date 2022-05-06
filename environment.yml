@@ -10,7 +10,6 @@ dependencies:
   - matplotlib
   - python=3
   - scipy
-  - pymc
   - h5py
   - pandas
   - numpy

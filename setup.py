@@ -18,11 +18,12 @@ setup(name='ringdown',
       install_requires=[
             'arviz',
             'h5py',
+            'jax',
             'lalsuite',
             'matplotlib',
             'numpy',
+            'numpyro',
             'pandas',
-            'pymc',
             'qnm',
             'scipy',
             'seaborn']

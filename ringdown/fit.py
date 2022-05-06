@@ -15,13 +15,9 @@ import lal
 import logging
 from . import model
 import os
-import pymc as pm
 import jax
-import numpyro
-import numpyro.distributions as dist
 from numpyro.infer import NUTS, MCMC
 from . import qnms
-import warnings
 from . import waveforms
 
 Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
