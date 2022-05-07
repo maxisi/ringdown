@@ -1,9 +1,13 @@
-__all__ = ['make_mchi_model']
+__all__ = ['make_mchi_model', 'make_mchi_aligned_model']
 
 import aesara.tensor as at
 import aesara.tensor.slinalg as atl
 import numpy as np
 import pymc as pm
+
+# reference frequency and mass values to translate linearly between the two
+FREF = 2985.668287014743
+MREF = 68.0
 
 def rd(ts, f, gamma, Apx, Apy, Acx, Acy, Fp, Fc):
     """Generate a ringdown waveform as it appears in a detector.
@@ -48,14 +52,14 @@ def chi_factors(chi, coeffs):
     log1mc2 = log1mc*log1mc
     log1mc3 = log1mc2*log1mc
     log1mc4 = log1mc2*log1mc2
-    v = at.stack([chi, at.as_tensor_variable(1.0), log1mc, log1mc2, log1mc3, log1mc4])
+    v = at.stack([chi, at.as_tensor_variable(1.0), log1mc, log1mc2,
+                  log1mc3, log1mc4])
 
     return at.dot(coeffs, v)
 
 def get_snr(h, d, L):
     wh = atl.solve_lower_triangular(L, h)
     wd = atl.solve_lower_triangular(L, h)
-
     return at.dot(wh, wd) / at.sqrt(at.dot(wh, wh))
 
 def compute_h_det_mode(t0s, ts, Fps, Fcs, fs, gammas, Apxs, Apys, Acxs, Acys):
@@ -76,26 +80,28 @@ def compute_h_det_mode(t0s, ts, Fps, Fcs, fs, gammas, Apxs, Apys, Acxs, Acys):
 
     return rd(ts - t0s, fs, gammas, Apxs, Apys, Acxs, Acys, Fps, Fcs)
 
-def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwargs):
-    M_min = kwargs.pop("M_min", 35.0)
-    M_max = kwargs.pop("M_max", 140.0)
-    chi_min = kwargs.pop("chi_min", 0.0)
-    chi_max = kwargs.pop("chi_max", 0.99)
-    A_scale = kwargs.pop("A_scale", 1e-21)
-    df_max = kwargs.pop("df_max", 0.5)
-    dtau_max = kwargs.pop("dtau_max", 0.5)
+def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
+                    **kwargs):
+    M_min = kwargs.pop("M_min")
+    M_max = kwargs.pop("M_max")
+    chi_min = kwargs.pop("chi_min")
+    chi_max = kwargs.pop("chi_max")
+    A_scale = kwargs.pop("A_scale")
+    df_max = kwargs.pop("df_max")
+    dtau_max = kwargs.pop("dtau_max")
     perturb_f = kwargs.pop("perturb_f", 0)
     perturb_tau = kwargs.pop("perturb_tau", 0)
     flat_A = kwargs.pop("flat_A", True)
     flat_A_ellip = kwargs.pop("flat_A_ellip", False)
 
-    assert not (flat_A and flat_A_ellip), "at most one of `flat_A` and `flat_A_ellip` can be `True`"
+    if flat_A and flat_A_ellip:
+        raise ValueError("at most one of `flat_A` and `flat_A_ellip` can be `True`")
+    if (chi_min < 0) or (chi_max > 1):
+        raise ValueError("chi boundaries must be contained in [0, 1)")
 
     ndet = len(t0)
     nmode = f_coeffs.shape[0]
 
-    fref = 2985.668287014743
-    mref = 68.0
 
     with pm.Model() as model:
         pm.ConstantData('times', times)
@@ -121,7 +127,7 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwar
         A = pm.Deterministic("A", 0.5*(at.sqrt(at.square(Acy + Apx) + at.square(Acx - Apy)) + at.sqrt(at.square(Acy - Apx) + at.square(Acx + Apy))))
         ellip = pm.Deterministic("ellip", (at.sqrt(at.square(Acy + Apx) + at.square(Acx - Apy)) - at.sqrt(at.square(Acy - Apx) + at.square(Acx + Apy))) / (at.sqrt(at.square(Acy + Apx) + at.square(Acx - Apy)) + at.sqrt(at.square(Acy - Apx) + at.square(Acx + Apy))))
 
-        f0 = fref*mref/M
+        f0 = FREF*MREF/M
         f = pm.Deterministic("f", f0*chi_factors(chi, f_coeffs) * at.exp(df * perturb_f))
         gamma = pm.Deterministic("gamma", f0*chi_factors(chi, g_coeffs) * at.exp(-dtau * perturb_tau))
         tau = pm.Deterministic("tau", 1/gamma)
@@ -155,24 +161,26 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwar
         return model
         
 def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs, **kwargs):
-    M_min = kwargs.pop("M_min", 35.0)
-    M_max = kwargs.pop("M_max", 140.0)
-    chi_min = kwargs.pop("chi_min", 0.0)
-    chi_max = kwargs.pop("chi_max", 0.99)
-    cosi_min = kwargs.pop("cosi_min", -1.0)
-    cosi_max = kwargs.pop("cosi_max", 1.0)
-    A_scale = kwargs.pop("A_scale", 1e-21)
-    df_max = kwargs.pop("df_max", 0.5)
-    dtau_max = kwargs.pop("dtau_max", 0.5)
+    M_min = kwargs.pop("M_min")
+    M_max = kwargs.pop("M_max")
+    chi_min = kwargs.pop("chi_min")
+    chi_max = kwargs.pop("chi_max")
+    cosi_min = kwargs.pop("cosi_min")
+    cosi_max = kwargs.pop("cosi_max")
+    A_scale = kwargs.pop("A_scale")
+    df_max = kwargs.pop("df_max")
+    dtau_max = kwargs.pop("dtau_max")
     perturb_f = kwargs.pop("perturb_f", 0)
     perturb_tau = kwargs.pop("perturb_tau", 0)
     flat_A = kwargs.pop("flat_A", True)
+
+    if (cosi_min < -1) or (cosi_max > 1):
+        raise ValueError("cosi boundaries must be contained in [-1, 1]")
+    if (chi_min < 0) or (chi_max > 1):
+        raise ValueError("chi boundaries must be contained in [0, 1)")
     
     ndet = len(t0)
     nmode = f_coeffs.shape[0]
-
-    fref = 2985.668287014743
-    mref = 68.0
 
     with pm.Model() as model:
         pm.ConstantData('times', times)
@@ -193,7 +201,7 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs
         A = pm.Deterministic("A", A_scale*at.sqrt(at.square(Ax_unit)+at.square(Ay_unit)))
         phi = pm.Deterministic("phi", at.arctan2(Ay_unit, Ax_unit))
 
-        f0 = fref*mref/M
+        f0 = FREF*MREF/M
         f = pm.Deterministic('f', f0*chi_factors(chi, f_coeffs)*at.exp(df * perturb_f))
         gamma = pm.Deterministic('gamma', f0*chi_factors(chi, g_coeffs)*at.exp(-dtau * perturb_tau))
         tau = pm.Deterministic('tau', 1/gamma)
@@ -228,5 +236,60 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs
         
         return model
 
+def logit(p):
+    return np.log(p) - np.log1p(-p)
+
+def make_ftau_model(t0, times, strains, Ls, **kwargs):
+    f_min = kwargs.pop("f_min")
+    f_max = kwargs.pop("f_max")
+    gamma_min = kwargs.pop("gamma_min")
+    gamma_max = kwargs.pop("gamma_max")
+    A_scale = kwargs.pop("A_scale")
+    flat_A = kwargs.pop("flat_A", True)
+    nmode = kwargs.pop("nmode", 1)
+
+    ndet = len(t0)
+
+    with pm.Model() as model:
+        pm.ConstantData('times', times)
+        pm.ConstantData('t0', t0)
+        pm.ConstantData('L', Ls)
+
+        f = pm.Uniform("f", f_min, f_max, shape=(nmode,))
+        gamma = pm.Uniform('gamma', gamma_min, gamma_max, shape=(nmode,),
+                           transform=pm.distributions.transforms.ordered)
+
+        Ax_unit = pm.Flat("Ax_unit", shape=(nmode,))
+        Ay_unit = pm.Flat("Ay_unit", shape=(nmode,))
+
+        A = pm.Deterministic("A", A_scale*at.sqrt(at.square(Ax_unit)+at.square(Ay_unit)))
+        phi = pm.Deterministic("phi", at.arctan2(Ay_unit, Ax_unit))
+
+        tau = pm.Deterministic('tau', 1/gamma)
+        Q = pm.Deterministic('Q', np.pi*f*tau)
+
+        Apx = A*at.cos(phi)
+        Apy = A*at.sin(phi)
+
+        h_det_mode = pm.Deterministic("h_det_mode", compute_h_det_mode(t0, times, np.ones(ndet), np.zeros(ndet), f, gamma, Apx, Apy, np.zeros(nmode), np.zeros(nmode)))
+        h_det = pm.Deterministic("h_det", at.sum(h_det_mode, axis=1))
+
+        # Priors:
+
+        # Flat in M-chi already
+
+        # Amplitude prior
+        if flat_A:
+            pm.Potential("flat_A_prior", -at.sum(at.log(A)))
+        else:
+            pm.Potential("gaussian_A_quadratures_prior", -0.5*at.sum(at.square(Ax_unit) + at.square(Ay_unit)))
+
+        # Flat prior on the delta-fs and delta-taus
+
+        # Likelihood
+        for i in range(ndet):
+            _ = pm.MvNormal(f"strain_{i}", mu=h_det[i,:], chol=Ls[i], observed=strains[i])
+        
+        return model
 
 

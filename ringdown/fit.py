@@ -301,7 +301,7 @@ class Fit(object):
             input.update(dict(
                 f_coeffs=f_coeff,
                 g_coeffs=g_coeff,
-        ))
+            ))
 
         input.update(self.prior_settings)
 
@@ -316,6 +316,8 @@ class Fit(object):
             return model.make_mchi_model(**self.model_input)
         elif self.model == 'mchi_aligned':
             return model.make_mchi_aligned_model(**self.model_input)
+        elif self.model == 'ftau':
+            return model.make_ftau_model(**self.model_input)
         else:
             raise NotImplementedError('models other than mchi not currently implemented')
 
