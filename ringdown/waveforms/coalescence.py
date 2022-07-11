@@ -148,6 +148,8 @@ class Parameters:
         'iota': ['inclination', 'inc'],
         'f_ref': ['fref', 'reference_frequency'],
         'f_low': ['flow', 'fmin', 'f_min'],
+	'tilt_1': ['theta1'],
+	'tilt_2': ['theta2'],
     }
     _ALIASES_STR = ''
     for _k,_v in _ALIASES.items():
