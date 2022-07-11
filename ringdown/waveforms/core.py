@@ -78,6 +78,11 @@ class Signal(TimeSeries):
         return Signal(self._hc, index=self.index, parameters=self.parameters)
 
     @property
+    def envelope(self):
+        return Signal(sqrt(self._hp**2 + self._hc**2), index=self.index,
+                      parameters=self.parameters)
+
+    @property
     def peak_time(self):
         """Empirical estimate of the time of waveform envelope peak,
         :math:`\max\left(h_+^2 + h_\\times^2\\right)`, obtained through
@@ -191,7 +196,7 @@ class Signal(TimeSeries):
                                           'ra', 'dec', 'psi', 'fd_shift',
                                           'interpolate']})
         return Data(h, ifo=ifo, index=self.time, info=info)
-
+    
     def plot(self, ax=None, envelope=False):
         """Plot the series' plus and cross components.
         Remember that the value of this timeseries is ``h = hp - 1j*hc``.

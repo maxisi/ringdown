@@ -1,0 +1,25 @@
+name: ringdown-pymc
+channels:
+  - defaults
+dependencies:
+  - numpy
+  - h5py
+  - arviz
+  - matplotlib
+  - pandas
+  - scipy=1.7
+  - lalsuite
+  - qnm
+  - seaborn
+  - python=3
+  - jupyterlab
+  - ca-certificates
+  - certifi
+  - openssl
+  - pymc
+  - sphinx
+  - nbsphinx
+  - sphinx-gallery
+  - pip:
+    - sphinx-argparse
+    - sphinxemoji

@@ -27,6 +27,20 @@ author = 'Maximiliano Isi, Will M. Farr'
 # The full version, including alpha/beta/rc tags
 release = 'July 12, 2021'
 
+# -- Mock imports ---------------------------------------------------
+
+## This helps ReadTheDocs with imports it can't handle, see
+## https://read-the-docs.readthedocs.io/en/latest/faq.html#i-get-import-errors-on-libraries-that-depend-on-c-modules
+
+from unittest.mock import MagicMock
+
+class Mock(MagicMock):
+    @classmethod
+    def __getattr__(cls, name):
+        return MagicMock()
+
+MOCK_MODULES = ['lal', 'lalsimulation']
+sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
 
 # -- General configuration ---------------------------------------------------
 
@@ -50,6 +64,7 @@ templates_path = ['_templates']
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = []
 
+# autodoc_mock_imports = ["pymc"]
 
 # -- Options for HTML output -------------------------------------------------
 

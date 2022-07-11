@@ -8,7 +8,7 @@ ringdown
 
 **ringdown** is a Python package for the Bayesian analysis of black hole ringdowns in data from gravitational-wave detectors, like `LIGO <https://www.ligo.caltech.edu>`_ and `Virgo <https://www.virgo-gw.eu>`_.
 
-`ringdown` contains basic utilities to manipulate strain data and easily set up your own inference analyses quickly. The current implementation relies on `Stan <https://mc-stan.org>`_ for sampling multidimensional posterior probability densities.
+`ringdown` contains basic utilities to manipulate strain data and easily set up your own inference analyses quickly. The current implementation relies on `PyMC <https://docs.pymc.io/>`_ for sampling multidimensional posterior probability densities.
 
 This documentation is being actively developed. Usage examples can be found :doc:`here <gallery>` and API documentation in the :ref:`modindex`.
 
@@ -29,7 +29,7 @@ You can get an analysis going with just a few lines of code. For example, assumi
     fit.load_data('{i}-{i}1_GWOSC_16KHZ_R1-1126259447-32.hdf5', ifos=['H1', 'L1'], kind='gwosc')
     fit.set_target(1126259462.4083147, ra=1.95, dec=-1.27, psi=0.82, duration=0.05)
     fit.condition_data(ds=8)
-    fit.set_prior(A_scale=1e-21, M_min=50, M_max=150)
+    fit.update_prior(A_scale=1e-21, M_min=50, M_max=150)
     fit.run()
 
 Or run using a configuration file from the :doc:`command line <exe_ringdown_fit>`:
