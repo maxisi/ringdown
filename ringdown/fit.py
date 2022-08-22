@@ -684,8 +684,14 @@ class Fit(object):
         else:
             path_dict = path_input
         path_dict = {k: os.path.abspath(v) for k,v in path_dict.items()}
+        tslide = kws.pop('slide', {}) or {}
         for ifo, path in path_dict.items():
             self.add_data(Data.read(path, ifo=ifo, **kws))
+        # apply time slide if requested
+        for i, dt in tslide.items():
+            d = self.data[i]
+            new_d = Data(np.roll(d, int(dt / d.delta_t)), ifo=i, index=d.time)
+            self.add_data(new_d)
         # record data provenance
         self.update_info('data', path=path_dict, **kws)
     
