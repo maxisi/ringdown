@@ -1,4 +1,4 @@
-pymc=4
+pymc==4
 numpy
 h5py
 arviz
