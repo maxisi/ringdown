@@ -78,11 +78,16 @@ class Series(pd.Series):
                 # reading a config file)
                 kws['sep'] = kws['sep'].encode('raw_unicode_escape').decode('unicode_escape')
             read_kws.update({k: v for k,v in kws.items() if k in read_vars})
+            squeeze = read_kws.pop('squeeze', False)
             cls_kws = {k: v for k,v in kws.items() if k not in read_vars}
             if kind == 'csv' and 'float_precision' not in read_kws:
                 logging.warning("specify `float_precision='round_trip'` or risk "
                                 "strange errors due to precission loss")
-            return cls(read_func(path, **read_kws), **cls_kws)
+            # squeeze if needed (since sequeeze argument no longer accepted)
+            d = read_func(path, **read_kws)
+            if squeeze:
+                d = d.squeeze("columns")
+            return cls(d, **cls_kws)
         else:
             raise ValueError("unrecognized file kind: {}".format(kind))
 
