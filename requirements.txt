@@ -1,0 +1,12 @@
+pymc=4
+numpy
+h5py
+arviz
+matplotlib
+pandas
+scipy
+lalsuite
+qnm
+seaborn
+jupyterlab
+aesara
