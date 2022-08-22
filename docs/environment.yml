@@ -8,7 +8,7 @@ dependencies:
   - arviz
   - matplotlib
   - pandas
-  - scipy=1.7
+  - scipy
   - lalsuite
   - qnm
   - seaborn
@@ -17,7 +17,8 @@ dependencies:
   - ca-certificates
   - certifi
   - openssl
-  - pymc
+  - aesara
+  - pymc=4
   - sphinx
   - nbsphinx
   - sphinx-gallery
