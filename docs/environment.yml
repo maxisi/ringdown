@@ -2,7 +2,8 @@ name: ringdown-pymc
 channels:
   - defaults
 dependencies:
-  - numpy
+  - numba
+  - numpy <=1.21
   - h5py
   - arviz
   - matplotlib
