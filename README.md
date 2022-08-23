@@ -38,7 +38,7 @@ The `environment.yml` file enables running `ringdown` in JupyterHub services lik
 
 ## Examples of Use
 
-See the `examples` directory for Jupyter notebooks that give examples of using the package.  In particular, `examples/GW150914.ipynb` demonstrates an analysis of the ringdown in GW150914 and uses the fundamental (2,2) mode and first overtone to constrain the Kerr-ness of the post-merger spacetime, much like [Isi, et al. (2019)](https://arxiv.org/abs/1905.00869).
+See the `docs/examples` directory for Jupyter notebooks that give examples of using the package.  In particular, `docs/examples/GW150914.ipynb` demonstrates an analysis of the ringdown in GW150914 and uses the fundamental (2,2) mode and first overtone to constrain the Kerr-ness of the post-peak signal, much like [Isi, et al. (2019)](https://arxiv.org/abs/1905.00869).
 
 ## Citations
 
