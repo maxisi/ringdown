@@ -15,3 +15,5 @@ dependencies:
   - seaborn
   - python=3
   - jupyterlab
+  - openblas
+  - aesara
