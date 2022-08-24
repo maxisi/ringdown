@@ -500,6 +500,10 @@ class Fit(object):
         fit_copy : Fit
             deep copy of `Fit`.
         """
+        # we can't deepcopy the PyMC model (aesara will throw an error)
+        # so remove the cached model before copying (it can always be
+        # recompiled if needed)
+        self._pymc_model = None
         return cp.deepcopy(self)
 
     def condition_data(self, preserve_acfs=False, **kwargs):
