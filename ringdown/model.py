@@ -94,6 +94,8 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
     flat_A = kwargs.pop("flat_A", True)
     flat_A_ellip = kwargs.pop("flat_A_ellip", False)
 
+    A_max = 500*A_scale
+
     if flat_A and flat_A_ellip:
         raise ValueError("at most one of `flat_A` and `flat_A_ellip` can be `True`")
     if (chi_min < 0) or (chi_max > 1):
@@ -111,10 +113,10 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
         M = pm.Uniform("M", M_min, M_max)
         chi = pm.Uniform("chi", chi_min, chi_max)
 
-        Apx_unit = pm.Flat("Apx_unit", shape=(nmode,))
-        Apy_unit = pm.Flat("Apy_unit", shape=(nmode,))
-        Acx_unit = pm.Flat("Acx_unit", shape=(nmode,))
-        Acy_unit = pm.Flat("Acy_unit", shape=(nmode,))
+        Apx_unit = pm.Uniform("Apx_unit", -A_max, A_max, shape=(nmode,))
+        Apy_unit = pm.Uniform("Apy_unit", -A_max, A_max, shape=(nmode,))
+        Acx_unit = pm.Uniform("Acx_unit", -A_max, A_max, shape=(nmode,))
+        Acy_unit = pm.Uniform("Acy_unit", -A_max, A_max, shape=(nmode,))
 
         df = pm.Uniform("df", -df_max, df_max, shape=(nmode,))
         dtau = pm.Uniform("dtau", -dtau_max, dtau_max, shape=(nmode,))
@@ -174,6 +176,8 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs
     perturb_tau = kwargs.pop("perturb_tau", 0)
     flat_A = kwargs.pop("flat_A", True)
 
+    A_max = 500*A_scale
+
     if (cosi_min < -1) or (cosi_max > 1):
         raise ValueError("cosi boundaries must be contained in [-1, 1]")
     if (chi_min < 0) or (chi_max > 1):
@@ -192,8 +196,8 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs
 
         cosi = pm.Uniform("cosi", cosi_min, cosi_max)
 
-        Ax_unit = pm.Flat("Ax_unit", shape=(nmode,))
-        Ay_unit = pm.Flat("Ay_unit", shape=(nmode,))
+        Ax_unit = pm.Uniform("Ax_unit", -A_max, A_max, shape=(nmode,))
+        Ay_unit = pm.Uniform("Ay_unit", -A_max, A_max, shape=(nmode,))
 
         df = pm.Uniform("df", -df_max, df_max, shape=(nmode,))
         dtau = pm.Uniform("dtau", -dtau_max, dtau_max, shape=(nmode,))
@@ -248,6 +252,8 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
     flat_A = kwargs.pop("flat_A", True)
     nmode = kwargs.pop("nmode", 1)
 
+    A_max = 500*A_scale
+
     ndet = len(t0)
 
     with pm.Model() as model:
@@ -259,8 +265,8 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
         gamma = pm.Uniform('gamma', gamma_min, gamma_max, shape=(nmode,),
                            transform=pm.distributions.transforms.ordered)
 
-        Ax_unit = pm.Flat("Ax_unit", shape=(nmode,))
-        Ay_unit = pm.Flat("Ay_unit", shape=(nmode,))
+        Ax_unit = pm.Uniform("Ax_unit", -A_max, A_max, shape=(nmode,))
+        Ay_unit = pm.Uniform("Ay_unit", -A_max, A_max, shape=(nmode,))
 
         A = pm.Deterministic("A", A_scale*at.sqrt(at.square(Ax_unit)+at.square(Ay_unit)))
         phi = pm.Deterministic("phi", at.arctan2(Ay_unit, Ax_unit))
