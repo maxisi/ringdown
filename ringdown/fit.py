@@ -689,7 +689,7 @@ class Fit(object):
     def _generate_whitened_residuals(self):
         # Adduct the whitened residuals to the result.
         residuals = {}
-        resuduals_stacked = {}
+        residuals_stacked = {}
         for ifo in self.ifos:
             ifo_key = bytes(str(ifo), 'utf-8') # IFO coordinates are bytestrings
             r = self.result.observed_data[f'strain_{ifo}'] -\
@@ -704,11 +704,11 @@ class Fit(object):
             for i,v in residuals_whitened.items()
         }
         resid = np.stack([residuals_whitened[i] for i in self.ifos], axis=-1)
+        keys = ('time_index', 'chain', 'draw', 'ifo')
+        self.result.posterior['whitened_residual'] = (keys, resid)
+        keys = ('chain', 'draw', 'ifo', 'time_index')
         self.result.posterior['whitened_residual'] = \
-            (('time_index', 'chain', 'draw', 'ifo'), resid)
-        self.result.posterior['whitened_residual'] = \
-            self.result.posterior.whitened_residual.transpose('chain', 'draw',
-                                                              'ifo', 'time_index')
+            self.result.posterior.whitened_residual.transpose(*keys)
         self.result.log_likelihood['whitened_pointwise_loglike'] =\
             -self.result.posterior.whitened_residual**2/2
 
