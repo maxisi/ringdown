@@ -251,7 +251,7 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs
 
         # Likelihood
         for i in range(ndet):
-            _ = pm.MvNormal(f"strain_{i}", mu=h_det[i,:], chol=Ls[i], observed=strains[i], dims=['time_index'])
+            _ = pm.MvNormal(f"strain_{ifos[i]}", mu=h_det[i,:], chol=Ls[i], observed=strains[i], dims=['time_index'])
         
         return model
 
@@ -317,7 +317,7 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
 
         # Likelihood
         for i in range(ndet):
-            _ = pm.MvNormal(f"strain_{i}", mu=h_det[i,:], chol=Ls[i], observed=strains[i], dims=['time_index'])
+            _ = pm.MvNormal(f"strain_{ifos[i]}", mu=h_det[i,:], chol=Ls[i], observed=strains[i], dims=['time_index'])
         
         return model
 
