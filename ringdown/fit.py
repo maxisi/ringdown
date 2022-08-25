@@ -639,13 +639,13 @@ class Fit(object):
         # Adduct the whitened residuals to the result.
         residuals = {}
         for i in self.ifos:
-            r = self.result.observed_data[f'strain_{i}'] - self.result.posterior.h_det.loc[:,:,i,:]
+            r = self.result.observed_data[f'strain_{i}'] - self.result.posterior.h_det.loc[:,:,str(i),:]
             residuals[i] = r.transpose('chain', 'draw', 'time_index')
         residuals_stacked = {i: r.stack(sample=['chain', 'draw']) for i, r in residuals.items()}
         residuals_whitened = self.whiten(residuals_stacked)
         d = self.result.posterior.dims
         residuals_whitened = {i : v.reshape((d['time_index'], d['chain'], d['draw'])) for i,v in residuals_whitened.items()}
-        resid = np.stack([residuals_whitened[i] for i in self.result.posterior.ifo.values], axis=-1)
+        resid = np.stack([residuals_whitened[i] for i in self.ifos], axis=-1)
         self.result.posterior['whitened_residual'] = (('time_index', 'chain', 'draw', 'ifo'), resid)
         self.result.posterior['whitened_residual'] = self.result.posterior.whitened_residual.transpose('chain', 'draw', 'ifo', 'time_index')
         self.result.log_likelihood['whitened_pointwise_loglike'] = -self.result.posterior.whitened_residual**2/2
