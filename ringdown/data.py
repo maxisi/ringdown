@@ -670,7 +670,7 @@ class AutoCovariance(TimeSeries):
             assert (data.delta_t == self.delta_t)
         # whiten stretch of data using Cholesky factor
         L = self.iloc[:len(data)].cholesky
-        w_data = np.linalg.solve(L, data)
+        w_data = sl.solve_triangular(L, data, lower=True)
         # return same type as input
         if isinstance(data, Data):
             w_data = Data(w_data, index=data.index, ifo=data.ifo)

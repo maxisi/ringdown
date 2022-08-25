@@ -100,45 +100,54 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
         raise ValueError("chi boundaries must be contained in [0, 1)")
 
     ndet = len(t0)
+    nt = len(times[0])
     nmode = f_coeffs.shape[0]
 
+    ifos = kwargs.pop('ifos', map(str, np.arange(ndet)))
+    modes = kwargs.pop('modes', map(str, np.arange(nmode)))
 
-    with pm.Model() as model:
-        pm.ConstantData('times', times)
-        pm.ConstantData('t0', t0)
-        pm.ConstantData('L', Ls)
+    coords = {
+        'ifo': ifos,
+        'mode': modes,
+        'time_index': np.arange(nt)
+    }
+
+    with pm.Model(coords=coords) as model:
+        pm.ConstantData('times', times, dims=['ifo', 'time_index'])
+        pm.ConstantData('t0', t0, dims=['ifo'])
+        pm.ConstantData('L', Ls, dims=['ifo', 'time_index', 'time_index'])
 
         M = pm.Uniform("M", M_min, M_max)
         chi = pm.Uniform("chi", chi_min, chi_max)
 
-        Apx_unit = pm.Flat("Apx_unit", shape=(nmode,))
-        Apy_unit = pm.Flat("Apy_unit", shape=(nmode,))
-        Acx_unit = pm.Flat("Acx_unit", shape=(nmode,))
-        Acy_unit = pm.Flat("Acy_unit", shape=(nmode,))
+        Apx_unit = pm.Flat("Apx_unit", dims=['mode'])
+        Apy_unit = pm.Flat("Apy_unit", dims=['mode'])
+        Acx_unit = pm.Flat("Acx_unit", dims=['mode'])
+        Acy_unit = pm.Flat("Acy_unit", dims=['mode'])
 
-        df = pm.Uniform("df", -df_max, df_max, shape=(nmode,))
-        dtau = pm.Uniform("dtau", -dtau_max, dtau_max, shape=(nmode,))
+        df = pm.Uniform("df", -df_max, df_max, dims=['mode'])
+        dtau = pm.Uniform("dtau", -dtau_max, dtau_max, dims=['mode'])
 
-        Apx = pm.Deterministic("Apx", A_scale*Apx_unit)
-        Apy = pm.Deterministic("Apy", A_scale*Apy_unit)
-        Acx = pm.Deterministic("Acx", A_scale*Acx_unit)
-        Acy = pm.Deterministic("Acy", A_scale*Acy_unit)
+        Apx = pm.Deterministic("Apx", A_scale*Apx_unit, dims=['mode'])
+        Apy = pm.Deterministic("Apy", A_scale*Apy_unit, dims=['mode'])
+        Acx = pm.Deterministic("Acx", A_scale*Acx_unit, dims=['mode'])
+        Acy = pm.Deterministic("Acy", A_scale*Acy_unit, dims=['mode'])
 
-        A = pm.Deterministic("A", 0.5*(at.sqrt(at.square(Acy + Apx) + at.square(Acx - Apy)) + at.sqrt(at.square(Acy - Apx) + at.square(Acx + Apy))))
-        ellip = pm.Deterministic("ellip", (at.sqrt(at.square(Acy + Apx) + at.square(Acx - Apy)) - at.sqrt(at.square(Acy - Apx) + at.square(Acx + Apy))) / (at.sqrt(at.square(Acy + Apx) + at.square(Acx - Apy)) + at.sqrt(at.square(Acy - Apx) + at.square(Acx + Apy))))
+        A = pm.Deterministic("A", 0.5*(at.sqrt(at.square(Acy + Apx) + at.square(Acx - Apy)) + at.sqrt(at.square(Acy - Apx) + at.square(Acx + Apy))), dims=['mode'])
+        ellip = pm.Deterministic("ellip", (at.sqrt(at.square(Acy + Apx) + at.square(Acx - Apy)) - at.sqrt(at.square(Acy - Apx) + at.square(Acx + Apy))) / (at.sqrt(at.square(Acy + Apx) + at.square(Acx - Apy)) + at.sqrt(at.square(Acy - Apx) + at.square(Acx + Apy))), dims=['mode'])
 
         f0 = FREF*MREF/M
-        f = pm.Deterministic("f", f0*chi_factors(chi, f_coeffs) * at.exp(df * perturb_f))
-        gamma = pm.Deterministic("gamma", f0*chi_factors(chi, g_coeffs) * at.exp(-dtau * perturb_tau))
-        tau = pm.Deterministic("tau", 1/gamma)
-        Q = pm.Deterministic("Q", np.pi * f * tau)
-        phiR = pm.Deterministic("phiR", at.arctan2(-Acx + Apy, Acy + Apx))
-        phiL = pm.Deterministic("phiL", at.arctan2(-Acx - Apy, -Acy + Apx))
-        theta = pm.Deterministic("theta", -0.5*(phiR + phiL))
-        phi = pm.Deterministic("phi", 0.5*(phiR - phiL))
+        f = pm.Deterministic("f", f0*chi_factors(chi, f_coeffs) * at.exp(df * perturb_f), dims=['mode'])
+        gamma = pm.Deterministic("gamma", f0*chi_factors(chi, g_coeffs) * at.exp(-dtau * perturb_tau), dims=['mode'])
+        tau = pm.Deterministic("tau", 1/gamma, dims=['mode'])
+        Q = pm.Deterministic("Q", np.pi * f * tau, dims=['mode'])
+        phiR = pm.Deterministic("phiR", at.arctan2(-Acx + Apy, Acy + Apx), dims=['mode'])
+        phiL = pm.Deterministic("phiL", at.arctan2(-Acx - Apy, -Acy + Apx), dims=['mode'])
+        theta = pm.Deterministic("theta", -0.5*(phiR + phiL), dims=['mode'])
+        phi = pm.Deterministic("phi", 0.5*(phiR - phiL), dims=['mode'])
 
-        h_det_mode = pm.Deterministic("h_det_mode", compute_h_det_mode(t0, times, Fps, Fcs, f, gamma, Apx, Apy, Acx, Acy))
-        h_det = pm.Deterministic("h_det", at.sum(h_det_mode, axis=1))
+        h_det_mode = pm.Deterministic("h_det_mode", compute_h_det_mode(t0, times, Fps, Fcs, f, gamma, Apx, Apy, Acx, Acy), dims=['ifo', 'mode', 'time_index'])
+        h_det = pm.Deterministic("h_det", at.sum(h_det_mode, axis=1), dims=['ifo', 'time_index'])
 
         # Priors:
 
@@ -156,7 +165,7 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
 
         # Likelihood:
         for i in range(ndet):
-            _ = pm.MvNormal(f"strain_{i}", mu=h_det[i,:], chol=Ls[i], observed=strains[i])
+            _ = pm.MvNormal(f"strain_{ifos[i]}", mu=h_det[i,:], chol=Ls[i], observed=strains[i], dims=['time_index'])
         
         return model
         
@@ -180,43 +189,53 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs
         raise ValueError("chi boundaries must be contained in [0, 1)")
     
     ndet = len(t0)
+    nt = len(times[0])
     nmode = f_coeffs.shape[0]
 
-    with pm.Model() as model:
-        pm.ConstantData('times', times)
-        pm.ConstantData('t0', t0)
-        pm.ConstantData('L', Ls)
+    ifos = kwargs.pop('ifos', map(str, np.arange(ndet)))
+    modes = kwargs.pop('modes', map(str, np.arange(nmode)))
+
+    coords = {
+        'ifo': ifos,
+        'mode': modes,
+        'time_index': np.arange(nt)
+    }
+
+    with pm.Model(coords=coords) as model:
+        pm.ConstantData('times', times, dims=['ifo', 'time_index'])
+        pm.ConstantData('t0', t0, dims=['ifo'])
+        pm.ConstantData('L', Ls, dims=['ifo', 'time_index', 'time_index'])
 
         M = pm.Uniform("M", M_min, M_max)
         chi = pm.Uniform("chi", chi_min, chi_max)
 
         cosi = pm.Uniform("cosi", cosi_min, cosi_max)
 
-        Ax_unit = pm.Flat("Ax_unit", shape=(nmode,))
-        Ay_unit = pm.Flat("Ay_unit", shape=(nmode,))
+        Ax_unit = pm.Flat("Ax_unit", dims=['mode'])
+        Ay_unit = pm.Flat("Ay_unit", dims=['mode'])
 
-        df = pm.Uniform("df", -df_max, df_max, shape=(nmode,))
-        dtau = pm.Uniform("dtau", -dtau_max, dtau_max, shape=(nmode,))
+        df = pm.Uniform("df", -df_max, df_max, dims=['mode'])
+        dtau = pm.Uniform("dtau", -dtau_max, dtau_max, dims=['mode'])
 
-        A = pm.Deterministic("A", A_scale*at.sqrt(at.square(Ax_unit)+at.square(Ay_unit)))
-        phi = pm.Deterministic("phi", at.arctan2(Ay_unit, Ax_unit))
+        A = pm.Deterministic("A", A_scale*at.sqrt(at.square(Ax_unit)+at.square(Ay_unit)), dims=['mode'])
+        phi = pm.Deterministic("phi", at.arctan2(Ay_unit, Ax_unit), dims=['mode'])
 
         f0 = FREF*MREF/M
-        f = pm.Deterministic('f', f0*chi_factors(chi, f_coeffs)*at.exp(df * perturb_f))
-        gamma = pm.Deterministic('gamma', f0*chi_factors(chi, g_coeffs)*at.exp(-dtau * perturb_tau))
-        tau = pm.Deterministic('tau', 1/gamma)
-        Q = pm.Deterministic('Q', np.pi*f*tau)
-        Ap = pm.Deterministic('Ap', (1 + at.square(cosi))*A)
-        Ac = pm.Deterministic('Ac', 2*cosi*A)
-        ellip = pm.Deterministic('ellip', Ac/Ap)
+        f = pm.Deterministic('f', f0*chi_factors(chi, f_coeffs)*at.exp(df * perturb_f), dims=['mode'])
+        gamma = pm.Deterministic('gamma', f0*chi_factors(chi, g_coeffs)*at.exp(-dtau * perturb_tau), dims=['mode'])
+        tau = pm.Deterministic('tau', 1/gamma, dims=['mode'])
+        Q = pm.Deterministic('Q', np.pi*f*tau, dims=['mode'])
+        Ap = pm.Deterministic('Ap', (1 + at.square(cosi))*A, dims=['mode'])
+        Ac = pm.Deterministic('Ac', 2*cosi*A, dims=['mode'])
+        ellip = pm.Deterministic('ellip', Ac/Ap, dims=['mode'])
 
         Apx = (1 + at.square(cosi))*A*at.cos(phi)
         Apy = (1 + at.square(cosi))*A*at.sin(phi)
         Acx = -2*cosi*A*at.sin(phi)
         Acy = 2*cosi*A*at.cos(phi)
 
-        h_det_mode = pm.Deterministic("h_det_mode", compute_h_det_mode(t0, times, Fps, Fcs, f, gamma, Apx, Apy, Acx, Acy))
-        h_det = pm.Deterministic("h_det", at.sum(h_det_mode, axis=1))
+        h_det_mode = pm.Deterministic("h_det_mode", compute_h_det_mode(t0, times, Fps, Fcs, f, gamma, Apx, Apy, Acx, Acy), dims=['ifo', 'mode', 'time_index'])
+        h_det = pm.Deterministic("h_det", at.sum(h_det_mode, axis=1), dims=['ifo', 'time_index'])
 
         # Priors:
 
@@ -232,7 +251,7 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs
 
         # Likelihood
         for i in range(ndet):
-            _ = pm.MvNormal(f"strain_{i}", mu=h_det[i,:], chol=Ls[i], observed=strains[i])
+            _ = pm.MvNormal(f"strain_{i}", mu=h_det[i,:], chol=Ls[i], observed=strains[i], dims=['time_index'])
         
         return model
 
@@ -249,30 +268,40 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
     nmode = kwargs.pop("nmode", 1)
 
     ndet = len(t0)
+    nt = len(times[0])
 
-    with pm.Model() as model:
-        pm.ConstantData('times', times)
-        pm.ConstantData('t0', t0)
-        pm.ConstantData('L', Ls)
+    ifos = kwargs.pop('ifos', map(str, np.arange(ndet)))
+    modes = kwargs.pop('modes', map(str, np.arange(nmode)))
 
-        f = pm.Uniform("f", f_min, f_max, shape=(nmode,))
-        gamma = pm.Uniform('gamma', gamma_min, gamma_max, shape=(nmode,),
+    coords = {
+        'ifo': ifos,
+        'mode': modes,
+        'time_index': np.arange(nt)
+    }
+
+    with pm.Model(coords=coords) as model:
+        pm.ConstantData('times', times, dims=['ifo', 'time_index'])
+        pm.ConstantData('t0', t0, dims=['ifo'])
+        pm.ConstantData('L', Ls, dims=['ifo', 'time_index', 'time_index'])
+
+        f = pm.Uniform("f", f_min, f_max, dims=['mode'])
+        gamma = pm.Uniform('gamma', gamma_min, gamma_max, dims=['mode'],
                            transform=pm.distributions.transforms.ordered)
 
-        Ax_unit = pm.Flat("Ax_unit", shape=(nmode,))
-        Ay_unit = pm.Flat("Ay_unit", shape=(nmode,))
+        Ax_unit = pm.Flat("Ax_unit", dims=['mode'])
+        Ay_unit = pm.Flat("Ay_unit", dims=['mode'])
 
-        A = pm.Deterministic("A", A_scale*at.sqrt(at.square(Ax_unit)+at.square(Ay_unit)))
-        phi = pm.Deterministic("phi", at.arctan2(Ay_unit, Ax_unit))
+        A = pm.Deterministic("A", A_scale*at.sqrt(at.square(Ax_unit)+at.square(Ay_unit)), dims=['mode'])
+        phi = pm.Deterministic("phi", at.arctan2(Ay_unit, Ax_unit), dims=['mode'])
 
-        tau = pm.Deterministic('tau', 1/gamma)
-        Q = pm.Deterministic('Q', np.pi*f*tau)
+        tau = pm.Deterministic('tau', 1/gamma, dims=['mode'])
+        Q = pm.Deterministic('Q', np.pi*f*tau, dims=['mode'])
 
         Apx = A*at.cos(phi)
         Apy = A*at.sin(phi)
 
-        h_det_mode = pm.Deterministic("h_det_mode", compute_h_det_mode(t0, times, np.ones(ndet), np.zeros(ndet), f, gamma, Apx, Apy, np.zeros(nmode), np.zeros(nmode)))
-        h_det = pm.Deterministic("h_det", at.sum(h_det_mode, axis=1))
+        h_det_mode = pm.Deterministic("h_det_mode", compute_h_det_mode(t0, times, np.ones(ndet), np.zeros(ndet), f, gamma, Apx, Apy, np.zeros(nmode), np.zeros(nmode)), dims=['ifo', 'mode', 'time_index'])
+        h_det = pm.Deterministic("h_det", at.sum(h_det_mode, axis=1), dims=['ifo', 'time_index'])
 
         # Priors:
 
@@ -288,7 +317,7 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
 
         # Likelihood
         for i in range(ndet):
-            _ = pm.MvNormal(f"strain_{i}", mu=h_det[i,:], chol=Ls[i], observed=strains[i])
+            _ = pm.MvNormal(f"strain_{i}", mu=h_det[i,:], chol=Ls[i], observed=strains[i], dims=['time_index'])
         
         return model
 

@@ -294,6 +294,9 @@ class Fit(object):
             Fcs = fc
         )
 
+        # IFO coordinate names
+        input['ifos'] = self.ifos
+
         if 'mchi' in self.model:
             if self.modes is None:
                 raise RuntimeError("fit has no modes (see fit.set_modes)")
@@ -302,6 +305,9 @@ class Fit(object):
                 f_coeffs=f_coeff,
                 g_coeffs=g_coeff,
             ))
+
+            # Mode coordinate names
+            input['modes'] = [f'{m.p}{m.l}{m.m}{m.n}' for m in self.modes]
 
         input.update(self.prior_settings)
 
@@ -629,6 +635,21 @@ class Fit(object):
                 result = pm.sample(init=init, target_accept=target_accept, **kws)
 
         self.result = az.convert_to_inference_data(result)
+
+        # Adduct the whitened residuals to the result.
+        residuals = {}
+        for i in self.ifos:
+            r = self.result.observed_data[f'strain_{i}'] - self.result.posterior.h_det.loc[:,:,i,:]
+            residuals[i] = r.transpose('chain', 'draw', 'time_index')
+        residuals_stacked = {i: r.stack(sample=['chain', 'draw']) for i, r in residuals.items()}
+        residuals_whitened = self.whiten(residuals_stacked)
+        d = self.result.posterior.dims
+        residuals_whitened = {i : v.reshape((d['time_index'], d['chain'], d['draw'])) for i,v in residuals_whitened.items()}
+        resid = np.stack([residuals_whitened[i] for i in self.result.posterior.ifo.values], axis=-1)
+        self.result.posterior['whitened_residual'] = (('time_index', 'chain', 'draw', 'ifo'), resid)
+        self.result.posterior['whitened_residual'] = self.result.posterior.whitened_residual.transpose('chain', 'draw', 'ifo', 'time_index')
+        self.result.log_likelihood['whitened_pointwise_loglike'] = -self.result.posterior.whitened_residual**2/2
+
 
     def add_data(self, data, time=None, ifo=None, acf=None):
         """Add data to fit.
@@ -1000,7 +1021,7 @@ class Fit(object):
             dictionary of :class:`ringdown.data.Data` with whitned data for
             each detector.
         """
-        return {i: Data(self.acfs[i].whiten(d), ifo=i) 
+        return {i: self.acfs[i].whiten(d)
                 for i,d in datas.items()}
 
     def draw_sample(self, map=False, prior=False, rng=None, seed=None):
@@ -1118,3 +1139,27 @@ class Fit(object):
             return linalg.norm(snrs, axis=0)
         else:
             return snrs
+
+    @property
+    def waic(self):
+        """Returns the 'widely applicable information criterion' predictive
+        accuarcy metric for the fit.
+        
+        See https://arxiv.org/abs/1507.04544 for definitions and discussion.  A
+        larger WAIC indicates that the model has better predictive accuarcy on
+        the fitted data set."""
+        return az.waic(self.result, var_name='whitened_pointwise_loglike')
+    
+    @property
+    def loo(self):
+        """Returns a leave-one-out estimate of the predictive accuracy of the
+        model.
+        
+        See https://arxiv.org/abs/1507.04544 for definitions and discussion,
+        including discussion of the 'Pareto stabilization' algorithm for
+        reducing the variance of the leave-one-out estimate.  The LOO is an
+        estimate of the expected log predictive density (log of the likelihood
+        evaluated on hypothetical data from a replication of the observation
+        averaged over the posterior) of the model; larger LOO values indicate
+        higher predictive accuracy (i.e. explanatory power) for the model."""
+        return az.loo(self.result, var_name='whitened_pointwise_loglike')
