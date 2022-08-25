@@ -7,3 +7,4 @@ Here are a number of examples sourced from Jupyter notebooks found `here <https:
     examples/single_damped_sinusoid
     examples/GW150914
     examples/GW150914_circular
+    examples/GW150914_loo
