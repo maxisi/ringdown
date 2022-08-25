@@ -603,7 +603,8 @@ class Fit(object):
 
     DEF_RUN_KWS = dict(init='jitter+adapt_full', target_accept=0.9)
     DEF_RUN_PRIOR_KWS = dict(var_names="unobserved_RVs")
-    def run(self, prior=False, suppress_warnings=True, **kws):
+    def run(self, prior=False, suppress_warnings=True, store_residuals=True,
+            **kws):
         """Fit model.
 
         Additional keyword arguments not listed below are passed to the
@@ -632,6 +633,9 @@ class Fit(object):
 
         suppress_warnings : bool
             supress some annoying warnings from pymc (def. `True`).
+
+        store_residuals : bool
+            compute whitened residuals point-wise and store in ``Fit.result``.
 
         \*\*kws :
             arguments passed to sampler.
@@ -678,23 +682,35 @@ class Fit(object):
                 else:
                     result = pm.sample(**rkws)
                     self.result = az.convert_to_inference_data(result)
+        if store_residuals:
+            self._generate_whitened_residuals()
     run.__doc__ = run.__doc__.format(DEF_RUN_KWS, DEF_RUN_PRIOR_KWS)
 
+    def _generate_whitened_residuals(self):
         # Adduct the whitened residuals to the result.
         residuals = {}
+        resuduals_stacked = {}
         for ifo in self.ifos:
             ifo_key = bytes(str(ifo), 'utf-8') # IFO coordinates are bytestrings
-            r = self.result.observed_data[f'strain_{ifo}'] - self.result.posterior.h_det.loc[:,:,ifo_key,:]
+            r = self.result.observed_data[f'strain_{ifo}'] -\
+                self.result.posterior.h_det.loc[:,:,ifo_key,:]
             residuals[ifo] = r.transpose('chain', 'draw', 'time_index')
-        residuals_stacked = {i: r.stack(sample=['chain', 'draw']) for i, r in residuals.items()}
+            residuals_stacked[ifo] = residuals[ifo].stack(sample=['chain',
+                                                                  'draw'])
         residuals_whitened = self.whiten(residuals_stacked)
         d = self.result.posterior.dims
-        residuals_whitened = {i : v.reshape((d['time_index'], d['chain'], d['draw'])) for i,v in residuals_whitened.items()}
+        residuals_whitened = {
+            i: v.reshape((d['time_index'], d['chain'], d['draw']))
+            for i,v in residuals_whitened.items()
+        }
         resid = np.stack([residuals_whitened[i] for i in self.ifos], axis=-1)
-        self.result.posterior['whitened_residual'] = (('time_index', 'chain', 'draw', 'ifo'), resid)
-        self.result.posterior['whitened_residual'] = self.result.posterior.whitened_residual.transpose('chain', 'draw', 'ifo', 'time_index')
-        self.result.log_likelihood['whitened_pointwise_loglike'] = -self.result.posterior.whitened_residual**2/2
-
+        self.result.posterior['whitened_residual'] = \
+            (('time_index', 'chain', 'draw', 'ifo'), resid)
+        self.result.posterior['whitened_residual'] = \
+            self.result.posterior.whitened_residual.transpose('chain', 'draw',
+                                                              'ifo', 'time_index')
+        self.result.log_likelihood['whitened_pointwise_loglike'] =\
+            -self.result.posterior.whitened_residual**2/2
 
     def add_data(self, data, time=None, ifo=None, acf=None):
         """Add data to fit.
