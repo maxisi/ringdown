@@ -120,10 +120,10 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
         M = pm.Uniform("M", M_min, M_max)
         chi = pm.Uniform("chi", chi_min, chi_max)
 
-        Apx_unit = pm.Flat("Apx_unit", dims=['mode'])
-        Apy_unit = pm.Flat("Apy_unit", dims=['mode'])
-        Acx_unit = pm.Flat("Acx_unit", dims=['mode'])
-        Acy_unit = pm.Flat("Acy_unit", dims=['mode'])
+        Apx_unit = pm.Normal("Apx_unit", dims=['mode'])
+        Apy_unit = pm.Normal("Apy_unit", dims=['mode'])
+        Acx_unit = pm.Normal("Acx_unit", dims=['mode'])
+        Acy_unit = pm.Normal("Acy_unit", dims=['mode'])
 
         df = pm.Uniform("df", -df_max, df_max, dims=['mode'])
         dtau = pm.Uniform("dtau", -dtau_max, dtau_max, dims=['mode'])
@@ -154,6 +154,9 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
         # Flat in M-chi already
 
         # Amplitude prior
+
+        # bring us back to flat-in-quadratures
+        pm.Potential("flat_A_quadratures_prior", 0.5*at.sum(at.square(Apx_unit) + at.square(Apy_unit) + at.square(Acx_unit) + at.square(Acy_unit)))
         if flat_A:
             pm.Potential("flat_A_prior", -3*at.sum(at.log(A)))
         elif flat_A_ellip:
@@ -214,8 +217,8 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs
 
         cosi = pm.Uniform("cosi", cosi_min, cosi_max)
 
-        Ax_unit = pm.Flat("Ax_unit", dims=['mode'])
-        Ay_unit = pm.Flat("Ay_unit", dims=['mode'])
+        Ax_unit = pm.Normal("Ax_unit", dims=['mode'])
+        Ay_unit = pm.Normal("Ay_unit", dims=['mode'])
 
         df = pm.Uniform("df", -df_max, df_max, dims=['mode'])
         dtau = pm.Uniform("dtau", -dtau_max, dtau_max, dims=['mode'])
@@ -245,6 +248,8 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs
         # Flat in M-chi already
 
         # Amplitude prior
+        # first bring us to flat in quadratures
+        pm.Potential("flat_A_quadratures_prior", 0.5*at.sum(at.square(Ax_unit) + at.square(Ay_unit)))
         if flat_A:
             pm.Potential("flat_A_prior", -at.sum(at.log(A)))
         else:
@@ -294,8 +299,8 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
         gamma = pm.Uniform('gamma', gamma_min, gamma_max, dims=['mode'],
                            transform=pm.distributions.transforms.ordered)
 
-        Ax_unit = pm.Flat("Ax_unit", dims=['mode'])
-        Ay_unit = pm.Flat("Ay_unit", dims=['mode'])
+        Ax_unit = pm.Normal("Ax_unit", dims=['mode'])
+        Ay_unit = pm.Normal("Ay_unit", dims=['mode'])
 
         A = pm.Deterministic("A", A_scale*at.sqrt(at.square(Ax_unit)+at.square(Ay_unit)), dims=['mode'])
         phi = pm.Deterministic("phi", at.arctan2(Ay_unit, Ax_unit), dims=['mode'])
@@ -314,6 +319,8 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
         # Flat in M-chi already
 
         # Amplitude prior
+        # first bring us to flat in quadratures
+        pm.Potential("flat_A_quadratures_prior", 0.5*at.sum(at.square(Ax_unit) + at.square(Ay_unit)))
         if flat_A:
             pm.Potential("flat_A_prior", -at.sum(at.log(A)))
         else:

@@ -109,6 +109,7 @@ class Fit(object):
         self.set_modes(modes)
         # assume rest of kwargs are to be passed to stan_data (e.g. prior)
         self._prior_settings = kws
+        self._pymc_model = None
 
     @property
     def n_modes(self) -> int:
@@ -248,7 +249,6 @@ class Fit(object):
         """
         return list(self._default_prior.keys())
 
-    # TODO: warn or fail if self.results is not None?
     def update_prior(self, **kws):
         """Set or modify prior options.  For example,
         ``fit.update_prior(A_scale=1e-21)`` sets the `A_scale` parameter to
@@ -257,6 +257,9 @@ class Fit(object):
         Valid arguments for the selected model can be found in
         :attr:`Fit.valid_model_options`.
         """
+        if self.result is not None:
+            # TODO: fail?
+            logging.warn("updating prior of Fit with preexisting results!")
         valid_keys = self.valid_model_options
         valid_keys_low = [k.lower() for k in valid_keys]
         for k, v in kws.items():
@@ -266,6 +269,9 @@ class Fit(object):
             else:
                 raise ValueError('{} is not a valid model argument.'
                                  'Valid options are: {}'.format(k, valid_keys))
+        # reset model cache
+        self._pymc_model = None
+        self.prior = None
 
     @property
     def model_input(self) -> dict:
@@ -318,14 +324,16 @@ class Fit(object):
 
     @property
     def pymc_model(self):
-        if self.model == 'mchi':
-            return model.make_mchi_model(**self.model_input)
-        elif self.model == 'mchi_aligned':
-            return model.make_mchi_aligned_model(**self.model_input)
-        elif self.model == 'ftau':
-            return model.make_ftau_model(**self.model_input)
-        else:
-            raise NotImplementedError('models other than mchi not currently implemented')
+        if self._pymc_model is None:
+            if self.model == 'mchi':
+                self._pymc_model = model.make_mchi_model(**self.model_input)
+            elif self.model == 'mchi_aligned':
+                self._pymc_model = model.make_mchi_aligned_model(**self.model_input)
+            elif self.model == 'ftau':
+                self._pymc_model = model.make_ftau_model(**self.model_input)
+            else:
+                raise NotImplementedError(f'unrecognized model {self.model}')
+        return self._pymc_model
 
     @classmethod
     def from_config(cls, config_input,no_cond=False):
@@ -498,6 +506,10 @@ class Fit(object):
         fit_copy : Fit
             deep copy of `Fit`.
         """
+        # we can't deepcopy the PyMC model (aesara will throw an error)
+        # so remove the cached model before copying (it can always be
+        # recompiled if needed)
+        self._pymc_model = None
         return cp.deepcopy(self)
 
     def condition_data(self, preserve_acfs=False, **kwargs):
@@ -589,24 +601,45 @@ class Fit(object):
                 self.data[i] = self.data[i] + h
         self.update_info('injection', no_noise=no_noise, **kws)
 
-    def run(self, prior=False, **kws):
+    DEF_RUN_KWS = dict(init='jitter+adapt_full', target_accept=0.9)
+    DEF_RUN_PRIOR_KWS = dict(var_names="unobserved_RVs")
+    def run(self, prior=False, suppress_warnings=True, store_residuals=True,
+            **kws):
         """Fit model.
 
         Additional keyword arguments not listed below are passed to the
-        sampler.
+        sampler, with the following defaults when sampling the posterior:
+
+        {}
+
+        See docs for :func:`pymc.sample` to see all available options.
+
+        If sampling from the prior (``prior = True``), the default arguments
+        are:
+
+        {}
+        
+        In that case, if ``var_names = "unobserved_RVS"``, then the variables
+        sampled over will be the _unobserved_ variables defined in the model;
+        to also include observed variables, pass ``var_names = None``.
+
+        See docs for :func:`pymc.sample_prior_predictive` to see all_available
+        prior-sampling options.
 
         Arguments
         ---------
         prior : bool
-            whether to sample the prior (def. `False`) [currently unavailable
-            as we transition to `pymc`.
+            whether to sample the prior (def. `False`).
 
-        supress_warnings : bool
-            supress some annoying warnings from pymc (def. `True`)
+        suppress_warnings : bool
+            supress some annoying warnings from pymc (def. `True`).
+
+        store_residuals : bool
+            compute whitened residuals point-wise and store in ``Fit.result``.
+
+        \*\*kws :
+            arguments passed to sampler.
         """
-        if prior:
-            raise NotImplementedError
-
         if not self.acfs:
             logging.warning("computing ACFs with default settings")
             self.compute_acfs()
@@ -618,39 +651,66 @@ class Fit(object):
                 raise AssertionError(e.format(ifo, self.acfs[ifo].delta_t,
                                           self.data[ifo].delta_t))
 
+        # parse keyword arguments
+        filter = 'ignore' if suppress_warnings else 'default'
+
+        # run keyword arguments
+        rkws = self.DEF_RUN_KWS.copy()
+        rkws.update(kws)
+
+        # prior keyword arguments
+        pkws = self.DEF_RUN_PRIOR_KWS.copy()
+        pkws.update(kws)
+
         # run model and store
-        logging.info('running {}'.format(self.model))
-        init = kws.pop('init', 'jitter+adapt_full')
-        target_accept = kws.pop('target_accept', 0.9)
-
-        spwarn = kws.pop('supress_warnings', True)
-        if spwarn:
-            filter = 'ignore'
-        else:
-            filter = 'default'
-
+        logging.info('running {} (prior = {})'.format(self.model, prior))
         with warnings.catch_warnings():
             warnings.simplefilter(filter)
             with self.pymc_model:
-                result = pm.sample(init=init, target_accept=target_accept, **kws)
+                if prior:
+                    # parse prior-specific kws
+                    if pkws['var_names'] == 'unobserved_RVs':
+                        # only sampled unobserved quantities
+                        # use PyMC utility to get the names
+                        prior_vars = pm.util.get_default_varnames(
+                              self.pymc_model.unobserved_RVs,
+                              include_transformed=True
+                        )
+                        pkws['var_names'] = {v.name for v in prior_vars}
+                    result = pm.sample_prior_predictive(**pkws)
+                    self.prior = az.convert_to_inference_data(result)
+                else:
+                    result = pm.sample(**rkws)
+                    self.result = az.convert_to_inference_data(result)
+        if store_residuals:
+            self._generate_whitened_residuals()
+    run.__doc__ = run.__doc__.format(DEF_RUN_KWS, DEF_RUN_PRIOR_KWS)
 
-        self.result = az.convert_to_inference_data(result)
-
+    def _generate_whitened_residuals(self):
         # Adduct the whitened residuals to the result.
         residuals = {}
+        residuals_stacked = {}
         for ifo in self.ifos:
             ifo_key = bytes(str(ifo), 'utf-8') # IFO coordinates are bytestrings
-            r = self.result.observed_data[f'strain_{ifo}'] - self.result.posterior.h_det.loc[:,:,ifo_key,:]
+            r = self.result.observed_data[f'strain_{ifo}'] -\
+                self.result.posterior.h_det.loc[:,:,ifo_key,:]
             residuals[ifo] = r.transpose('chain', 'draw', 'time_index')
-        residuals_stacked = {i: r.stack(sample=['chain', 'draw']) for i, r in residuals.items()}
+            residuals_stacked[ifo] = residuals[ifo].stack(sample=['chain',
+                                                                  'draw'])
         residuals_whitened = self.whiten(residuals_stacked)
         d = self.result.posterior.dims
-        residuals_whitened = {i : v.reshape((d['time_index'], d['chain'], d['draw'])) for i,v in residuals_whitened.items()}
+        residuals_whitened = {
+            i: v.reshape((d['time_index'], d['chain'], d['draw']))
+            for i,v in residuals_whitened.items()
+        }
         resid = np.stack([residuals_whitened[i] for i in self.ifos], axis=-1)
-        self.result.posterior['whitened_residual'] = (('time_index', 'chain', 'draw', 'ifo'), resid)
-        self.result.posterior['whitened_residual'] = self.result.posterior.whitened_residual.transpose('chain', 'draw', 'ifo', 'time_index')
-        self.result.log_likelihood['whitened_pointwise_loglike'] = -self.result.posterior.whitened_residual**2/2
-
+        keys = ('time_index', 'chain', 'draw', 'ifo')
+        self.result.posterior['whitened_residual'] = (keys, resid)
+        keys = ('chain', 'draw', 'ifo', 'time_index')
+        self.result.posterior['whitened_residual'] = \
+            self.result.posterior.whitened_residual.transpose(*keys)
+        self.result.log_likelihood['whitened_pointwise_loglike'] =\
+            -self.result.posterior.whitened_residual**2/2
 
     def add_data(self, data, time=None, ifo=None, acf=None):
         """Add data to fit.
@@ -932,11 +992,12 @@ class Fit(object):
             if t0_i < self.data[i].time[0] or t0_i > self.data[i].time[-1]:
                 raise ValueError("{} start time not in data".format(i))
 
-    # TODO: warn or fail if self.results is not None?
     def update_target(self, **kws):
-        """Modify analysis target. See also
-        :meth:`Fit.set_target`.
+        """Modify analysis target. See also :meth:`Fit.set_target`.
         """
+        if self.result is not None:
+            # TODO: fail?
+            logging.warn("updating target of Fit with preexisting results!")
         target = self.target._asdict()
         target.update({k: getattr(self,k) for k in
                        ['duration', 'n_analyze', 'antenna_patterns']})
