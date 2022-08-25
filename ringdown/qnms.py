@@ -75,7 +75,8 @@ class KerrMode(object):
                           logchis**3, logchis**4))
 
         q = qnm.modes_cache(s, l, p*abs(m), n)
-        f = sign(m)*array([q(c)[0].real for c in chis])/(2*pi)
+        sgn = 1 if m == 0 else sign(m)
+        f = sgn*array([q(c)[0].real for c in chis])/(2*pi)
         g = array([abs(q(c)[0].imag) for c in chis])
 
         coeff_f = np.linalg.lstsq(M, f, rcond=None, **kws)[0]
