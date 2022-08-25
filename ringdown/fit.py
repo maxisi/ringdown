@@ -295,7 +295,7 @@ class Fit(object):
         )
 
         # IFO coordinate names
-        input['ifos'] = self.ifos
+        input['ifos'] = [str(i) for i in self.ifos]
 
         if 'mchi' in self.model:
             if self.modes is None:
