@@ -103,8 +103,8 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
     nt = len(times[0])
     nmode = f_coeffs.shape[0]
 
-    ifos = kwargs.pop('ifos', map(str, np.arange(ndet)))
-    modes = kwargs.pop('modes', map(str, np.arange(nmode)))
+    ifos = kwargs.pop('ifos', np.arange(ndet))
+    modes = kwargs.pop('modes', np.arange(nmode))
 
     coords = {
         'ifo': ifos,
@@ -165,7 +165,10 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
 
         # Likelihood:
         for i in range(ndet):
-            _ = pm.MvNormal(f"strain_{ifos[i]}", mu=h_det[i,:], chol=Ls[i], observed=strains[i], dims=['time_index'])
+            key = ifos[i]
+            if isinstance(key, bytes):
+                key = key.decode('utf-8') # Don't want byte strings in our names!
+            _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i], observed=strains[i], dims=['time_index'])
         
         return model
         
@@ -192,8 +195,8 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs
     nt = len(times[0])
     nmode = f_coeffs.shape[0]
 
-    ifos = kwargs.pop('ifos', map(str, np.arange(ndet)))
-    modes = kwargs.pop('modes', map(str, np.arange(nmode)))
+    ifos = kwargs.pop('ifos', np.arange(ndet))
+    modes = kwargs.pop('modes', np.arange(nmode))
 
     coords = {
         'ifo': ifos,
@@ -251,7 +254,10 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs
 
         # Likelihood
         for i in range(ndet):
-            _ = pm.MvNormal(f"strain_{ifos[i]}", mu=h_det[i,:], chol=Ls[i], observed=strains[i], dims=['time_index'])
+            key = ifos[i]
+            if isinstance(key, bytes):
+                key = key.decode('utf-8') # Don't want byte strings in our names!
+            _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i], observed=strains[i], dims=['time_index'])
         
         return model
 
@@ -270,8 +276,8 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
     ndet = len(t0)
     nt = len(times[0])
 
-    ifos = kwargs.pop('ifos', map(str, np.arange(ndet)))
-    modes = kwargs.pop('modes', map(str, np.arange(nmode)))
+    ifos = kwargs.pop('ifos', np.arange(ndet))
+    modes = kwargs.pop('modes', np.arange(nmode))
 
     coords = {
         'ifo': ifos,
@@ -317,7 +323,10 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
 
         # Likelihood
         for i in range(ndet):
-            _ = pm.MvNormal(f"strain_{ifos[i]}", mu=h_det[i,:], chol=Ls[i], observed=strains[i], dims=['time_index'])
+            key = ifos[i]
+            if isinstance(key, bytes):
+                key = key.decode('utf-8') # Don't want byte strings in our names!
+            _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i], observed=strains[i], dims=['time_index'])
         
         return model
 

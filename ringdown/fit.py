@@ -294,8 +294,8 @@ class Fit(object):
             Fcs = fc
         )
 
-        # IFO coordinate names
-        input['ifos'] = [str(i) for i in self.ifos]
+        # IFO coordinate names must be bytestrings in order to serialize and compress properly.
+        input['ifos'] = [bytes(str(i), 'utf-8') for i in self.ifos]
 
         if 'mchi' in self.model:
             if self.modes is None:
@@ -306,8 +306,8 @@ class Fit(object):
                 g_coeffs=g_coeff,
             ))
 
-            # Mode coordinate names
-            input['modes'] = [f'{m.p}{m.l}{m.m}{m.n}' for m in self.modes]
+            # Mode coordinate names must also be bytestrings in order to serialize and compress properly
+            input['modes'] = [bytes(f'{m.p}{m.l}{m.m}{m.n}', 'utf-8') for m in self.modes]
 
         input.update(self.prior_settings)
 
@@ -638,9 +638,10 @@ class Fit(object):
 
         # Adduct the whitened residuals to the result.
         residuals = {}
-        for i in self.ifos:
-            r = self.result.observed_data[f'strain_{i}'] - self.result.posterior.h_det.loc[:,:,str(i),:]
-            residuals[i] = r.transpose('chain', 'draw', 'time_index')
+        for ifo in self.ifos:
+            ifo_key = bytes(str(ifo), 'utf-8') # IFO coordinates are bytestrings
+            r = self.result.observed_data[f'strain_{ifo}'] - self.result.posterior.h_det.loc[:,:,ifo_key,:]
+            residuals[ifo] = r.transpose('chain', 'draw', 'time_index')
         residuals_stacked = {i: r.stack(sample=['chain', 'draw']) for i, r in residuals.items()}
         residuals_whitened = self.whiten(residuals_stacked)
         d = self.result.posterior.dims
