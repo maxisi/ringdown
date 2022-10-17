@@ -804,10 +804,12 @@ class Fit(object):
         if len(ifos) == 0:
             raise ValueError("first add data")
 
-        nperseg_safe = np2(16*self.n_analyze)
-        if kws.get('method', 'fd') == 'fd':
-            if not ('nperseg' in kws):
-                kws['nperseg'] = nperseg_safe
+        # Try to set a safe `nperseg` if we are using `fd` estimation
+        if self.n_analyze is not None:
+            nperseg_safe = np2(16*self.n_analyze)
+            if kws.get('method', 'fd') == 'fd':
+                if not ('nperseg' in kws):
+                    kws['nperseg'] = nperseg_safe
         
         # if shared, compute a single ACF
         acf = self.data[ifos[0]].get_acf(**kws) if shared else None
