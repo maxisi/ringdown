@@ -447,6 +447,7 @@ class PowerSpectrum(FrequencySeries):
         """
         fs = kws.pop('fs', 1/getattr(data, 'delta_t', 1))
         kws['nperseg'] = kws.get('nperseg', fs)  # default to 1s segments
+        kws['average'] = kws.get('average', 'median') # default to median-averaged, not mean-averaged to handle outliers.
         freq, psd = sig.welch(data, fs=fs, **kws)
         p = cls(psd, index=freq)
         if flow:
