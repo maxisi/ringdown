@@ -20,6 +20,13 @@ from . import qnms
 import warnings
 from . import waveforms
 
+def np2(x):
+    """Returns the next power of two as big as or larger than x."""
+    p = 1
+    while p < x:
+        p = p << 1
+    return p
+
 Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 
 MODELS = ('ftau', 'mchi', 'mchi_aligned', 'mchiq')
@@ -796,6 +803,12 @@ class Fit(object):
         ifos = self.ifos if ifos is None else ifos
         if len(ifos) == 0:
             raise ValueError("first add data")
+
+        nperseg_safe = np2(16*self.n_analyze)
+        if kws.get('method', 'fd') == 'fd':
+            if not ('nperseg' in kws):
+                kws['nperseg'] = nperseg_safe
+        
         # if shared, compute a single ACF
         acf = self.data[ifos[0]].get_acf(**kws) if shared else None
         for ifo in ifos:
