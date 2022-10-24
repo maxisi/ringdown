@@ -1,4 +1,5 @@
 pymc==4
+aesara
 numpy
 h5py
 arviz
@@ -9,4 +10,4 @@ lalsuite
 qnm
 seaborn
 jupyterlab
-aesara
+tqdm

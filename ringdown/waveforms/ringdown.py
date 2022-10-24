@@ -69,8 +69,6 @@ class Ringdown(Signal):
         # obtain frequencies from remnant parameters if necessary
         freq_keys = ['omega', 'gamma', 'f', 'tau']
         if 'modes' in kws and not any([k in kws for k in freq_keys]):
-            if 'M' in kws:
-                kws['m'] = kws.pop('M')
             kws['approx'] = kws.get('approx', False)
             kws['f'], kws['tau'] = [], []
             for m in kws['modes']:
@@ -110,8 +108,8 @@ class Ringdown(Signal):
     _MODE_PARS = ['omega', 'gamma', 'a', 'ellip', 'theta', 'phi']
 
     @classmethod
-    def from_parameters(cls, time, t0=0, signal_buffer=inf, two_sided=True, df_pre=0,
-                        dtau_pre=0, mode_isel=None, **kws):
+    def from_parameters(cls, time, t0=0, signal_buffer=inf, two_sided=True,
+                        df_pre=0, dtau_pre=0, mode_isel=None, **kws):
         """Create injection: a sinusoid up to t0, then a damped sinusoiud. The
         (A_pre, df_pre, dtau_pre) parameters can turn the initial sinusoid into
         a sinegaussian, to produce a ring-up.  Can incorporate several modes,
@@ -143,7 +141,7 @@ class Ringdown(Signal):
             mode_isel = slice(None)
         margs = {k: array(pars[k][mode_isel], ndmin=2) for k in cls._MODE_PARS}
         if modes:
-            if len(modes) > len(margs[0][0]):
+            if len(modes) > len(margs[cls._MODE_PARS[0]][0]):
                 raise ValueError("insufficient parameters provided")
         signal[mpost] = sum(cls.complex_mode(t[mpost]-t0, *margs.values()),
                             axis=1)
