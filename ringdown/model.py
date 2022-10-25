@@ -87,7 +87,7 @@ def ellip_from_quadratures(Apx, Apy, Acx, Acy):
     A = a_from_quadratures(Apx, Apy, Acx, Acy)
     e = 0.5*(at.sqrt(at.square(Acy + Apx) + at.square(Acx - Apy)) -
              at.sqrt(at.square(Acy - Apx) + at.square(Acx + Apy))) / A
-    return A, e
+    return e
 
 def Aellip_from_quadratures(Apx, Apy, Acx, Acy):
     # should be slightly cheaper than calling the two functions separately
