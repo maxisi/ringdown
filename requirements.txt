@@ -11,3 +11,4 @@ qnm
 seaborn
 jupyterlab
 tqdm
+ipywidgets

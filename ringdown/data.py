@@ -586,8 +586,6 @@ class AutoCovariance(TimeSeries):
         dt = getattr(d, 'delta_t', delta_t)
         n = n or len(d)
         if method.lower() == 'td':
-            logging.warning("`method = 'td'` is depreacated: this ACF estimate "
-                            "may be unstable!")
             rho = sig.correlate(d, d, **kws)
             rho = ifftshift(rho)
             rho = rho[:n] / len(d)
