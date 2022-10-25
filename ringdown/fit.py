@@ -363,6 +363,7 @@ class Fit(object):
         fit : Fit
             Ringdown :class:`Fit` object.
         """
+        # determine whether to read config from disk
         if isinstance(config_input, configparser.ConfigParser):
             config = config_input
         else:
@@ -370,7 +371,7 @@ class Fit(object):
                 raise FileNotFoundError(config_input)
             config = configparser.ConfigParser()
             config.read(config_input)
-        # utility function
+        # utility function to parse arguments
         def try_parse(x):
             try:
                 return float(x)
@@ -383,7 +384,8 @@ class Fit(object):
         fit = cls(config['model']['name'], modes=config['model']['modes'])
         # add priors
         prior = config['prior']
-        fit.update_prior(**{k: literal_eval(v) for k,v in prior.items() if "drift" not in k})
+        fit.update_prior(**{k: literal_eval(v) for k,v in prior.items()
+                             if "drift" not in k})
         if 'data' not in config:
             # the rest of the options require loading data, so if no pointer to
             # data was provided, just exit
@@ -405,15 +407,20 @@ class Fit(object):
         if config.has_section('injection'):
             inj_kws = {k: try_parse(v) for k,v in config['injection'].items()}
             no_noise = inj_kws.get('no_noise', False)
+            post_cond = inj_kws.get('post_cond', False)
             if no_noise:
                 # create injection but do not add it to data quite yet, in case
                 # we need to estimate ACFs from data first
                 fit.injections = fit.get_templates(**inj_kws)
                 fit.update_info('injection', **inj_kws)
-            else:
+            elif not post_cond:
+                # unless we have to wait after conditioning (post_cond) inject
+                # signal into data now
                 fit.inject(**inj_kws)
         else:
+            # no injection requested, so set some dummy defaults
             no_noise = False
+            post_cond = False
         # condition data if requested
         if config.has_section('condition') and not no_cond:
             cond_kws = {k: try_parse(v) for k,v in config['condition'].items()}
@@ -426,11 +433,15 @@ class Fit(object):
         else:
             acf_kws = {} if 'acf' not in config else config['acf']
             fit.compute_acfs(**{k: try_parse(v) for k,v in acf_kws.items()})
-        # if no-noise injection, replace data by conditioned injection
         if no_noise:
+            # no-noise injection, so replace data by conditioned injection
+            # (coditioning only if post_cond was false)
             fit.data = fit.injections
-            if config.has_section('condition'):
+            if config.has_section('condition') and not post_cond:
                 fit.condition_data(preserve_acfs=True, **cond_kws)
+        elif post_cond:
+            # now that we are done conditioning, inject the signal
+            fit.inject(**inj_kws)
         return fit
 
     def to_config(self, path=None):
@@ -1134,7 +1145,7 @@ class Fit(object):
         if map:
             # select maximum probability sample
             logp = result.sample_stats.lp.stack(sample=('chain', 'draw'))
-            i = argmax(logp.values)
+            i = np.argmax(logp.values)
         else:
             # pick random sample
             rng = rng or np.random.default_rng(seed)
