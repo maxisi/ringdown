@@ -1,4 +1,8 @@
-examples/*.hdf5
+test
+tags
+scratch
+
+docs/examples/*.hdf5
 
 *.swp
 
