@@ -307,7 +307,8 @@ class Fit(object):
             Fcs = fc
         )
 
-        # IFO coordinate names must be bytestrings in order to serialize and compress properly.
+        # IFO coordinate names must be bytestrings in order to serialize and
+        # compress properly.
         input['ifos'] = [bytes(str(i), 'utf-8') for i in self.ifos]
 
         if 'mchi' in self.model:
@@ -319,8 +320,10 @@ class Fit(object):
                 g_coeffs=g_coeff,
             ))
 
-            # Mode coordinate names must also be bytestrings in order to serialize and compress properly
-            input['modes'] = [bytes(f'{m.p}{m.l}{m.m}{m.n}', 'utf-8') for m in self.modes]
+            # Mode coordinate names must also be bytestrings in order to
+            # serialize and compress properly
+            input['modes'] = [bytes(f'{m.p}{m.l}{m.m}{m.n}', 'utf-8') for m in
+                              self.modes]
 
         input.update(self.prior_settings)
 
@@ -347,7 +350,7 @@ class Fit(object):
         """Creates a :class:`Fit` instance from a configuration file.
         
         Has the ability to load and condition data, as well as to inject a
-        simualted signal and to compute or load ACFs. Does not run the fit
+        simulated signal and to compute or load ACFs. Does not run the fit
         automatically.
 
         Arguments
@@ -434,13 +437,24 @@ class Fit(object):
             acf_kws = {} if 'acf' not in config else config['acf']
             fit.compute_acfs(**{k: try_parse(v) for k,v in acf_kws.items()})
         if no_noise:
-            # no-noise injection, so replace data by conditioned injection
-            # (coditioning only if post_cond was false)
-            fit.data = fit.injections
-            if config.has_section('condition') and not post_cond:
-                fit.condition_data(preserve_acfs=True, **cond_kws)
+            # no-noise injection, so replace data by simulated signal
+            if post_cond:
+                # post_cond means the injection must not be conditioned, but it
+                # should be evaluated on the decimated time array (if
+                # applicable); as a hack, just zero out the data and call
+                # fit.inject(), thus adding the injection to a bunch of zeros
+                # while guaranteeing that the injection gets produced on the
+                # right time array
+                fit.data = {i: 0*v for i,v in fit.data.items()}
+                fit.inject(**inj_kws)
+            else:
+                # the injection must be conditioned, so replace the data with
+                # the injection and condition it explicitly
+                fit.data = fit.injections
+                if config.has_section('condition') and not post_cond:
+                    fit.condition_data(preserve_acfs=True, **cond_kws)
         elif post_cond:
-            # now that we are done conditioning, inject the signal
+            # now that we are done conditioning, inject the requested signal 
             fit.inject(**inj_kws)
         return fit
 
