@@ -14,7 +14,7 @@ setup(name='ringdown',
       license='MIT',
       packages=find_packages(),
       package_data={'ringdown': ['stan/*.stan']},
-      scripts=['bin/ringdown_fit'],
+      scripts=['bin/ringdown_fit', 'bin/ringdown_pipe'],
       install_requires=[
             'arviz',
             'h5py',
