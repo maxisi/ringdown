@@ -409,6 +409,23 @@ class Fit(object):
         # inject signal if requested
         if config.has_section('injection'):
             inj_kws = {k: try_parse(v) for k,v in config['injection'].items()}
+            if 'path' in inj_kws:
+                # attempt to read injection parameters from JSON file
+                injpath = os.path.abspath(inj_kws.pop('path'))
+                try:
+                    with open(injpath, 'r') as f:
+                        json_kws = json.load(f)
+                    # check if there's an overlap between JSON and INI
+                    overlap = set(json_kws.keys()).intersection(inj_kws.keys())
+                    if overlap:
+                        logging.warn("overwriting injection file options "
+                                     f"with config: {overlap}")
+                    # merge injection settings from JSON and INI
+                    # NOTE: config file overwrites JSON!
+                    file_kws.update(inj_kws)
+                    inj_kws = json_kws
+                except (UnicodeDecodeError,JSONDecodeError):
+                    raise IOError(f"unable to read JSON file: {injpath}")
             no_noise = inj_kws.get('no_noise', False)
             post_cond = inj_kws.get('post_cond', False)
             if no_noise:
