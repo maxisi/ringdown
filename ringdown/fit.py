@@ -688,7 +688,7 @@ class Fit(object):
 
         min_ess: number
             if given, keep re-running the sampling with longer chains until the
-            minimum effective sample size exceeds ``min_ess`` (def. ``None``)
+            minimum effective sample size exceeds `min_ess` (def. `None`).
 
         \*\*kws :
             arguments passed to sampler.
