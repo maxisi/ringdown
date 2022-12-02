@@ -423,7 +423,7 @@ class PowerSpectrum(FrequencySeries):
         return PowerSpectrum
 
     @classmethod
-    def from_data(cls, data, flow=None, smooth=False, **kws):
+    def from_data(cls, data, flow=None, smooth=False, patch_level=None, **kws):
         """Estimate :class:`PowerSpectrum` from time domain data using Welch's
         method.
 
@@ -451,7 +451,7 @@ class PowerSpectrum(FrequencySeries):
         freq, psd = sig.welch(data, fs=fs, **kws)
         p = cls(psd, index=freq)
         if flow:
-            p.flatten(flow, smooth=smooth, inplace=True)
+            p.flatten(flow, smooth=smooth, patch_level=patch_level, inplace=True)
         return p
 
     @classmethod
@@ -495,7 +495,7 @@ class PowerSpectrum(FrequencySeries):
         # made up function to taper smoothly
         return psd_ref + psd_ref*(f_ref-f)*np.exp(-(f_ref-f))/3
 
-    def flatten(self, flow, smooth=False, inplace=False):
+    def flatten(self, flow, smooth=False, patch_level=None, inplace=False):
         """Modify PSD at lower frequencies so that it flattens to a constant.
 
         Arguments
@@ -519,7 +519,7 @@ class PowerSpectrum(FrequencySeries):
         else:
             psd = self.copy()
         fref = freq[freq >= flow][0]
-        psd_ref = self[fref]
+        psd_ref = patch_level or self[fref]
         def get_low_freqs(f, smooth):
             if smooth:
                 return self._pad_low_freqs(f, fref, psd_ref)
