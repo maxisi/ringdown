@@ -519,7 +519,10 @@ class PowerSpectrum(FrequencySeries):
         else:
             psd = self.copy()
         fref = freq[freq >= flow][0]
-        psd_ref = patch_level or self[fref]
+        if patch_level is None:
+            psd_ref = 10*np.max(psd[freq < flow])
+        else:
+            psd_ref = patch_level
         def get_low_freqs(f, smooth):
             if smooth:
                 return self._pad_low_freqs(f, fref, psd_ref)
