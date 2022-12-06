@@ -495,40 +495,48 @@ class PowerSpectrum(FrequencySeries):
         # made up function to taper smoothly
         return psd_ref + psd_ref*(f_ref-f)*np.exp(-(f_ref-f))/3
 
-    def flatten(self, flow, smooth=False, patch_level=None, inplace=False):
-        """Modify PSD at lower frequencies so that it flattens to a constant.
+    def flatten(self, flow, fhigh=None, patch_level=None, inplace=False):
+        """Modify PSD at low or high frequencies so that it flattens to a
+        constant.
 
         Arguments
         ---------
         flow : float
-            lower frequency threshold.
-        smooth : bool
-            flatten PSD smoothly at threshold with a soft tapering function.
-            Defaults to False.
+            low frequency threshold.
+        fhigh : float
+            high frequency threshold (def., `None`).
+        patch_level : float,tuple
+            value with which to patch PSD; if a tuple, then these ``(psd_low,
+            psd_high)`` values are used at the low and high ends respectively;
+            if a float, the same value is used in both ends; if `None`, will
+            patch with 10x the maximum PSD value in the respective patched
+            region.
         inplace : bool
-            modify PSD in place; otherwise, returns copy. Defaults to False.
+            modify PSD in place; otherwise, returns copy. Defaults to `False`.
 
         Returns
         -------
         psd : PowerSpectrum, None
             returns PSD only if not ``inplace``.
         """
-        freq = self.freq
-        if inplace:
-            psd = self
-        else:
-            psd = self.copy()
-        fref = freq[freq >= flow][0]
+        # copy array or operate in place
+        psd = self if inplace else self.copy()
+        # determine highest frequency
+        f = psd.freq
+        fhigh = min(fhigh or max(f), max(f))
+        # create tuple (patch_level_low, patch_level_high)
         if patch_level is None:
-            psd_ref = 10*np.max(psd[freq < flow])
+            patch_level = (10*max(psd[f < flow]), 10*max(psd[f >= fhigh]))
         else:
-            psd_ref = patch_level
-        def get_low_freqs(f, smooth):
-            if smooth:
-                return self._pad_low_freqs(f, fref, psd_ref)
-            else:
-                return psd_ref
-        psd[freq < flow] = get_low_freqs(freq[freq < flow], smooth)
+            try:
+                patch_level[1]
+            except Exception:
+                patch_level = (patch_level, patch_level)
+        # patch low frequencies
+        psd[f < flow] = patch_level[0]
+        # patch high frequencies
+        if psd[f > fhigh]:
+            psd[f > fhigh] = patch_level[1]
         if not inplace:
             return psd
 
