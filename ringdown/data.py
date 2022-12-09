@@ -423,7 +423,7 @@ class PowerSpectrum(FrequencySeries):
         return PowerSpectrum
 
     @classmethod
-    def from_data(cls, data, flow=None, smooth=False, patch_level=None, **kws):
+    def from_data(cls, data, flow=None, patch_level=None, **kws):
         """Estimate :class:`PowerSpectrum` from time domain data using Welch's
         method.
 
@@ -451,7 +451,7 @@ class PowerSpectrum(FrequencySeries):
         freq, psd = sig.welch(data, fs=fs, **kws)
         p = cls(psd, index=freq)
         if flow:
-            p.flatten(flow, smooth=smooth, patch_level=patch_level, inplace=True)
+            p.flatten(flow, patch_level=patch_level, inplace=True)
         return p
 
     @classmethod
