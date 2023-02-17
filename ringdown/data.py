@@ -535,8 +535,7 @@ class PowerSpectrum(FrequencySeries):
         # patch low frequencies
         psd[f < flow] = patch_level[0]
         # patch high frequencies
-        if psd[f > fhigh]:
-            psd[f > fhigh] = patch_level[1]
+        psd[f > fhigh] = patch_level[1]
         if not inplace:
             return psd
 
