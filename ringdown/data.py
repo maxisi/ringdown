@@ -304,7 +304,7 @@ class Data(TimeSeries):
 
     def condition(self, t0=None, ds=None, flow=None, fhigh=None, trim=0.25,
                   digital_filter=False, remove_mean=True, decimate_kws=None,
-                  scipy_dec=None):
+                  scipy_dec=None, crop_left = None, crop_right = None):
         """Condition data.
 
         Arguments
@@ -328,12 +328,23 @@ class Data(TimeSeries):
         trim : float
             fraction of data to trim from edges after conditioning, to avoid
             spectral issues if filtering.
+        crop_left : float
+            number of seconds before t0 to crop the strain data, e.g. to avo            id NaNs
+        crop_right : float
+            number of seconds after t0 to crop the strain data, e.g. to avo            id NaNs
 
         Returns
         -------
         cond_data : Data
             conditioned data object.
         """
+        if crop_left is not None and crop_right is None:
+            self = self[t0-crop_left:]
+        elif crop_left is None and crop_right is not None:
+            self = self[:t0+crop_right]
+        elif crop_left is not None and crop_right is not None:
+            self = self[t0-crop_left:t0+crop_right]
+
         raw_data = self.values
         raw_time = self.index.values
 
