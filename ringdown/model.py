@@ -120,6 +120,8 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
     perturb_tau = kwargs.pop("perturb_tau", 0)
     flat_A = kwargs.pop("flat_A", True)
     flat_A_ellip = kwargs.pop("flat_A_ellip", False)
+    f_min = kwargs.pop('f_min', None)
+    f_max = kwargs.pop('f_max', None)
 
     if flat_A and flat_A_ellip:
         raise ValueError("at most one of `flat_A` and `flat_A_ellip` can be "
@@ -185,6 +187,12 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
         theta = pm.Deterministic("theta", -0.5*(phiR + phiL), dims=['mode'])
         phi = pm.Deterministic("phi", 0.5*(phiR - phiL), dims=['mode'])
 
+        # Check limits on f
+        if f_min is not None:
+            _ = pm.Potential('f_min_cut', at.sum(at.where(f < f_min, np.NINF, 0.0)))
+        if f_max is not None:
+            _ = pm.Potential('f_max_cut', at.sum(at.where(f > f_max, np.NINF, 0.0)))
+
         h_det_mode = pm.Deterministic("h_det_mode",
                 compute_h_det_mode(t0, times, Fps, Fcs, f, gamma,
                                    Apx, Apy, Acx, Acy),
@@ -240,6 +248,9 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
     perturb_f = kwargs.pop("perturb_f", 0)
     perturb_tau = kwargs.pop("perturb_tau", 0)
     flat_A = kwargs.pop("flat_A", True)
+    f_min = kwargs.pop('f_min', None)
+    f_max = kwargs.pop('f_max', None)
+
 
     if (cosi_min < -1) or (cosi_max > 1):
         raise ValueError("cosi boundaries must be contained in [-1, 1]")
@@ -293,6 +304,13 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
         Ap = pm.Deterministic('Ap', (1 + at.square(cosi))*A, dims=['mode'])
         Ac = pm.Deterministic('Ac', 2*cosi*A, dims=['mode'])
         ellip = pm.Deterministic('ellip', Ac/Ap, dims=['mode'])
+
+        # Check limits on f
+        if f_min is not None:
+            _ = pm.Potential('f_min_cut', at.sum(at.where(f < f_min, np.NINF, 0.0)))
+        if f_max is not None:
+            _ = pm.Potential('f_max_cut', at.sum(at.where(f > f_max, np.NINF, 0.0)))
+
 
         Apx = (1 + at.square(cosi))*A*at.cos(phi)
         Apy = (1 + at.square(cosi))*A*at.sin(phi)
