@@ -188,9 +188,9 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
         phi = pm.Deterministic("phi", 0.5*(phiR - phiL), dims=['mode'])
 
         # Check limits on f
-        if f_min is not None:
+        if not np.isscalar(f_min) or not f_min == 0.0:
             _ = pm.Potential('f_min_cut', at.sum(at.where(f < f_min, np.NINF, 0.0)))
-        if f_max is not None:
+        if not np.isscalar(f_max) or not f_max == np.inf:
             _ = pm.Potential('f_max_cut', at.sum(at.where(f > f_max, np.NINF, 0.0)))
 
         h_det_mode = pm.Deterministic("h_det_mode",
@@ -248,8 +248,8 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
     perturb_f = kwargs.pop("perturb_f", 0)
     perturb_tau = kwargs.pop("perturb_tau", 0)
     flat_A = kwargs.pop("flat_A", True)
-    f_min = kwargs.pop('f_min', None)
-    f_max = kwargs.pop('f_max', None)
+    f_min = kwargs.pop('f_min', 0.0)
+    f_max = kwargs.pop('f_max', np.inf)
 
 
     if (cosi_min < -1) or (cosi_max > 1):
@@ -306,9 +306,9 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
         ellip = pm.Deterministic('ellip', Ac/Ap, dims=['mode'])
 
         # Check limits on f
-        if f_min is not None:
+        if not np.isscalar(f_min) or not f_min == 0.0:
             _ = pm.Potential('f_min_cut', at.sum(at.where(f < f_min, np.NINF, 0.0)))
-        if f_max is not None:
+        if not np.isscalar(f_max) or not f_max == np.inf:
             _ = pm.Potential('f_max_cut', at.sum(at.where(f > f_max, np.NINF, 0.0)))
 
 

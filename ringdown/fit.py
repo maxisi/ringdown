@@ -211,6 +211,8 @@ class Fit(object):
                 chi_max=0.99,
                 flat_A=0,
                 flat_A_ellip=0,
+                f_min=0.0,
+                f_max=np.inf
             ))
         elif self.model == 'mchi_aligned':
             default.update(dict(
@@ -225,6 +227,8 @@ class Fit(object):
                 cosi_min=-1,
                 cosi_max=1,
                 flat_A=0,
+                f_min=0.0,
+                f_max=np.inf
             ))
         elif self.model == 'mchiq':
              default.update(dict(
@@ -237,7 +241,9 @@ class Fit(object):
                  df_coeffs=[],
                  dg_coeffs=[],
                  flat_A=0,
-                 flat_A_ellip=0
+                 flat_A_ellip=0,
+                 f_min=0.0,
+                 f_max=np.inf
              ))
         return default
 
