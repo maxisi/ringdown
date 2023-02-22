@@ -388,12 +388,16 @@ class Fit(object):
                 try:
                     return literal_eval(x)
                 except (TypeError,ValueError,SyntaxError):
-                    return x
+                    if x == "inf":
+                        return np.inf
+                    else:
+                        return x
+                    
         # create fit object
         fit = cls(config['model']['name'], modes=config['model']['modes'])
         # add priors
         prior = config['prior']
-        fit.update_prior(**{k: literal_eval(v) for k,v in prior.items()
+        fit.update_prior(**{k: try_parse(v) for k,v in prior.items()
                              if "drift" not in k})
         if 'data' not in config:
             # the rest of the options require loading data, so if no pointer to
