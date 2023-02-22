@@ -308,8 +308,10 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
         # Check limits on f
         if not np.isscalar(f_min) or not f_min == 0.0:
             _ = pm.Potential('f_min_cut', at.sum(at.where(f < f_min, np.NINF, 0.0)))
+            print("Running with f_min_cut on modes:",f_min)
         if not np.isscalar(f_max) or not f_max == np.inf:
             _ = pm.Potential('f_max_cut', at.sum(at.where(f > f_max, np.NINF, 0.0)))
+            print("Running with f_max_cut on modes:",f_max)
 
 
         Apx = (1 + at.square(cosi))*A*at.cos(phi)
