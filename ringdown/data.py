@@ -434,7 +434,7 @@ class PowerSpectrum(FrequencySeries):
         return PowerSpectrum
 
     @classmethod
-    def from_data(cls, data, flow=None, patch_level=None, **kws):
+    def from_data(cls, data, flow=None, fhigh=None, patch_level=None, **kws):
         """Estimate :class:`PowerSpectrum` from time domain data using Welch's
         method.
 
@@ -444,6 +444,10 @@ class PowerSpectrum(FrequencySeries):
             data time series.
         flow : float, None
             optional lower frequency at which to taper PSD via
+            :meth:`PowerSpectrum.flatten`. Defaults to None (i.e., no
+            flattening).
+        fhigh : float, None
+            optional higher frequency at which to taper PSD via
             :meth:`PowerSpectrum.flatten`. Defaults to None (i.e., no
             flattening).
         smooth : bool
@@ -461,8 +465,8 @@ class PowerSpectrum(FrequencySeries):
         kws['average'] = kws.get('average', 'median') # default to median-averaged, not mean-averaged to handle outliers.
         freq, psd = sig.welch(data, fs=fs, **kws)
         p = cls(psd, index=freq)
-        if flow:
-            p.flatten(flow, patch_level=patch_level, inplace=True)
+        if flow is not None or fhigh is not None:
+            p.flatten(flow=flow, fhigh=fhigh, patch_level=patch_level, inplace=True)
         return p
 
     @classmethod
@@ -534,6 +538,7 @@ class PowerSpectrum(FrequencySeries):
         psd = self if inplace else self.copy()
         # determine highest frequency
         f = psd.freq
+        flow = max(flow or min(f), min(f))
         fhigh = min(fhigh or max(f), max(f))
         # create tuple (patch_level_low, patch_level_high)
         if patch_level is None:
