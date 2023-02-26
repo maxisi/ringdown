@@ -122,6 +122,7 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
     flat_A_ellip = kwargs.pop("flat_A_ellip", False)
     f_min = kwargs.pop('f_min', None)
     f_max = kwargs.pop('f_max', None)
+    prior_run = kwargs.pop('prior_run', False)
 
     if flat_A and flat_A_ellip:
         raise ValueError("at most one of `flat_A` and `flat_A_ellip` can be "
@@ -229,7 +230,11 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
             if isinstance(key, bytes):
                 # Don't want byte strings in our names!
                 key = key.decode('utf-8')
-            _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
+            if prior_run:
+                _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
+                            observed=None, dims=['time_index'])
+            else:
+                _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
                             observed=strains[i], dims=['time_index'])
         
         return model
