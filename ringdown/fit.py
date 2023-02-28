@@ -198,6 +198,7 @@ class Fit(object):
                 f_min=None,
                 gamma_max=None,
                 gamma_min=None
+                prior_run=False
             ))
         elif self.model == 'mchi':
             default.update(dict(
@@ -230,6 +231,7 @@ class Fit(object):
                 flat_A=0,
                 f_min=0.0,
                 f_max=np.inf
+                prior_run=False
             ))
         elif self.model == 'mchiq':
              default.update(dict(
@@ -245,6 +247,7 @@ class Fit(object):
                  flat_A_ellip=0,
                  f_min=0.0,
                  f_max=np.inf
+                 prior_run=False
              ))
         return default
 

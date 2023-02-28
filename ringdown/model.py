@@ -231,7 +231,7 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
                 if isinstance(key, bytes):
                  # Don't want byte strings in our names!
                     key = key.decode('utf-8')
-                    _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
+                _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
                             observed=strains[i], dims=['time_index'])
         
         return model
@@ -366,6 +366,7 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
     A_scale = kwargs.pop("A_scale")
     flat_A = kwargs.pop("flat_A", True)
     nmode = kwargs.pop("nmode", 1)
+    prior_run = kwargs.pop('prior_run', False)
 
     ndet = len(t0)
     nt = len(times[0])
@@ -425,12 +426,13 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
         # Flat prior on the delta-fs and delta-taus
 
         # Likelihood
-        for i in range(ndet):
-            key = ifos[i]
-            if isinstance(key, bytes):
+        if not prior_run:
+            for i in range(ndet):
+                key = ifos[i]
+                if isinstance(key, bytes):
                 # Don't want byte strings in our names!
-                key = key.decode('utf-8')
-            _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
+                   key = key.decode('utf-8')
+                _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
                             observed=strains[i], dims=['time_index'])
         
         return model
