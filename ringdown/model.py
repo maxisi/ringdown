@@ -103,9 +103,9 @@ def phiR_from_quadratures(Apx, Apy, Acx, Acy):
 def phiL_from_quadratures(Apx, Apy, Acx, Acy):
     return at.arctan2(-Acx - Apy, -Acy + Apx)
 
-def flat_A_quadratures_prior(Apx_unit, Apy_unit, Acx_unit, Acy_unit):
-    return 0.5*at.sum(at.square(Apx_unit) + at.square(Apy_unit) +
-                      at.square(Acx_unit) + at.square(Acy_unit))
+def flat_A_quadratures_prior(Apx_unit, Apy_unit, Acx_unit, Acy_unit,flat_A):
+    return 0.5*at.sum((at.square(Apx_unit) + at.square(Apy_unit) +
+                      at.square(Acx_unit) + at.square(Acy_unit))*flat_A)
 
 def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
                     **kwargs):
@@ -124,15 +124,25 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
     f_max = kwargs.pop('f_max', None)
     prior_run = kwargs.pop('prior_run', False)
 
-    if flat_A and flat_A_ellip:
-        raise ValueError("at most one of `flat_A` and `flat_A_ellip` can be "
-                         "`True`")
+    nmode = f_coeffs.shape[0]
+
+    if np.isscalar(flat_A):
+        flat_A = np.repeat(flat_A,nmode)
+    if np.isscalar(flat_A_ellip):
+        flat_A_ellip = np.repeat(flat_A_ellip,nmode)
+    elif len(flat_A)!=nmode:
+        raise ValueError("flat_A must either be a scalar or array of length equal to the number of modes")
+    elif len(flat_A_ellip)!=nmode:
+        raise ValueError("flat_A_ellip must either be a scalar or array of length equal to the number of modes")
+        
+
+    if any(flat_A) and any(flat_A_ellip):
+        raise ValueError("at most one of `flat_A` and `flat_A_ellip` can have an element that is " "`True`")
     if (chi_min < 0) or (chi_max > 1):
         raise ValueError("chi boundaries must be contained in [0, 1)")
 
     ndet = len(t0)
     nt = len(times[0])
-    nmode = f_coeffs.shape[0]
 
     ifos = kwargs.pop('ifos', np.arange(ndet))
     modes = kwargs.pop('modes', np.arange(nmode))
@@ -206,21 +216,21 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
         # Flat in M-chi already
 
         # Amplitude prior
-        if flat_A:
+        if any(flat_A):
             # bring us back to flat-in-quadratures
             pm.Potential("flat_A_quadratures_prior",
                          flat_A_quadratures_prior(Apx_unit, Apy_unit,
-                                                  Acx_unit, Acy_unit))
+                                                  Acx_unit, Acy_unit,flat_A))
             # bring us to flat-in-A prior
-            pm.Potential("flat_A_prior", -3*at.sum(at.log(A)))
-        elif flat_A_ellip:
+            pm.Potential("flat_A_prior", -3*at.sum(at.log(A)*flat_A))
+        elif any(flat_A_ellip):
             # bring us back to flat-in-quadratures
             pm.Potential("flat_A_quadratures_prior",
                          flat_A_quadratures_prior(Apx_unit, Apy_unit,
-                                                  Acx_unit, Acy_unit))
+                                                  Acx_unit, Acy_unit,flat_A_ellip))
             # bring us to flat-in-A and flat-in-ellip prior
             pm.Potential("flat_A_ellip_prior", 
-                         at.sum(-3*at.log(A) - at.log1m(at.square(ellip))))
+                         at.sum((-3*at.log(A) - at.log1m(at.square(ellip))*flat_A_ellip)))
 
         # Flat prior on the delta-fs and delta-taus
 
