@@ -264,15 +264,8 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
 
     if np.isscalar(flat_A):
         flat_A = np.repeat(flat_A,nmode)
-    if np.isscalar(flat_A_ellip):
-        flat_A_ellip = np.repeat(flat_A_ellip,nmode)
     elif len(flat_A)!=nmode:
         raise ValueError("flat_A must either be a scalar or array of length equal to the number of modes")
-    elif len(flat_A_ellip)!=nmode:
-        raise ValueError("flat_A_ellip must either be a scalar or array of length equal to the number of modes")
-
-    if any(flat_A) and any(flat_A_ellip):
-        raise ValueError("at most one of `flat_A` and `flat_A_ellip` can have an element that is " "`True`")
 
     if (cosi_min < -1) or (cosi_max > 1):
         raise ValueError("cosi boundaries must be contained in [-1, 1]")
