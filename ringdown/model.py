@@ -230,7 +230,7 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
                                                   Acx_unit, Acy_unit,flat_A_ellip))
             # bring us to flat-in-A and flat-in-ellip prior
             pm.Potential("flat_A_ellip_prior", 
-                         at.sum((-3*at.log(A) - at.log1m(at.square(ellip))*flat_A_ellip)))
+                         at.sum((-3*at.log(A) - at.log1m(at.square(ellip)))*flat_A_ellip))
 
         # Flat prior on the delta-fs and delta-taus
 
@@ -243,6 +243,9 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
                     key = key.decode('utf-8')
                 _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
                             observed=strains[i], dims=['time_index'])
+        else:
+            samp_prior_cond = pm.Potential('A_prior', at.sum(at.where(A > 10*A_scale, np.NINF, 0.0)))
+
         
         return model
         

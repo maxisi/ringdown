@@ -197,7 +197,7 @@ class Fit(object):
                 f_max=None,
                 f_min=None,
                 gamma_max=None,
-                gamma_min=None
+                gamma_min=None,
                 prior_run=False
             ))
         elif self.model == 'mchi':
@@ -230,7 +230,7 @@ class Fit(object):
                 cosi_max=1,
                 flat_A=0,
                 f_min=0.0,
-                f_max=np.inf
+                f_max=np.inf,
                 prior_run=False
             ))
         elif self.model == 'mchiq':
@@ -246,7 +246,7 @@ class Fit(object):
                  flat_A=0,
                  flat_A_ellip=0,
                  f_min=0.0,
-                 f_max=np.inf
+                 f_max=np.inf,
                  prior_run=False
              ))
         return default
