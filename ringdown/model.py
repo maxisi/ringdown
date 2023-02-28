@@ -225,16 +225,13 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
         # Flat prior on the delta-fs and delta-taus
 
         # Likelihood:
-        for i in range(ndet):
-            key = ifos[i]
-            if isinstance(key, bytes):
-                # Don't want byte strings in our names!
-                key = key.decode('utf-8')
-            if prior_run:
-                _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
-                            observed=None, dims=['time_index'])
-            else:
-                _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
+        if not prior_run:
+            for i in range(ndet):
+                key = ifos[i]
+                if isinstance(key, bytes):
+                 # Don't want byte strings in our names!
+                    key = key.decode('utf-8')
+                    _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
                             observed=strains[i], dims=['time_index'])
         
         return model
@@ -255,6 +252,7 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
     flat_A = kwargs.pop("flat_A", True)
     f_min = kwargs.pop('f_min', 0.0)
     f_max = kwargs.pop('f_max', np.inf)
+    prior_run = kwargs.pop('prior_run',False)
 
 
     if (cosi_min < -1) or (cosi_max > 1):
@@ -346,12 +344,13 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
         # Flat prior on the delta-fs and delta-taus
 
         # Likelihood
-        for i in range(ndet):
-            key = ifos[i]
-            if isinstance(key, bytes):
-                # Don't want byte strings in our names!
-                key = key.decode('utf-8')
-            _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
+        if not prior_run:
+            for i in range(ndet):
+                key = ifos[i]
+                if isinstance(key, bytes):
+                    # Don't want byte strings in our names!
+                    key = key.decode('utf-8')
+                _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
                             observed=strains[i], dims=['time_index'])
         
         return model
