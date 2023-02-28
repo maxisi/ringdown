@@ -260,6 +260,7 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
     flat_A = kwargs.pop("flat_A", True)
     f_min = kwargs.pop('f_min', 0.0)
     f_max = kwargs.pop('f_max', np.inf)
+    nmode = f_coeffs.shape[0]
 
     if np.isscalar(flat_A):
         flat_A = np.repeat(flat_A,nmode)
@@ -280,7 +281,6 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
     
     ndet = len(t0)
     nt = len(times[0])
-    nmode = f_coeffs.shape[0]
 
     ifos = kwargs.pop('ifos', np.arange(ndet))
     modes = kwargs.pop('modes', np.arange(nmode))
