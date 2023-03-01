@@ -122,6 +122,7 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
     flat_A_ellip = kwargs.pop("flat_A_ellip", False)
     f_min = kwargs.pop('f_min', None)
     f_max = kwargs.pop('f_max', None)
+    prior_run = kwargs.pop('prior_run', False)
 
     nmode = f_coeffs.shape[0]
 
@@ -229,18 +230,23 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
                                                   Acx_unit, Acy_unit,flat_A_ellip))
             # bring us to flat-in-A and flat-in-ellip prior
             pm.Potential("flat_A_ellip_prior", 
-                         at.sum((-3*at.log(A) - at.log1m(at.square(ellip))*flat_A_ellip)))
+                         at.sum((-3*at.log(A) - at.log1m(at.square(ellip)))*flat_A_ellip))
 
         # Flat prior on the delta-fs and delta-taus
 
         # Likelihood:
-        for i in range(ndet):
-            key = ifos[i]
-            if isinstance(key, bytes):
-                # Don't want byte strings in our names!
-                key = key.decode('utf-8')
-            _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
+        if not prior_run:
+            for i in range(ndet):
+                key = ifos[i]
+                if isinstance(key, bytes):
+                 # Don't want byte strings in our names!
+                    key = key.decode('utf-8')
+                _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
                             observed=strains[i], dims=['time_index'])
+        else:
+            print("Sampling prior")
+            samp_prior_cond = pm.Potential('A_prior', at.sum(at.where(A > (10*A_scale or 1e-19), np.NINF, 0.0))) #this condition is to bound flat priors just for sampling from the prior
+
         
         return model
         
@@ -261,6 +267,7 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
     f_min = kwargs.pop('f_min', 0.0)
     f_max = kwargs.pop('f_max', np.inf)
     nmode = f_coeffs.shape[0]
+    prior_run = kwargs.pop('prior_run',False)
 
     if np.isscalar(flat_A):
         flat_A = np.repeat(flat_A,nmode)
@@ -355,13 +362,17 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
         # Flat prior on the delta-fs and delta-taus
 
         # Likelihood
-        for i in range(ndet):
-            key = ifos[i]
-            if isinstance(key, bytes):
-                # Don't want byte strings in our names!
-                key = key.decode('utf-8')
-            _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
+        if not prior_run:
+            for i in range(ndet):
+                key = ifos[i]
+                if isinstance(key, bytes):
+                    # Don't want byte strings in our names!
+                    key = key.decode('utf-8')
+                _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
                             observed=strains[i], dims=['time_index'])
+        else:
+            print("Sampling prior")
+            samp_prior_cond = pm.Potential('A_prior', at.sum(at.where(A > (10*A_scale or 1e-19), np.NINF, 0.0))) #this condition is to bound flat priors just for sampling from the prior
         
         return model
 
@@ -376,6 +387,12 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
     A_scale = kwargs.pop("A_scale")
     flat_A = kwargs.pop("flat_A", True)
     nmode = kwargs.pop("nmode", 1)
+    prior_run = kwargs.pop('prior_run', False)
+
+    if np.isscalar(flat_A):
+        flat_A = np.repeat(flat_A,nmode)
+    elif len(flat_A)!=nmode:
+        raise ValueError("flat_A must either be a scalar or array of length equal to the number of modes")
 
     if np.isscalar(flat_A):
         flat_A = np.repeat(flat_A,nmode)
@@ -440,13 +457,17 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
         # Flat prior on the delta-fs and delta-taus
 
         # Likelihood
-        for i in range(ndet):
-            key = ifos[i]
-            if isinstance(key, bytes):
+        if not prior_run:
+            for i in range(ndet):
+                key = ifos[i]
+                if isinstance(key, bytes):
                 # Don't want byte strings in our names!
-                key = key.decode('utf-8')
-            _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
+                   key = key.decode('utf-8')
+                _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
                             observed=strains[i], dims=['time_index'])
+        else:
+            print("Sampling prior")
+            samp_prior_cond = pm.Potential('A_prior', at.sum(at.where(A > (10*A_scale or 1e-19), np.NINF, 0.0))) #this condition is to bound flat priors just for sampling from the prior
         
         return model
 

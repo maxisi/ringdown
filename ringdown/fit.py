@@ -197,7 +197,8 @@ class Fit(object):
                 f_max=None,
                 f_min=None,
                 gamma_max=None,
-                gamma_min=None
+                gamma_min=None,
+                prior_run=False
             ))
         elif self.model == 'mchi':
             default.update(dict(
@@ -212,7 +213,8 @@ class Fit(object):
                 flat_A=0,
                 flat_A_ellip=0,
                 f_min=0.0,
-                f_max=np.inf
+                f_max=np.inf,
+                prior_run=False
             ))
         elif self.model == 'mchi_aligned':
             default.update(dict(
@@ -228,7 +230,8 @@ class Fit(object):
                 cosi_max=1,
                 flat_A=0,
                 f_min=0.0,
-                f_max=np.inf
+                f_max=np.inf,
+                prior_run=False
             ))
         elif self.model == 'mchiq':
              default.update(dict(
@@ -243,7 +246,8 @@ class Fit(object):
                  flat_A=0,
                  flat_A_ellip=0,
                  f_min=0.0,
-                 f_max=np.inf
+                 f_max=np.inf,
+                 prior_run=False
              ))
         return default
 
@@ -661,29 +665,17 @@ class Fit(object):
         self.update_info('injection', no_noise=no_noise, **kws)
 
     DEF_RUN_KWS = dict(init='jitter+adapt_full', target_accept=0.9)
-    DEF_RUN_PRIOR_KWS = dict(var_names="unobserved_RVs")
+    
     def run(self, prior=False, suppress_warnings=True, store_residuals=True,
             min_ess=None, **kws):
         """Fit model.
 
         Additional keyword arguments not listed below are passed to the sampler,
-        with the following defaults when sampling the posterior:
+        with the following defaults when sampling:
 
         {}
 
         See docs for :func:`pymc.sample` to see all available options.
-
-        If sampling from the prior (``prior = True``), the default arguments
-        are:
-
-        {}
-        
-        In that case, if ``var_names = "unobserved_RVS"``, then the variables
-        sampled over will be the _unobserved_ variables defined in the model; to
-        also include observed variables, pass ``var_names = None``.
-
-        See docs for :func:`pymc.sample_prior_predictive` to see all_available
-        prior-sampling options.
 
         Arguments
         ---------
@@ -721,26 +713,14 @@ class Fit(object):
         rkws = self.DEF_RUN_KWS.copy()
         rkws.update(kws)
 
-        # prior keyword arguments
-        pkws = self.DEF_RUN_PRIOR_KWS.copy()
-        pkws.update(kws)
-
         # run model and store
         logging.info('running {} (prior = {})'.format(self.model, prior))
         with warnings.catch_warnings():
             warnings.simplefilter(filter)
+            self.update_prior(prior_run=prior)
             with self.pymc_model:
                 if prior:
-                    # parse prior-specific kws
-                    if pkws['var_names'] == 'unobserved_RVs':
-                        # only sampled unobserved quantities
-                        # use PyMC utility to get the names
-                        prior_vars = pm.util.get_default_varnames(
-                              self.pymc_model.unobserved_RVs,
-                              include_transformed=True
-                        )
-                        pkws['var_names'] = {v.name for v in prior_vars}
-                    result = pm.sample_prior_predictive(**pkws)
+                    result = pm.sample(**rkws)
                     self.prior = az.convert_to_inference_data(result)
                 else:
                     result = pm.sample(**rkws)
@@ -762,10 +742,9 @@ class Fit(object):
                             kws['draws'] = draws
 
                             self.run(prior=prior, suppress_warnings=suppress_warnings, store_residuals=store_residuals, min_ess=min_ess, **kws)
-
-        if store_residuals:
+        if not prior and store_residuals:
             self._generate_whitened_residuals()
-    run.__doc__ = run.__doc__.format(DEF_RUN_KWS, DEF_RUN_PRIOR_KWS)
+    run.__doc__ = run.__doc__.format(DEF_RUN_KWS)
 
     def _generate_whitened_residuals(self):
         # Adduct the whitened residuals to the result.
