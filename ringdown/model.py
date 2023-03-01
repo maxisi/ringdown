@@ -244,7 +244,8 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
                 _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
                             observed=strains[i], dims=['time_index'])
         else:
-            samp_prior_cond = pm.Potential('A_prior', at.sum(at.where(A > 10*A_scale, np.NINF, 0.0)))
+            print("Sampling prior")
+            samp_prior_cond = pm.Potential('A_prior', at.sum(at.where(A > (10*A_scale or 1e-19), np.NINF, 0.0))) #this condition is to bound flat priors just for sampling from the prior
 
         
         return model
@@ -365,6 +366,9 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
                     key = key.decode('utf-8')
                 _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
                             observed=strains[i], dims=['time_index'])
+        else:
+            print("Sampling prior")
+            samp_prior_cond = pm.Potential('A_prior', at.sum(at.where(A > (10*A_scale or 1e-19), np.NINF, 0.0))) #this condition is to bound flat priors just for sampling from the prior
         
         return model
 
@@ -447,6 +451,9 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
                    key = key.decode('utf-8')
                 _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
                             observed=strains[i], dims=['time_index'])
+        else:
+            print("Sampling prior")
+            samp_prior_cond = pm.Potential('A_prior', at.sum(at.where(A > (10*A_scale or 1e-19), np.NINF, 0.0))) #this condition is to bound flat priors just for sampling from the prior
         
         return model
 
