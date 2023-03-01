@@ -13,7 +13,7 @@ setup(name='ringdown',
       url='https://github.com/maxisi/ringdown',
       license='MIT',
       packages=find_packages(),
-      package_data={'ringdown': ['stan/*.stan']},
+      #package_data={'ringdown': ['stan/*.stan']},
       scripts=['bin/ringdown_fit', 'bin/ringdown_pipe'],
       install_requires=[
             'arviz',

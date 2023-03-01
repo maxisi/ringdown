@@ -394,6 +394,11 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
     elif len(flat_A)!=nmode:
         raise ValueError("flat_A must either be a scalar or array of length equal to the number of modes")
 
+    if np.isscalar(flat_A):
+        flat_A = np.repeat(flat_A,nmode)
+    elif len(flat_A)!=nmode:
+        raise ValueError("flat_A must either be a scalar or array of length equal to the number of modes")
+
     ndet = len(t0)
     nt = len(times[0])
 
