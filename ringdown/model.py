@@ -266,8 +266,8 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
     flat_A = kwargs.pop("flat_A", True)
     f_min = kwargs.pop('f_min', 0.0)
     f_max = kwargs.pop('f_max', np.inf)
-    nmode = f_coeffs.shape[0]
     prior_run = kwargs.pop('prior_run',False)
+    nmode = f_coeffs.shape[0]
 
 
     if (cosi_min < -1) or (cosi_max > 1):
