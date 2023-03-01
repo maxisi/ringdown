@@ -269,6 +269,10 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
     nmode = f_coeffs.shape[0]
     prior_run = kwargs.pop('prior_run',False)
 
+    if np.isscalar(flat_A):
+        flat_A = np.repeat(flat_A,nmode)
+    elif len(flat_A)!=nmode:
+        raise ValueError("flat_A must either be a scalar or array of length equal to the number of modes")
 
     if (cosi_min < -1) or (cosi_max > 1):
         raise ValueError("cosi boundaries must be contained in [-1, 1]")
@@ -348,12 +352,12 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
         # Flat in M-chi already
 
         # Amplitude prior
-        if flat_A:
+        if any(flat_A):
             # first bring us to flat in quadratures
             pm.Potential("flat_A_quadratures_prior",
-                         0.5*at.sum(at.square(Ax_unit) + at.square(Ay_unit)))
+                         0.5*at.sum((at.square(Ax_unit) + at.square(Ay_unit))*flat_A))
             # now to flat in A
-            pm.Potential("flat_A_prior", -at.sum(at.log(A)))
+            pm.Potential("flat_A_prior", -at.sum(at.log(A)*flat_A))
 
         # Flat prior on the delta-fs and delta-taus
 
@@ -384,6 +388,11 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
     flat_A = kwargs.pop("flat_A", True)
     nmode = kwargs.pop("nmode", 1)
     prior_run = kwargs.pop('prior_run', False)
+
+    if np.isscalar(flat_A):
+        flat_A = np.repeat(flat_A,nmode)
+    elif len(flat_A)!=nmode:
+        raise ValueError("flat_A must either be a scalar or array of length equal to the number of modes")
 
     ndet = len(t0)
     nt = len(times[0])
@@ -434,11 +443,11 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
         # Flat in M-chi already
 
         # Amplitude prior
-        if flat_A:
+        if any(flat_A):
             # first bring us to flat in quadratures
             pm.Potential("flat_A_quadratures_prior",
-                         0.5*at.sum(at.square(Ax_unit) + at.square(Ay_unit)))
-            pm.Potential("flat_A_prior", -at.sum(at.log(A)))
+                         0.5*at.sum((at.square(Ax_unit) + at.square(Ay_unit))*flat_A))
+            pm.Potential("flat_A_prior", -at.sum(at.log(A)*flat_A))
 
         # Flat prior on the delta-fs and delta-taus
 
