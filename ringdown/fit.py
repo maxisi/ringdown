@@ -742,9 +742,8 @@ class Fit(object):
                             kws['draws'] = draws
 
                             self.run(prior=prior, suppress_warnings=suppress_warnings, store_residuals=store_residuals, min_ess=min_ess, **kws)
-        if not prior:
-            if store_residuals:
-                self._generate_whitened_residuals()
+        if not prior and store_residuals:
+            self._generate_whitened_residuals()
     run.__doc__ = run.__doc__.format(DEF_RUN_KWS)
 
     def _generate_whitened_residuals(self):
