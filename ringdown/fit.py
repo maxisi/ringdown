@@ -667,7 +667,7 @@ class Fit(object):
     DEF_RUN_KWS = dict(init='jitter+adapt_full', target_accept=0.9)
     
     def run(self, prior=False, suppress_warnings=True, store_residuals=True,
-            min_ess=None, **kws):
+            min_ess=-0.1, **kws):
         """Fit model.
 
         Additional keyword arguments not listed below are passed to the sampler,
@@ -690,11 +690,13 @@ class Fit(object):
 
         min_ess: number
             if given, keep re-running the sampling with longer chains until the
-            minimum effective sample size exceeds `min_ess` (def. `None`).
+            minimum effective sample size exceeds `min_ess` (def. `-0.1`).
 
         \*\*kws :
             arguments passed to sampler.
         """
+        ess_run = -1.0 #ess after sampling finishes, to be set by loop below
+
         if not self.acfs:
             logging.warning("computing ACFs with default settings")
             self.compute_acfs()
@@ -710,7 +712,7 @@ class Fit(object):
         filter = 'ignore' if suppress_warnings else 'default'
 
         # run keyword arguments
-        rkws = self.DEF_RUN_KWS.copy()
+        rkws = copy.deepcopy(self.DEF_RUN_KWS)
         rkws.update(kws)
 
         # run model and store
@@ -719,19 +721,22 @@ class Fit(object):
             warnings.simplefilter(filter)
             self.update_prior(prior_run=prior)
             with self.pymc_model:
-                if prior:
-                    result = pm.sample(**rkws)
-                    self.prior = az.convert_to_inference_data(result)
-                else:
-                    result = pm.sample(**rkws)
-                    self.result = az.convert_to_inference_data(result)
+                while ess_run < min_ess:
+                    if prior:
+                        result = pm.sample(**rkws)
+                        self.prior = az.convert_to_inference_data(result)
+                    else:
+                        result = pm.sample(**rkws)
+                        self.result = az.convert_to_inference_data(result)
 
-                    if min_ess is not None:
+                    if not np.isscalar(min_ess):
+                        raise ValueError("min_ess is not a number")
+                    else:
                         ess = az.ess(self.result)
                         mess = ess.min()
                         mess_arr = np.array([mess[k].values[()] for k in mess.keys()])
-                        m = np.min(mess_arr)
-                        if m < min_ess:
+                        ess_run = np.min(mess_arr)
+                        if ess_run < min_ess:
                             tune = 2*kws.get('tune', 1000)
                             draws = 2*kws.get('draws', 1000)
                             
@@ -740,8 +745,8 @@ class Fit(object):
 
                             kws['tune'] = tune
                             kws['draws'] = draws
+                            rkws.update(kws)
 
-                            self.run(prior=prior, suppress_warnings=suppress_warnings, store_residuals=store_residuals, min_ess=min_ess, **kws)
         if not prior and store_residuals:
             self._generate_whitened_residuals()
     run.__doc__ = run.__doc__.format(DEF_RUN_KWS)
