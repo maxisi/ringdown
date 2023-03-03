@@ -721,7 +721,7 @@ class Fit(object):
             warnings.simplefilter(filter)
             self.update_prior(prior_run=prior)
             with self.pymc_model:
-              while ess_run < min_ess:
+                while ess_run < min_ess:
                     if prior:
                         result = pm.sample(**rkws)
                         self.prior = az.convert_to_inference_data(result)
