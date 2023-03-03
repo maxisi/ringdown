@@ -740,7 +740,7 @@ class Fit(object):
                             tune = 2*kws.get('tune', 1000)
                             draws = 2*kws.get('draws', 1000)
                             
-                            logging.warning(f'min ess = {m:.1f} below threshold {min_ess}')
+                            logging.warning(f'min ess = {ess_run:.1f} below threshold {min_ess}')
                             logging.warning(f'fitting again with {tune} tuning steps and {draws} samples')
 
                             kws['tune'] = tune
