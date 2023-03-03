@@ -712,7 +712,7 @@ class Fit(object):
         filter = 'ignore' if suppress_warnings else 'default'
 
         # run keyword arguments
-        rkws = copy.deepcopy(self.DEF_RUN_KWS)
+        rkws = cp.deepcopy(self.DEF_RUN_KWS)
         rkws.update(kws)
 
         # run model and store
