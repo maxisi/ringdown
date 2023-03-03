@@ -703,7 +703,7 @@ class Fit(object):
 
         # ensure delta_t of ACFs is equal to delta_t of data
         for ifo in self.ifos:
-            if self.acfs[ifo].delta_t != self.data[ifo].delta_t:
+            if not np.isclose(self.acfs[ifo].delta_t, self.data[ifo].delta_t):
                 e = "{} ACF delta_t ({:.1e}) does not match data ({:.1e})."
                 raise AssertionError(e.format(ifo, self.acfs[ifo].delta_t,
                                           self.data[ifo].delta_t))
@@ -721,7 +721,7 @@ class Fit(object):
             warnings.simplefilter(filter)
             self.update_prior(prior_run=prior)
             with self.pymc_model:
-                while ess_run < min_ess:
+              while ess_run < min_ess:
                     if prior:
                         result = pm.sample(**rkws)
                         self.prior = az.convert_to_inference_data(result)
@@ -756,7 +756,13 @@ class Fit(object):
         residuals = {}
         residuals_stacked = {}
         for ifo in self.ifos:
-            ifo_key = bytes(str(ifo), 'utf-8') # IFO coordinates are bytestrings
+            if ifo in self.result.posterior.ifo:
+                ifo_key = ifo
+            elif bytes(str(ifo), 'utf-8') in self.result.posterior.ifo:
+                # IFO coordinates are bytestrings
+                ifo_key = bytes(str(ifo), 'utf-8') # IFO coordinates are bytestrings
+            else:
+                raise KeyError(f"IFO {ifo} is not a valid indexing ifo for the result posterior")
             r = self.result.observed_data[f'strain_{ifo}'] -\
                 self.result.posterior.h_det.loc[:,:,ifo_key,:]
             residuals[ifo] = r.transpose('chain', 'draw', 'time_index')
