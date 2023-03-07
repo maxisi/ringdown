@@ -342,7 +342,7 @@ class Fit(object):
         input.update(self.prior_settings)
 
         for k, v in input.items():
-            if v is None:
+            if v is None and k!="chi_init" and k!="M_init":
                 raise ValueError('please specify {}'.format(k))
         return input
 
