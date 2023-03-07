@@ -111,8 +111,10 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
                     **kwargs):
     M_min = kwargs.pop("M_min")
     M_max = kwargs.pop("M_max")
+    M_init = kwargs.pop("M_init",None)
     chi_min = kwargs.pop("chi_min")
     chi_max = kwargs.pop("chi_max")
+    chi_init = kwargs.pop("chi_init",None)
     A_scale = kwargs.pop("A_scale")
     df_max = kwargs.pop("df_max")
     dtau_max = kwargs.pop("dtau_max")
@@ -158,8 +160,8 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
         pm.ConstantData('t0', t0, dims=['ifo'])
         pm.ConstantData('L', Ls, dims=['ifo', 'time_index', 'time_index'])
 
-        M = pm.Uniform("M", M_min, M_max)
-        chi = pm.Uniform("chi", chi_min, chi_max)
+        M = pm.Uniform("M", M_min, M_max,initval=M_init)
+        chi = pm.Uniform("chi", chi_min, chi_max,initval=chi_init)
 
         Apx_unit = pm.Normal("Apx_unit", dims=['mode'])
         Apy_unit = pm.Normal("Apy_unit", dims=['mode'])
@@ -254,8 +256,10 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
                             g_coeffs, **kwargs):
     M_min = kwargs.pop("M_min")
     M_max = kwargs.pop("M_max")
+    M_init = kwargs.pop("M_init",None)
     chi_min = kwargs.pop("chi_min")
     chi_max = kwargs.pop("chi_max")
+    chi_init = kwargs.pop("chi_init",None)
     cosi_min = kwargs.pop("cosi_min")
     cosi_max = kwargs.pop("cosi_max")
     A_scale = kwargs.pop("A_scale")
@@ -296,8 +300,8 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
         pm.ConstantData('t0', t0, dims=['ifo'])
         pm.ConstantData('L', Ls, dims=['ifo', 'time_index', 'time_index'])
 
-        M = pm.Uniform("M", M_min, M_max)
-        chi = pm.Uniform("chi", chi_min, chi_max)
+        M = pm.Uniform("M", M_min, M_max,initval=M_init)
+        chi = pm.Uniform("chi", chi_min, chi_max,initval=chi_init)
 
         cosi = pm.Uniform("cosi", cosi_min, cosi_max)
 
