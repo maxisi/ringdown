@@ -667,7 +667,7 @@ class Fit(object):
     DEF_RUN_KWS = dict(init='jitter+adapt_full', target_accept=0.9)
     
     def run(self, prior=False, suppress_warnings=True, store_residuals=True,
-            min_ess=-0.1, **kws):
+            min_ess=None, **kws):
         """Fit model.
 
         Additional keyword arguments not listed below are passed to the sampler,
@@ -690,12 +690,14 @@ class Fit(object):
 
         min_ess: number
             if given, keep re-running the sampling with longer chains until the
-            minimum effective sample size exceeds `min_ess` (def. `-0.1`).
+            minimum effective sample size exceeds `min_ess` (def. `None`).
 
         \*\*kws :
             arguments passed to sampler.
         """
         ess_run = -1.0 #ess after sampling finishes, to be set by loop below
+        if min_ess is None:
+            min_ess = 0.0
 
         if not self.acfs:
             logging.warning("computing ACFs with default settings")
@@ -722,30 +724,29 @@ class Fit(object):
             self.update_prior(prior_run=prior)
             with self.pymc_model:
                 while ess_run < min_ess:
-                    if prior:
-                        result = pm.sample(**rkws)
-                        self.prior = az.convert_to_inference_data(result)
-                    else:
-                        result = pm.sample(**rkws)
-                        self.result = az.convert_to_inference_data(result)
 
                     if not np.isscalar(min_ess):
                         raise ValueError("min_ess is not a number")
-                    else:
-                        ess = az.ess(self.result)
-                        mess = ess.min()
-                        mess_arr = np.array([mess[k].values[()] for k in mess.keys()])
-                        ess_run = np.min(mess_arr)
-                        if ess_run < min_ess:
-                            tune = 2*kws.get('tune', 1000)
-                            draws = 2*kws.get('draws', 1000)
-                            
-                            logging.warning(f'min ess = {ess_run:.1f} below threshold {min_ess}')
-                            logging.warning(f'fitting again with {tune} tuning steps and {draws} samples')
 
-                            kws['tune'] = tune
-                            kws['draws'] = draws
-                            rkws.update(kws)
+                    result = pm.sample(**rkws)
+                    if prior:
+                        self.prior = az.convert_to_inference_data(result)
+                    else:
+                        self.result = az.convert_to_inference_data(result)
+                    ess = az.ess(self.result)
+                    mess = ess.min()
+                    mess_arr = np.array([mess[k].values[()] for k in mess.keys()])
+                    ess_run = np.min(mess_arr)
+                    if ess_run < min_ess:
+                        tune = 2*kws.get('tune', 1000)
+                        draws = 2*kws.get('draws', 1000)
+                            
+                        logging.warning(f'min ess = {ess_run:.1f} below threshold {min_ess}')
+                        logging.warning(f'fitting again with {tune} tuning steps and {draws} samples')
+
+                        kws['tune'] = tune
+                        kws['draws'] = draws
+                        rkws.update(kws)
 
         if not prior and store_residuals:
             self._generate_whitened_residuals()
