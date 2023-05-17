@@ -142,6 +142,20 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
     if (chi_min < 0) or (chi_max > 1):
         raise ValueError("chi boundaries must be contained in [0, 1)")
 
+    if not np.isscalar(df_min) and not np.isscalar(df_max):
+        if len(df_min)!=len(df_max):
+            raise ValueError("df_min, df_max must be scalar or arrays of length equal to the number of modes")
+        for el in np.arange(len(df_min)):
+            if df_min[el]==df_max[el]:
+                raise ValueError("df_min and df_max must not be equal for any given mode")
+
+    if not np.isscalar(dtau_min) and not np.isscalar(dtau_max):
+        if len(dtau_min)!=len(dtau_max):
+            raise ValueError("dtau_min, dtau_max must be scalar or arrays of length equal to the number of modes")
+        for el in np.arange(len(dtau_min)):
+            if dtau_min[el]==dtau_max[el]:
+                raise ValueError("dtau_min and dtau_max must not be equal for any given mode")
+
     ndet = len(t0)
     nt = len(times[0])
 
