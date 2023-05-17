@@ -731,9 +731,10 @@ class Fit(object):
                     result = pm.sample(**rkws)
                     if prior:
                         self.prior = az.convert_to_inference_data(result)
+                        ess = az.ess(self.prior)
                     else:
                         self.result = az.convert_to_inference_data(result)
-                    ess = az.ess(self.result)
+                        ess = az.ess(self.result)
                     mess = ess.min()
                     mess_arr = np.array([mess[k].values[()] for k in mess.keys()])
                     ess_run = np.min(mess_arr)
