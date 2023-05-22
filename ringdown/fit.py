@@ -204,6 +204,8 @@ class Fit(object):
             default.update(dict(
                 perturb_f=zeros(self.n_modes or 1),
                 perturb_tau=zeros(self.n_modes or 1),
+                df_min=-0.5,
+                dtau_min=-0.5,
                 df_max=0.5,
                 dtau_max=0.5,
                 M_min=None,
@@ -220,6 +222,8 @@ class Fit(object):
             default.update(dict(
                 perturb_f=zeros(self.n_modes or 1),
                 perturb_tau=zeros(self.n_modes or 1),
+                df_min=-0.5,
+                dtau_min=-0.5,
                 df_max=0.5,
                 dtau_max=0.5,
                 M_min=None,

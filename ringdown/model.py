@@ -114,7 +114,9 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
     chi_min = kwargs.pop("chi_min")
     chi_max = kwargs.pop("chi_max")
     A_scale = kwargs.pop("A_scale")
+    df_min = kwargs.pop("df_min")
     df_max = kwargs.pop("df_max")
+    dtau_min = kwargs.pop("dtau_min")
     dtau_max = kwargs.pop("dtau_max")
     perturb_f = kwargs.pop("perturb_f", 0)
     perturb_tau = kwargs.pop("perturb_tau", 0)
@@ -133,13 +135,26 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
     elif len(flat_A)!=nmode:
         raise ValueError("flat_A must either be a scalar or array of length equal to the number of modes")
     elif len(flat_A_ellip)!=nmode:
-        raise ValueError("flat_A_ellip must either be a scalar or array of length equal to the number of modes")
-        
+        raise ValueError("flat_A_ellip must either be a scalar or array of length equal to the number of modes") 
 
     if any(flat_A) and any(flat_A_ellip):
         raise ValueError("at most one of `flat_A` and `flat_A_ellip` can have an element that is " "`True`")
     if (chi_min < 0) or (chi_max > 1):
         raise ValueError("chi boundaries must be contained in [0, 1)")
+
+    if not np.isscalar(df_min) and not np.isscalar(df_max):
+        if len(df_min)!=len(df_max):
+            raise ValueError("df_min, df_max must be scalar or arrays of length equal to the number of modes")
+        for el in np.arange(len(df_min)):
+            if df_min[el]==df_max[el]:
+                raise ValueError("df_min and df_max must not be equal for any given mode")
+
+    if not np.isscalar(dtau_min) and not np.isscalar(dtau_max):
+        if len(dtau_min)!=len(dtau_max):
+            raise ValueError("dtau_min, dtau_max must be scalar or arrays of length equal to the number of modes")
+        for el in np.arange(len(dtau_min)):
+            if dtau_min[el]==dtau_max[el]:
+                raise ValueError("dtau_min and dtau_max must not be equal for any given mode")
 
     ndet = len(t0)
     nt = len(times[0])
@@ -166,8 +181,8 @@ def make_mchi_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
         Acx_unit = pm.Normal("Acx_unit", dims=['mode'])
         Acy_unit = pm.Normal("Acy_unit", dims=['mode'])
 
-        df = pm.Uniform("df", -df_max, df_max, dims=['mode'])
-        dtau = pm.Uniform("dtau", -dtau_max, dtau_max, dims=['mode'])
+        df = pm.Uniform("df", df_min, df_max, dims=['mode'])
+        dtau = pm.Uniform("dtau", dtau_min, dtau_max, dims=['mode'])
 
         Apx = pm.Deterministic("Apx", A_scale*Apx_unit, dims=['mode'])
         Apy = pm.Deterministic("Apy", A_scale*Apy_unit, dims=['mode'])
@@ -259,7 +274,9 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
     cosi_min = kwargs.pop("cosi_min")
     cosi_max = kwargs.pop("cosi_max")
     A_scale = kwargs.pop("A_scale")
+    df_min = kwargs.pop("df_min")
     df_max = kwargs.pop("df_max")
+    dtau_min = kwargs.pop("dtau_min")
     dtau_max = kwargs.pop("dtau_max")
     perturb_f = kwargs.pop("perturb_f", 0)
     perturb_tau = kwargs.pop("perturb_tau", 0)
@@ -304,8 +321,8 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
         Ax_unit = pm.Normal("Ax_unit", dims=['mode'])
         Ay_unit = pm.Normal("Ay_unit", dims=['mode'])
 
-        df = pm.Uniform("df", -df_max, df_max, dims=['mode'])
-        dtau = pm.Uniform("dtau", -dtau_max, dtau_max, dims=['mode'])
+        df = pm.Uniform("df", df_min, df_max, dims=['mode'])
+        dtau = pm.Uniform("dtau", dtau_min, dtau_max, dims=['mode'])
 
         A = pm.Deterministic("A",
             A_scale*at.sqrt(at.square(Ax_unit)+at.square(Ay_unit)),
