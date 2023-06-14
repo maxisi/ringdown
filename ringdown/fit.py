@@ -6,6 +6,7 @@ __all__ = ['Target', 'Fit', 'MODELS']
 from pylab import *
 
 import arviz as az
+from arviz.data.base import dict_to_dataset
 from ast import literal_eval
 from collections import namedtuple
 import configparser
@@ -29,7 +30,7 @@ def np2(x):
 
 Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 
-MODELS = ('ftau', 'mchi', 'mchi_aligned', 'mchiq')
+MODELS = ('ftau', 'mchi', 'mchi_aligned', 'mchi_marginal', 'mchiq')
 
 class Fit(object):
     """ A ringdown fit. Contains all the information required to setup and run
@@ -200,7 +201,7 @@ class Fit(object):
                 gamma_min=None,
                 prior_run=False
             ))
-        elif self.model == 'mchi':
+        elif self.model == 'mchi' or self.model == 'mchi_marginal':
             default.update(dict(
                 perturb_f=zeros(self.n_modes or 1),
                 perturb_tau=zeros(self.n_modes or 1),
@@ -351,6 +352,8 @@ class Fit(object):
         if self._pymc_model is None:
             if self.model == 'mchi':
                 self._pymc_model = model.make_mchi_model(**self.model_input)
+            elif self.model == 'mchi_marginal':
+                self._pymc_model = model.make_mchi_marginalized_model(**self.model_input)
             elif self.model == 'mchi_aligned':
                 self._pymc_model = model.make_mchi_aligned_model(**self.model_input)
             elif self.model == 'ftau':
@@ -753,6 +756,15 @@ class Fit(object):
                         kws['draws'] = draws
                         rkws.update(kws)
 
+        if self.model == 'mchi_marginal':
+            # This model doesn't have observables because of its structure, so we have to add them in later
+            od_dict = {}
+            for ifo in self.ifos:
+                if isinstance(ifo, bytes):
+                    ifo = ifo.decode('utf-8')
+                od_dict[f'strain_{ifo}'] = self.analysis_data[ifo]
+            self.result.add_groups(dict(observed_data=dict_to_dataset(od_dict, coords=self.result.posterior.coords, dims={k: ['time_index'] for k in od_dict.keys()}, default_dims=[])))
+
         if not prior and store_residuals:
             self._generate_whitened_residuals()
     run.__doc__ = run.__doc__.format(DEF_RUN_KWS)
@@ -786,8 +798,13 @@ class Fit(object):
         keys = ('chain', 'draw', 'ifo', 'time_index')
         self.result.posterior['whitened_residual'] = \
             self.result.posterior.whitened_residual.transpose(*keys)
-        self.result.log_likelihood['whitened_pointwise_loglike'] =\
-            -self.result.posterior.whitened_residual**2/2
+        try:
+            self.result.log_likelihood['whitened_pointwise_loglike'] =\
+                -self.result.posterior.whitened_residual**2/2
+        except AttributeError:
+            from arviz.data.base import dict_to_dataset
+            # We assume that log-likelihood isn't created yet.
+            self.result.add_groups(dict(log_likelihood=dict_to_dataset({'whitened_pointwise_loglike': -self.result.posterior.whitened_residual**2/2}, coords=self.result.posterior.coords, dims={'whitened_pointwise_loglike': ['chain', 'draw', 'ifo', 'time_index']})))
 
     def add_data(self, data, time=None, ifo=None, acf=None):
         """Add data to fit.
