@@ -9,6 +9,16 @@ import pymc as pm
 FREF = 2985.668287014743
 MREF = 68.0
 
+def _atl_cho_solve(L_and_lower, b):
+    """Replacement for `aesara.tensor.slinalg.cho_solve` that enables backprop using two `solve_triangular`.
+    
+    Assumes `L` is lower triangular, and solves for `x` where :math:`L L^T x = b`.
+    """
+    L, lower = L_and_lower
+
+    y = atl.solve_triangular(L, b, lower=lower)
+    return atl.solve_triangular(L.T, y, lower=(not lower))
+
 def rd(ts, f, gamma, Apx, Apy, Acx, Acy, Fp, Fc):
     """Generate a ringdown waveform as it appears in a detector.
     
@@ -525,19 +535,19 @@ def make_mchi_marginalized_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_c
             for i in range(ndet):
                 MM = design_matrices[i, :, :].T # (ndet, 4*nmode, ntime) => (i, ntime, 4*nmode)
 
-                A_inv = Lambda_inv + at.dot(MM.T, atl.cho_solve((Ls[i], True), MM))
+                A_inv = Lambda_inv + at.dot(MM.T, _atl_cho_solve((Ls[i], True), MM))
                 A_inv_chol = atl.cholesky(A_inv)
 
-                a = atl.cho_solve((A_inv_chol, True), at.dot(Lambda_inv, mu) + at.dot(MM.T, atl.cho_solve((Ls[i], True), strains[i])))
+                a = _atl_cho_solve((A_inv_chol, True), at.dot(Lambda_inv, mu) + at.dot(MM.T, _atl_cho_solve((Ls[i], True), strains[i])))
 
                 b = at.dot(MM, mu)
             
                 Blogsqrtdet = Llogdet[i] - at.sum(at.log(at.diag(Lambda_inv_chol))) + at.sum(at.log(at.diag(A_inv_chol)))
 
                 r = strains[i] - b
-                Cinv_r = atl.cho_solve((Ls[i], True), r)
-                MAMTCinv_r = at.dot(MM, atl.cho_solve((A_inv_chol, True), at.dot(MM.T, Cinv_r)))
-                CinvMAMTCinv_r = atl.cho_solve((Ls[i], True), MAMTCinv_r)
+                Cinv_r = _atl_cho_solve((Ls[i], True), r)
+                MAMTCinv_r = at.dot(MM, _atl_cho_solve((A_inv_chol, True), at.dot(MM.T, Cinv_r)))
+                CinvMAMTCinv_r = _atl_cho_solve((Ls[i], True), MAMTCinv_r)
                 logl = -0.5*at.dot(r, Cinv_r - CinvMAMTCinv_r) - Blogsqrtdet
 
                 key = ifos[i]
@@ -553,7 +563,14 @@ def make_mchi_marginalized_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_c
         else:
             raise NotImplementedError("cannot (yet) draw from prior in marginalized model")
         
-        theta = mu + atl.solve(Lambda_inv_chol, at.concatenate((Apx_unit, Apy_unit, Acx_unit, Acy_unit)))
+        # Lambda_inv_chol.T: Lambda_inv = Lambda_inv_chol * Lambda_inv_chol.T,
+        # so Lambda = (Lambda_inv_chol.T)^{-1} Lambda_inv_chol^{-1} To achieve
+        # the desired covariance, we can *right multiply* iid N(0,1) variables
+        # by Lambda_inv_chol^{-1}, so that y = x Lambda_inv_chol^{-1} has
+        # covariance < y^T y > = (Lambda_inv_chol^{-1}).T < x^T x >
+        # Lambda_inv_chol^{-1} = (Lambda_inv_chol^{-1}).T I Lambda_inv_chol^{-1}
+        # = Lambda.
+        theta = mu + atl.solve(Lambda_inv_chol.T, at.concatenate((Apx_unit, Apy_unit, Acx_unit, Acy_unit)))
 
         Apx = pm.Deterministic("Apx", theta[:nmode] * A_scale, dims=['mode'])
         Apy = pm.Deterministic("Apy", theta[nmode:2*nmode] * A_scale, dims=['mode'])
