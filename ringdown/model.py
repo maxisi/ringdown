@@ -430,7 +430,7 @@ def make_mchi_marginalized_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_c
     M_max = kwargs.pop("M_max")
     chi_min = kwargs.pop("chi_min")
     chi_max = kwargs.pop("chi_max")
-    A_scale = kwargs.pop("A_scale")
+    A_scale_max = kwargs.pop("A_scale_max")
     df_min = kwargs.pop("df_min")
     df_max = kwargs.pop("df_max")
     dtau_min = kwargs.pop("dtau_min")
@@ -497,6 +497,10 @@ def make_mchi_marginalized_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_c
 
         df = pm.Uniform("df", df_min, df_max, dims=['mode'])
         dtau = pm.Uniform("dtau", dtau_min, dtau_max, dims=['mode'])
+
+        # log_A_scale = pm.Uniform('log_A_scale', np.log(A_scale_min), np.log(A_scale_max), dims=['mode'])
+        # A_scale = pm.Deterministic('A_scale', at.exp(log_A_scale))
+        A_scale = pm.Uniform('A_scale', 0, A_scale_max, dims=['mode'])
 
         Apx_unit = pm.Normal("Apx_unit", dims=['mode'])
         Apy_unit = pm.Normal("Apy_unit", dims=['mode'])

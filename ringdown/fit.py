@@ -201,8 +201,28 @@ class Fit(object):
                 gamma_min=None,
                 prior_run=False
             ))
-        elif self.model == 'mchi' or self.model == 'mchi_marginal':
+        elif self.model == 'mchi':
             default.update(dict(
+                perturb_f=zeros(self.n_modes or 1),
+                perturb_tau=zeros(self.n_modes or 1),
+                df_min=-0.5,
+                dtau_min=-0.5,
+                df_max=0.5,
+                dtau_max=0.5,
+                M_min=None,
+                M_max=None,
+                chi_min=0,
+                chi_max=0.99,
+                flat_A=0,
+                flat_A_ellip=0,
+                f_min=0.0,
+                f_max=np.inf,
+                prior_run=False
+            ))
+        elif self.model == 'mchi_marginal':
+            del default['A_scale']
+            default.update(dict(
+                A_scale_max=None,
                 perturb_f=zeros(self.n_modes or 1),
                 perturb_tau=zeros(self.n_modes or 1),
                 df_min=-0.5,
