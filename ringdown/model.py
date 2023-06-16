@@ -437,25 +437,12 @@ def make_mchi_marginalized_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_c
     dtau_max = kwargs.pop("dtau_max")
     perturb_f = kwargs.pop("perturb_f", 0)
     perturb_tau = kwargs.pop("perturb_tau", 0)
-    flat_A = kwargs.pop("flat_A", True)
-    flat_A_ellip = kwargs.pop("flat_A_ellip", False)
     f_min = kwargs.pop('f_min', None)
     f_max = kwargs.pop('f_max', None)
     prior_run = kwargs.pop('prior_run', False)
 
     nmode = f_coeffs.shape[0]
 
-    if np.isscalar(flat_A):
-        flat_A = np.repeat(flat_A,nmode)
-    if np.isscalar(flat_A_ellip):
-        flat_A_ellip = np.repeat(flat_A_ellip,nmode)
-    elif len(flat_A)!=nmode:
-        raise ValueError("flat_A must either be a scalar or array of length equal to the number of modes")
-    elif len(flat_A_ellip)!=nmode:
-        raise ValueError("flat_A_ellip must either be a scalar or array of length equal to the number of modes") 
-
-    if any(flat_A) or any(flat_A_ellip):
-        raise ValueError("cannot use marginalized model with `flat_A` or `flat_A_ellip`")
     if (chi_min < 0) or (chi_max > 1):
         raise ValueError("chi boundaries must be contained in [0, 1)")
 
