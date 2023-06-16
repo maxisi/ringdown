@@ -552,7 +552,8 @@ def make_mchi_marginalized_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_c
                 Lambda_inv = A_inv
                 Lambda_inv_chol = A_inv_chol
         else:
-            raise NotImplementedError("cannot (yet) draw from prior in marginalized model")
+            # We're done.  There is no likelihood.
+            pass
         
         # Lambda_inv_chol.T: Lambda_inv = Lambda_inv_chol * Lambda_inv_chol.T,
         # so Lambda = (Lambda_inv_chol.T)^{-1} Lambda_inv_chol^{-1} To achieve
