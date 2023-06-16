@@ -774,7 +774,7 @@ class Fit(object):
                         kws['draws'] = draws
                         rkws.update(kws)
 
-        if self.model == 'mchi_marginal':
+        if self.model == 'mchi_marginal' and not prior:
             # This model doesn't have observables because of its structure, so we have to add them in later
             od_dict = {}
             for ifo in self.ifos:
