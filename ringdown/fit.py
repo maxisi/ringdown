@@ -820,7 +820,6 @@ class Fit(object):
             self.result.log_likelihood['whitened_pointwise_loglike'] =\
                 -self.result.posterior.whitened_residual**2/2
         except AttributeError:
-            from arviz.data.base import dict_to_dataset
             # We assume that log-likelihood isn't created yet.
             self.result.add_groups(dict(log_likelihood=dict_to_dataset({'whitened_pointwise_loglike': -self.result.posterior.whitened_residual**2/2}, coords=self.result.posterior.coords, dims={'whitened_pointwise_loglike': ['chain', 'draw', 'ifo', 'time_index']})))
 
