@@ -299,7 +299,7 @@ class Fit(object):
         """
         if self.result is not None:
             # TODO: fail?
-            logging.warn("updating prior of Fit with preexisting results!")
+            logging.warning("updating prior of Fit with preexisting results!")
         valid_keys = self.valid_model_options
         valid_keys_low = [k.lower() for k in valid_keys]
         for k, v in kws.items():
@@ -311,7 +311,9 @@ class Fit(object):
                                  'Valid options are: {}'.format(k, valid_keys))
         # reset model cache
         self._pymc_model = None
-        self.prior = None
+
+        if self.prior is not None:
+            logging.warning("updating prior of Fit with preexisting prior results!")
 
     @property
     def model_input(self) -> dict:
