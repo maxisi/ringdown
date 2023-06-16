@@ -233,8 +233,6 @@ class Fit(object):
                 M_max=None,
                 chi_min=0,
                 chi_max=0.99,
-                flat_A=0,
-                flat_A_ellip=0,
                 f_min=0.0,
                 f_max=np.inf,
                 prior_run=False
