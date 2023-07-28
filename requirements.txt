@@ -1,4 +1,4 @@
-pymc==4
+pymc
 aesara
 numpy
 h5py

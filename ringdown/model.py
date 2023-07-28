@@ -1,7 +1,7 @@
 __all__ = ['make_mchi_model', 'make_mchi_aligned_model', 'make_ftau_model']
 
-import aesara.tensor as at
-import aesara.tensor.slinalg as atl
+import pytensor.tensor as at
+import pytensor.tensor.slinalg as atl
 import numpy as np
 import pymc as pm
 
