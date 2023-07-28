@@ -631,7 +631,7 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
 
         f = pm.Uniform("f", f_min, f_max, dims=['mode'])
         gamma = pm.Uniform('gamma', gamma_min, gamma_max, dims=['mode'],
-                           transform=pm.distributions.transforms.ordered)
+                           transform=pm.distributions.transforms.Ordered)
 
         Ax_unit = pm.Normal("Ax_unit", dims=['mode'])
         Ay_unit = pm.Normal("Ay_unit", dims=['mode'])
