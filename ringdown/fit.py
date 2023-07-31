@@ -6,6 +6,7 @@ __all__ = ['Target', 'Fit', 'MODELS']
 from pylab import *
 
 import arviz as az
+import json
 from arviz.data.base import dict_to_dataset
 from ast import literal_eval
 from collections import namedtuple
@@ -465,7 +466,7 @@ class Fit(object):
                     # NOTE: config file overwrites JSON!
                     file_kws.update(inj_kws)
                     inj_kws = json_kws
-                except (UnicodeDecodeError,JSONDecodeError):
+                except (UnicodeDecodeError,json.JSONDecodeError):
                     raise IOError(f"unable to read JSON file: {injpath}")
             no_noise = inj_kws.get('no_noise', False)
             post_cond = inj_kws.get('post_cond', False)
