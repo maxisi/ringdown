@@ -15,6 +15,7 @@ import pandas as pd
 import h5py
 import os
 import logging
+import inspect
 
 class Series(pd.Series):
     """ A wrapper of :class:`pandas.Series` with some additional functionality.
