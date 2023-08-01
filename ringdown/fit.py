@@ -464,7 +464,7 @@ class Fit(object):
                                      f"with config: {overlap}")
                     # merge injection settings from JSON and INI
                     # NOTE: config file overwrites JSON!
-                    file_kws.update(inj_kws)
+                    json_kws.update(inj_kws)
                     inj_kws = json_kws
                 except (UnicodeDecodeError,json.JSONDecodeError):
                     raise IOError(f"unable to read JSON file: {injpath}")
