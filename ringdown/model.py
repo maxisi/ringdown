@@ -1,7 +1,7 @@
 __all__ = ['make_mchi_model', 'make_mchi_aligned_model', 'make_ftau_model']
 
-import aesara.tensor as at
-import aesara.tensor.slinalg as atl
+import pytensor.tensor as at
+import pytensor.tensor.slinalg as atl
 import numpy as np
 import pymc as pm
 
@@ -631,7 +631,7 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
 
         f = pm.Uniform("f", f_min, f_max, dims=['mode'])
         gamma = pm.Uniform('gamma', gamma_min, gamma_max, dims=['mode'],
-                           transform=pm.distributions.transforms.ordered)
+                           transform=pm.distributions.transforms.multivariate_ordered)
 
         Ax_unit = pm.Normal("Ax_unit", dims=['mode'])
         Ay_unit = pm.Normal("Ay_unit", dims=['mode'])

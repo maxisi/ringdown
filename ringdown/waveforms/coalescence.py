@@ -3,12 +3,15 @@ __all__ = ['Coalescence', 'Parameters']
 from pylab import *
 import lal
 from .core import *
+from ..data import Data
 from scipy.signal import tukey
 import lal
 import lalsimulation as ls
 from dataclasses import dataclass, asdict, fields
 import inspect
 import h5py
+import pandas as pd
+import warnings
 
 def docstring_parameter(*args, **kwargs):
     def dec(obj):
