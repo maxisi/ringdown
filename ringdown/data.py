@@ -30,9 +30,11 @@ class Series(pd.Series):
         """Load data from disk.
         
         If ``kind`` is `gwosc` assumes input is an strain HDF5 file downloaded
-        from `GWOSC <https://www.gw-openscience.org>`_. Otherwise, it is a
-        wrapper around :func:`pandas.read_hdf` or :func:`pandas.read_csv`
-        functions, for ``kind = 'hdf'`` or ``kind = 'csv'``.
+        from `GWOSC <https://www.gw-openscience.org>`_.  If ``kind`` is `frame`
+        and the keyword `channel` is given, then attempt to load the given
+        path(s) using gwpy's frame file reading.  Otherwise, it is a wrapper
+        around :func:`pandas.read_hdf` or :func:`pandas.read_csv` functions, for
+        ``kind = 'hdf'`` or ``kind = 'csv'``.
 
         If ``kind`` is ``None``, guesses filetype from extension.
 
@@ -67,6 +69,14 @@ class Series(pd.Series):
                 dt = T/len(h)
                 time = t0 + dt*arange(len(h))
                 return cls(h, index=time, **kws)
+        elif kind == 'frame':
+            channel = kws.pop('channel')
+            try:
+                from gwpy.timeseries import TimeSeries
+            except ImportError:
+                raise ImportError("cannot load frame files without gwpy")
+            ts = TimeSeries.read(path, channel)
+            return cls(ts.value, index=ts.times, **kws)
         elif kind in ['hdf', 'csv']:
             read_func = getattr(pd, 'read_{}'.format(kind))
             # get list of arguments accepted by pandas read function in order
