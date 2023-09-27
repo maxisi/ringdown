@@ -8,7 +8,6 @@ dependencies:
   - arviz
   - matplotlib
   - pandas
-  - pymc=4
   - scipy
   - lalsuite
   - qnm
@@ -16,4 +15,5 @@ dependencies:
   - python=3
   - jupyterlab
   - openblas
-  - aesara
+  - numpyro
+  - jax

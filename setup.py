@@ -22,8 +22,9 @@ setup(name='ringdown',
             'matplotlib',
             'numpy',
             'pandas',
-            'pymc',
             'qnm',
             'scipy',
-            'seaborn']
+            'seaborn',
+            'numpyro',
+            'jax']
      )
