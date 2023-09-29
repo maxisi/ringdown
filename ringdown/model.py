@@ -7,6 +7,7 @@ import numpy as np
 import numpyro
 import numpyro.distributions as dist
 from . import qnms
+import warnings
 
 # reference frequency and mass values to translate linearly between the two
 FREF = 2985.668287014743
@@ -122,11 +123,10 @@ def phiR_from_quadratures(Apx, Apy, Acx, Acy):
 def phiL_from_quadratures(Apx, Apy, Acx, Acy):
     return jnp.arctan2(-Acx - Apy, -Acy + Apx)
 
-def flat_A_quadratures_prior(Apx_unit, Apy_unit, Acx_unit, Acy_unit,flat_A):
-    return 0.5*jnp.sum((jnp.square(Apx_unit) + jnp.square(Apy_unit) +
-                        jnp.square(Acx_unit) + jnp.square(Acy_unit))*flat_A)
+def flat_A_quadratures_prior(Apx_unit, Apy_unit, Acx_unit, Acy_unit):
+    return 
 
-def get_quad_derived_quantities(design_matrices, quads, a_scale, predict_h_det, predict_h_det_mode):
+def get_quad_derived_quantities(design_matrices, quads, a_scale, store_h_det, store_h_det_mode, compute_h_det=False):
     nifo, nmodes, ntimes = design_matrices.shape
     apx = numpyro.deterministic('apx', quads[:nmodes] * a_scale)
     apy = numpyro.deterministic('apy', quads[nmodes:2*nmodes] * a_scale)
@@ -140,33 +140,34 @@ def get_quad_derived_quantities(design_matrices, quads, a_scale, predict_h_det, 
     theta = numpyro.deterministic('theta', -0.5*(phi_r + phi_l))
     phi = numpyro.deterministic('phi', 0.5*(phi_r - phi_l))
 
-    h_det_mode = jnp.zeros((nifo, nmodes, ntimes))
-    hh = design_matrices * quads[jnp.newaxis,:,jnp.newaxis]
+    if compute_h_det or store_h_det_mode or store_h_det:
+        h_det_mode = jnp.zeros((nifo, nmodes, ntimes))
+        hh = design_matrices * quads[jnp.newaxis,:,jnp.newaxis]
 
-    for i in range(nmodes):
-        h_det_mode = h_det_mode.at[:,i,:].set(jnp.sum(hh[:,i:nmodes:,:], axis=1))
-    h_det = jnp.sum(h_det_mode, axis=1)
+        for i in range(nmodes):
+            h_det_mode = h_det_mode.at[:,i,:].set(jnp.sum(hh[:,i:nmodes:,:], axis=1))
+        h_det = jnp.sum(h_det_mode, axis=1)
 
-    if predict_h_det_mode:
-        _ = numpyro.deterministic('h_det_mode', h_det_mode)
-    if predict_h_det:
-        _ = numpyro.deterministic('h_det', h_det)
-    
-    return h_det
-
-
+        if store_h_det_mode:
+            _ = numpyro.deterministic('h_det_mode', h_det_mode)
+        if store_h_det:
+            _ = numpyro.deterministic('h_det', h_det)
+        
+        return a, h_det
 
 def make_model(modes : int | list[(int, int, int, int)], 
-               marginalized : bool =True, 
-               a_scale_max : float =None, 
+               marginalized : bool = True, 
+               a_scale_max : float = None, 
                m_min : float | None = None, m_max : float | None = None,
                chi_min : float = 0.0, chi_max : float = 0.99,
                df_min : None | list[None | float] = None, df_max : None | list[None | float] = None,
                dg_min : None | list[None | float] = None, dg_max : None | list[None | float] = None,
                f_min : None | list[float] = None, f_max : None | list[float] = None,
                g_min : None | list[float] = None, g_max : None | list[float] = None,
+               flat_amplitude_prior : bool = False,
+               modes_ordered_by_frequency : bool = False,
                prior : bool = False,               
-               predictive : bool = False, predict_h_det : bool = True, predict_h_det_mode : bool = True,
+               predictive : bool = False, store_h_det : bool = True, store_h_det_mode : bool = True,
                **kwargs):
     """
     Arguments
@@ -179,12 +180,23 @@ def make_model(modes : int | list[(int, int, int, int)],
     """
 
     def model(t0s, times, strains, ls, fps, fcs):
-        if isinstance(modes, int):
-            f = numpyro.sample('f', dist.Uniform(f_min, f_max), sample_shape=(modes,))
-            g = numpyro.sample('g', dist.Uniform(g_min, g_max), sample_shape=(modes,))
 
-            tau = numpyro.deterministic('tau', 1/g)
-            omega = numpyro.deterministic('omega', 2*np.pi*f)
+        # Here is where the particular model choice is made:
+        #
+        # If modes is an int, then we use a model with f-gamma (i.e. we don't
+        # impose any GR constraint on the frequencies / damping rates)
+        #
+        # If modes is a list, then we use a model with GR-imposed frequencies
+        # and damping rates (possibly with deviations).  If you have a
+        # beyond-Kerr model, this is where you would put your logic to implement
+        # it.
+        if isinstance(modes, int):
+            if modes_ordered_by_frequency:
+                f = numpyro.sample('f', dist.Uniform(f_min, f_max, support=dist.constraints.ordered_vector), sample_shape=(modes,))
+                g = numpyro.sample('g', dist.Uniform(g_min, g_max), sample_shape=(modes,))
+            else:
+                f = numpyro.sample('f', dist.Uniform(f_min, f_max), sample_shape=(modes,))
+                g = numpyro.sample('g', dist.Uniform(g_min, g_max, support=dist.constraints.ordered_vector), sample_shape=(modes,))
         elif isinstance(modes, list):
             fcs = []
             gcs = []
@@ -221,6 +233,13 @@ def make_model(modes : int | list[(int, int, int, int)],
                 
                 dg = numpyro.deterministic('dg', dg_unit*(dg_max - dg_min) + dg_min)
                 g = numpyro.deterministic('g', g_gr * jnp.exp(dg))
+        # At this point the frequencies `f` and damping rates `g` of the various
+        # modes should be established, and we can proceed with the rest of the
+        # model.
+
+        tau = numpyro.deterministic('tau', 1/g)
+        omega = numpyro.deterministic('omega', 2*np.pi*f)
+        quality = numpyro.deterministic('quality', np.pi*f*tau)
 
         if marginalized:
             a_scale = numpyro.sample('a_scale', dist.Uniform(0, a_scale_max), sample_shape=(len(modes),))
@@ -254,25 +273,24 @@ def make_model(modes : int | list[(int, int, int, int)],
                     lambda_inv = a_inv
                     lambda_inv_chol = a_inv_chol
                 
-                if predictive:
-                    # Generate the actual quadrature amplitudes 
+            if predictive:
+                # Generate the actual quadrature amplitudes 
 
+                # Lambda_inv_chol.T: Lambda_inv = Lambda_inv_chol * Lambda_inv_chol.T,
+                # so Lambda = (Lambda_inv_chol.T)^{-1} Lambda_inv_chol^{-1} To achieve
+                # the desired covariance, we can *right multiply* iid N(0,1) variables
+                # by Lambda_inv_chol^{-1}, so that y = x Lambda_inv_chol^{-1} has
+                # covariance < y^T y > = (Lambda_inv_chol^{-1}).T < x^T x >
+                # Lambda_inv_chol^{-1} = (Lambda_inv_chol^{-1}).T I Lambda_inv_chol^{-1}
+                # = Lambda.
+                apx_unit = numpyro.sample('apx_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
+                apy_unit = numpyro.sample('apy_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
+                acx_unit = numpyro.sample('acx_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
+                acy_unit = numpyro.sample('acy_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
 
-                    # Lambda_inv_chol.T: Lambda_inv = Lambda_inv_chol * Lambda_inv_chol.T,
-                    # so Lambda = (Lambda_inv_chol.T)^{-1} Lambda_inv_chol^{-1} To achieve
-                    # the desired covariance, we can *right multiply* iid N(0,1) variables
-                    # by Lambda_inv_chol^{-1}, so that y = x Lambda_inv_chol^{-1} has
-                    # covariance < y^T y > = (Lambda_inv_chol^{-1}).T < x^T x >
-                    # Lambda_inv_chol^{-1} = (Lambda_inv_chol^{-1}).T I Lambda_inv_chol^{-1}
-                    # = Lambda.
-                    apx_unit = numpyro.sample('apx_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
-                    apy_unit = numpyro.sample('apy_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
-                    acx_unit = numpyro.sample('acx_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
-                    acy_unit = numpyro.sample('acy_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
+                quads = mu + jsp.linalg.solve(lambda_inv_chol.T, jnp.concatenate((apx_unit, apy_unit, acx_unit, acy_unit)))
 
-                    quads = mu + jsp.linalg.solve(lambda_inv_chol.T, jnp.concatenate((apx_unit, apy_unit, acx_unit, acy_unit)))
-
-                    _ = get_quad_derived_quantities(design_matrices, quads, a_scale, predict_h_det, predict_h_det_mode)
+                get_quad_derived_quantities(design_matrices, quads, a_scale, store_h_det, store_h_det_mode)
         else:
             design_matrices = rd_design_matrix(t0s, times, f, g, fps, fcs, a_scale_max)
             apx_unit = numpyro.sample('apx_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
@@ -281,558 +299,20 @@ def make_model(modes : int | list[(int, int, int, int)],
             acy_unit = numpyro.sample('acy_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
 
             quads = jnp.concatenate((apx_unit, apy_unit, acx_unit, acy_unit))
+            a, h_det = get_quad_derived_quantities(design_matrices, quads, a_scale_max, 
+                                                   store_h_det, store_h_det_mode, compute_h_det=(not prior))
             
-            ## Incomplete!!  call get_quad_derived_quantities
-
-
-
-
-def make_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
-                    **kwargs):
-    M_min = kwargs.pop("M_min")
-    M_max = kwargs.pop("M_max")
-    chi_min = kwargs.pop("chi_min")
-    chi_max = kwargs.pop("chi_max")
-    A_scale_max = kwargs.pop("A_scale_max")
-    df_min = kwargs.pop("df_min")
-    df_max = kwargs.pop("df_max")
-    dtau_min = kwargs.pop("dtau_min")
-    dtau_max = kwargs.pop("dtau_max")
-    perturb_f = kwargs.pop("perturb_f", 0)
-    perturb_tau = kwargs.pop("perturb_tau", 0)
-    f_min = kwargs.pop('f_min', None)
-    f_max = kwargs.pop('f_max', None)
-    prior_run = kwargs.pop('prior_run', False)
-
-    nmode = f_coeffs.shape[0]
-
-    if (chi_min < 0) or (chi_max > 1):
-        raise ValueError("chi boundaries must be contained in [0, 1)")
-
-    if not np.isscalar(df_min) and not np.isscalar(df_max):
-        if len(df_min)!=len(df_max):
-            raise ValueError("df_min, df_max must be scalar or arrays of length equal to the number of modes")
-        for el in np.arange(len(df_min)):
-            if df_min[el]==df_max[el]:
-                raise ValueError("df_min and df_max must not be equal for any given mode")
-
-    if not np.isscalar(dtau_min) and not np.isscalar(dtau_max):
-        if len(dtau_min)!=len(dtau_max):
-            raise ValueError("dtau_min, dtau_max must be scalar or arrays of length equal to the number of modes")
-        for el in np.arange(len(dtau_min)):
-            if dtau_min[el]==dtau_max[el]:
-                raise ValueError("dtau_min and dtau_max must not be equal for any given mode")
-
-    ndet = len(t0)
-    nt = len(times[0])
-
-    ifos = kwargs.pop('ifos', np.arange(ndet))
-    modes = kwargs.pop('modes', np.arange(nmode))
-
-    coords = {
-        'ifo': ifos,
-        'mode': modes,
-        'time_index': np.arange(nt)
-    }
-
-    Llogdet = np.array([np.sum(np.log(np.diag(L))) for L in Ls])
-
-    with pm.Model(coords=coords) as model:
-        pm.ConstantData('times', times, dims=['ifo', 'time_index'])
-        pm.ConstantData('t0', t0, dims=['ifo'])
-        pm.ConstantData('L', Ls, dims=['ifo', 'time_index', 'time_index'])
-
-        M = pm.Uniform("M", M_min, M_max)
-        chi = pm.Uniform("chi", chi_min, chi_max)
-
-        df = pm.Uniform("df", df_min, df_max, dims=['mode'])
-        dtau = pm.Uniform("dtau", dtau_min, dtau_max, dims=['mode'])
-
-        # log_A_scale = pm.Uniform('log_A_scale', np.log(A_scale_min), np.log(A_scale_max), dims=['mode'])
-        # A_scale = pm.Deterministic('A_scale', at.exp(log_A_scale))
-        A_scale = pm.Uniform('A_scale', 0, A_scale_max, dims=['mode'])
-
-        Apx_unit = pm.Normal("Apx_unit", dims=['mode'])
-        Apy_unit = pm.Normal("Apy_unit", dims=['mode'])
-        Acx_unit = pm.Normal("Acx_unit", dims=['mode'])
-        Acy_unit = pm.Normal("Acy_unit", dims=['mode'])
-
-        f0 = FREF*MREF/M
-        f = pm.Deterministic("f",
-            f0*chi_factors(chi, f_coeffs)*at.exp(df*perturb_f),
-            dims=['mode'])
-        gamma = pm.Deterministic("gamma",
-            f0*chi_factors(chi, g_coeffs)*at.exp(-dtau*perturb_tau),
-            dims=['mode'])
-        tau = pm.Deterministic("tau", 1/gamma, dims=['mode'])
-        Q = pm.Deterministic("Q", np.pi * f * tau, dims=['mode'])
-
-        # Check limits on f
-        if not np.isscalar(f_min) or not f_min == 0.0:
-            _ = pm.Potential('f_min_cut', at.sum(at.where(f < f_min, np.NINF, 0.0)))
-        if not np.isscalar(f_max) or not f_max == np.inf:
-            _ = pm.Potential('f_max_cut', at.sum(at.where(f > f_max, np.NINF, 0.0)))
-
-        # Priors:
-
-        # Flat in M-chi already
-
-        # Flat prior on the delta-fs and delta-taus
-
-        design_matrices = rd_design_matrix(t0, times, f, gamma, Fps, Fcs, A_scale)
-
-        mu = at.zeros(4*nmode)
-        Lambda_inv = at.eye(4*nmode)
-        Lambda_inv_chol = at.eye(4*nmode)
-        # Likelihood:
-        if not prior_run:
-            for i in range(ndet):
-                MM = design_matrices[i, :, :].T # (ndet, 4*nmode, ntime) => (i, ntime, 4*nmode)
-
-                A_inv = Lambda_inv + at.dot(MM.T, _atl_cho_solve((Ls[i], True), MM))
-                A_inv_chol = atl.cholesky(A_inv)
-
-                a = _atl_cho_solve((A_inv_chol, True), at.dot(Lambda_inv, mu) + at.dot(MM.T, _atl_cho_solve((Ls[i], True), strains[i])))
-
-                b = at.dot(MM, mu)
-            
-                Blogsqrtdet = Llogdet[i] - at.sum(at.log(at.diag(Lambda_inv_chol))) + at.sum(at.log(at.diag(A_inv_chol)))
-
-                r = strains[i] - b
-                Cinv_r = _atl_cho_solve((Ls[i], True), r)
-                MAMTCinv_r = at.dot(MM, _atl_cho_solve((A_inv_chol, True), at.dot(MM.T, Cinv_r)))
-                CinvMAMTCinv_r = _atl_cho_solve((Ls[i], True), MAMTCinv_r)
-                logl = -0.5*at.dot(r, Cinv_r - CinvMAMTCinv_r) - Blogsqrtdet
-
-                key = ifos[i]
-                if isinstance(key, bytes):
-                 # Don't want byte strings in our names!
-                    key = key.decode('utf-8')
-
-                pm.Potential(f'strain_{key}', logl)
-
-                mu = a
-                Lambda_inv = A_inv
-                Lambda_inv_chol = A_inv_chol
-        else:
-            # We're done.  There is no likelihood.
-            pass
-        
-        # Lambda_inv_chol.T: Lambda_inv = Lambda_inv_chol * Lambda_inv_chol.T,
-        # so Lambda = (Lambda_inv_chol.T)^{-1} Lambda_inv_chol^{-1} To achieve
-        # the desired covariance, we can *right multiply* iid N(0,1) variables
-        # by Lambda_inv_chol^{-1}, so that y = x Lambda_inv_chol^{-1} has
-        # covariance < y^T y > = (Lambda_inv_chol^{-1}).T < x^T x >
-        # Lambda_inv_chol^{-1} = (Lambda_inv_chol^{-1}).T I Lambda_inv_chol^{-1}
-        # = Lambda.
-        theta = mu + atl.solve(Lambda_inv_chol.T, at.concatenate((Apx_unit, Apy_unit, Acx_unit, Acy_unit)))
-
-        Apx = pm.Deterministic("Apx", theta[:nmode] * A_scale, dims=['mode'])
-        Apy = pm.Deterministic("Apy", theta[nmode:2*nmode] * A_scale, dims=['mode'])
-        Acx = pm.Deterministic("Acx", theta[2*nmode:3*nmode] * A_scale, dims=['mode'])
-        Acy = pm.Deterministic("Acy", theta[3*nmode:] * A_scale, dims=['mode'])
-
-        A = pm.Deterministic("A", a_from_quadratures(Apx, Apy, Acx, Acy),
-                             dims=['mode'])
-        ellip = pm.Deterministic("ellip",
-            ellip_from_quadratures(Apx, Apy, Acx, Acy),
-            dims=['mode'])
-        
-        phiR = pm.Deterministic("phiR",
-             phiR_from_quadratures(Apx, Apy, Acx, Acy),
-             dims=['mode'])
-        phiL = pm.Deterministic("phiL",
-             phiL_from_quadratures(Apx, Apy, Acx, Acy),
-             dims=['mode'])
-        theta = pm.Deterministic("theta", -0.5*(phiR + phiL), dims=['mode'])
-        phi = pm.Deterministic("phi", 0.5*(phiR - phiL), dims=['mode'])
-
-        h_det_mode = pm.Deterministic("h_det_mode",
-                compute_h_det_mode(t0, times, Fps, Fcs, f, gamma,
-                                   Apx, Apy, Acx, Acy),
-                dims=['ifo', 'mode', 'time_index'])
-        h_det = pm.Deterministic("h_det", at.sum(h_det_mode, axis=1),
-                                 dims=['ifo', 'time_index'])
-
-        return model
-
-
-def make_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_coeffs,
-                    **kwargs):
-    M_min = kwargs.pop("M_min")
-    M_max = kwargs.pop("M_max")
-    chi_min = kwargs.pop("chi_min")
-    chi_max = kwargs.pop("chi_max")
-    A_scale = kwargs.pop("A_scale")
-    df_min = kwargs.pop("df_min")
-    df_max = kwargs.pop("df_max")
-    dtau_min = kwargs.pop("dtau_min")
-    dtau_max = kwargs.pop("dtau_max")
-    perturb_f = kwargs.pop("perturb_f", 0)
-    perturb_tau = kwargs.pop("perturb_tau", 0)
-    flat_A = kwargs.pop("flat_A", True)
-    flat_A_ellip = kwargs.pop("flat_A_ellip", False)
-    f_min = kwargs.pop('f_min', None)
-    f_max = kwargs.pop('f_max', None)
-    prior_run = kwargs.pop('prior_run', False)
-
-    nmode = f_coeffs.shape[0]
-
-    if np.isscalar(flat_A):
-        flat_A = np.repeat(flat_A,nmode)
-    if np.isscalar(flat_A_ellip):
-        flat_A_ellip = np.repeat(flat_A_ellip,nmode)
-    elif len(flat_A)!=nmode:
-        raise ValueError("flat_A must either be a scalar or array of length equal to the number of modes")
-    elif len(flat_A_ellip)!=nmode:
-        raise ValueError("flat_A_ellip must either be a scalar or array of length equal to the number of modes") 
-
-    if any(flat_A) and any(flat_A_ellip):
-        raise ValueError("at most one of `flat_A` and `flat_A_ellip` can have an element that is " "`True`")
-    if (chi_min < 0) or (chi_max > 1):
-        raise ValueError("chi boundaries must be contained in [0, 1)")
-
-    if not np.isscalar(df_min) and not np.isscalar(df_max):
-        if len(df_min)!=len(df_max):
-            raise ValueError("df_min, df_max must be scalar or arrays of length equal to the number of modes")
-        for el in np.arange(len(df_min)):
-            if df_min[el]==df_max[el]:
-                raise ValueError("df_min and df_max must not be equal for any given mode")
-
-    if not np.isscalar(dtau_min) and not np.isscalar(dtau_max):
-        if len(dtau_min)!=len(dtau_max):
-            raise ValueError("dtau_min, dtau_max must be scalar or arrays of length equal to the number of modes")
-        for el in np.arange(len(dtau_min)):
-            if dtau_min[el]==dtau_max[el]:
-                raise ValueError("dtau_min and dtau_max must not be equal for any given mode")
-
-    ndet = len(t0)
-    nt = len(times[0])
-
-    ifos = kwargs.pop('ifos', np.arange(ndet))
-    modes = kwargs.pop('modes', np.arange(nmode))
-
-    coords = {
-        'ifo': ifos,
-        'mode': modes,
-        'time_index': np.arange(nt)
-    }
-
-    with pm.Model(coords=coords) as model:
-        pm.ConstantData('times', times, dims=['ifo', 'time_index'])
-        pm.ConstantData('t0', t0, dims=['ifo'])
-        pm.ConstantData('L', Ls, dims=['ifo', 'time_index', 'time_index'])
-
-        M = pm.Uniform("M", M_min, M_max)
-        chi = pm.Uniform("chi", chi_min, chi_max)
-
-        Apx_unit = pm.Normal("Apx_unit", dims=['mode'])
-        Apy_unit = pm.Normal("Apy_unit", dims=['mode'])
-        Acx_unit = pm.Normal("Acx_unit", dims=['mode'])
-        Acy_unit = pm.Normal("Acy_unit", dims=['mode'])
-
-        df = pm.Uniform("df", df_min, df_max, dims=['mode'])
-        dtau = pm.Uniform("dtau", dtau_min, dtau_max, dims=['mode'])
-
-        Apx = pm.Deterministic("Apx", A_scale*Apx_unit, dims=['mode'])
-        Apy = pm.Deterministic("Apy", A_scale*Apy_unit, dims=['mode'])
-        Acx = pm.Deterministic("Acx", A_scale*Acx_unit, dims=['mode'])
-        Acy = pm.Deterministic("Acy", A_scale*Acy_unit, dims=['mode'])
-
-        A = pm.Deterministic("A", a_from_quadratures(Apx, Apy, Acx, Acy),
-                             dims=['mode'])
-        ellip = pm.Deterministic("ellip",
-            ellip_from_quadratures(Apx, Apy, Acx, Acy),
-            dims=['mode'])
-
-        f0 = FREF*MREF/M
-        f = pm.Deterministic("f",
-            f0*chi_factors(chi, f_coeffs)*at.exp(df*perturb_f),
-            dims=['mode'])
-        gamma = pm.Deterministic("gamma",
-            f0*chi_factors(chi, g_coeffs)*at.exp(-dtau*perturb_tau),
-            dims=['mode'])
-        tau = pm.Deterministic("tau", 1/gamma, dims=['mode'])
-        Q = pm.Deterministic("Q", np.pi * f * tau, dims=['mode'])
-        phiR = pm.Deterministic("phiR",
-             phiR_from_quadratures(Apx, Apy, Acx, Acy),
-             dims=['mode'])
-        phiL = pm.Deterministic("phiL",
-             phiL_from_quadratures(Apx, Apy, Acx, Acy),
-             dims=['mode'])
-        theta = pm.Deterministic("theta", -0.5*(phiR + phiL), dims=['mode'])
-        phi = pm.Deterministic("phi", 0.5*(phiR - phiL), dims=['mode'])
-
-        # Check limits on f
-        if not np.isscalar(f_min) or not f_min == 0.0:
-            _ = pm.Potential('f_min_cut', at.sum(at.where(f < f_min, np.NINF, 0.0)))
-        if not np.isscalar(f_max) or not f_max == np.inf:
-            _ = pm.Potential('f_max_cut', at.sum(at.where(f > f_max, np.NINF, 0.0)))
-
-        h_det_mode = pm.Deterministic("h_det_mode",
-                compute_h_det_mode(t0, times, Fps, Fcs, f, gamma,
-                                   Apx, Apy, Acx, Acy),
-                dims=['ifo', 'mode', 'time_index'])
-        h_det = pm.Deterministic("h_det", at.sum(h_det_mode, axis=1),
-                                 dims=['ifo', 'time_index'])
-
-        # Priors:
-
-        # Flat in M-chi already
-
-        # Amplitude prior
-        if any(flat_A):
-            # bring us back to flat-in-quadratures
-            pm.Potential("flat_A_quadratures_prior",
-                         flat_A_quadratures_prior(Apx_unit, Apy_unit,
-                                                  Acx_unit, Acy_unit,flat_A))
-            # bring us to flat-in-A prior
-            pm.Potential("flat_A_prior", -3*at.sum(at.log(A)*flat_A))
-        elif any(flat_A_ellip):
-            # bring us back to flat-in-quadratures
-            pm.Potential("flat_A_quadratures_prior",
-                         flat_A_quadratures_prior(Apx_unit, Apy_unit,
-                                                  Acx_unit, Acy_unit,flat_A_ellip))
-            # bring us to flat-in-A and flat-in-ellip prior
-            pm.Potential("flat_A_ellip_prior", 
-                         at.sum((-3*at.log(A) - at.log1m(at.square(ellip)))*flat_A_ellip))
-
-        # Flat prior on the delta-fs and delta-taus
-
-        # Likelihood:
-        if not prior_run:
-            for i in range(ndet):
-                key = ifos[i]
-                if isinstance(key, bytes):
-                 # Don't want byte strings in our names!
-                    key = key.decode('utf-8')
-                _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
-                            observed=strains[i], dims=['time_index'])
-        else:
-            print("Sampling prior")
-            samp_prior_cond = pm.Potential('A_prior', at.sum(at.where(A > (10*A_scale or 1e-19), np.NINF, 0.0))) #this condition is to bound flat priors just for sampling from the prior
-
-        
-        return model
-        
-def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
-                            g_coeffs, **kwargs):
-    M_min = kwargs.pop("M_min")
-    M_max = kwargs.pop("M_max")
-    chi_min = kwargs.pop("chi_min")
-    chi_max = kwargs.pop("chi_max")
-    cosi_min = kwargs.pop("cosi_min")
-    cosi_max = kwargs.pop("cosi_max")
-    A_scale = kwargs.pop("A_scale")
-    df_min = kwargs.pop("df_min")
-    df_max = kwargs.pop("df_max")
-    dtau_min = kwargs.pop("dtau_min")
-    dtau_max = kwargs.pop("dtau_max")
-    perturb_f = kwargs.pop("perturb_f", 0)
-    perturb_tau = kwargs.pop("perturb_tau", 0)
-    flat_A = kwargs.pop("flat_A", True)
-    f_min = kwargs.pop('f_min', 0.0)
-    f_max = kwargs.pop('f_max', np.inf)
-    nmode = f_coeffs.shape[0]
-    prior_run = kwargs.pop('prior_run',False)
-
-    if np.isscalar(flat_A):
-        flat_A = np.repeat(flat_A,nmode)
-    elif len(flat_A)!=nmode:
-        raise ValueError("flat_A must either be a scalar or array of length equal to the number of modes")
-
-    if (cosi_min < -1) or (cosi_max > 1):
-        raise ValueError("cosi boundaries must be contained in [-1, 1]")
-    if (chi_min < 0) or (chi_max > 1):
-        raise ValueError("chi boundaries must be contained in [0, 1)")
-    
-    ndet = len(t0)
-    nt = len(times[0])
-
-    ifos = kwargs.pop('ifos', np.arange(ndet))
-    modes = kwargs.pop('modes', np.arange(nmode))
-
-    coords = {
-        'ifo': ifos,
-        'mode': modes,
-        'time_index': np.arange(nt)
-    }
-
-    with pm.Model(coords=coords) as model:
-        pm.ConstantData('times', times, dims=['ifo', 'time_index'])
-        pm.ConstantData('t0', t0, dims=['ifo'])
-        pm.ConstantData('L', Ls, dims=['ifo', 'time_index', 'time_index'])
-
-        M = pm.Uniform("M", M_min, M_max)
-        chi = pm.Uniform("chi", chi_min, chi_max)
-
-        cosi = pm.Uniform("cosi", cosi_min, cosi_max)
-
-        Ax_unit = pm.Normal("Ax_unit", dims=['mode'])
-        Ay_unit = pm.Normal("Ay_unit", dims=['mode'])
-
-        df = pm.Uniform("df", df_min, df_max, dims=['mode'])
-        dtau = pm.Uniform("dtau", dtau_min, dtau_max, dims=['mode'])
-
-        A = pm.Deterministic("A",
-            A_scale*at.sqrt(at.square(Ax_unit)+at.square(Ay_unit)),
-            dims=['mode'])
-        phi = pm.Deterministic("phi", at.arctan2(Ay_unit, Ax_unit),
-            dims=['mode'])
-
-        f0 = FREF*MREF/M
-        f = pm.Deterministic('f',
-            f0*chi_factors(chi, f_coeffs)*at.exp(df * perturb_f),
-            dims=['mode'])
-        gamma = pm.Deterministic('gamma',
-             f0*chi_factors(chi, g_coeffs)*at.exp(-dtau * perturb_tau),
-             dims=['mode'])
-        tau = pm.Deterministic('tau', 1/gamma, dims=['mode'])
-        Q = pm.Deterministic('Q', np.pi*f*tau, dims=['mode'])
-        Ap = pm.Deterministic('Ap', (1 + at.square(cosi))*A, dims=['mode'])
-        Ac = pm.Deterministic('Ac', 2*cosi*A, dims=['mode'])
-        ellip = pm.Deterministic('ellip', Ac/Ap, dims=['mode'])
-
-        # Check limits on f
-        if not np.isscalar(f_min) or not f_min == 0.0:
-            _ = pm.Potential('f_min_cut', at.sum(at.where(f < f_min, np.NINF, 0.0)))
-            print("Running with f_min_cut on modes:",f_min)
-        if not np.isscalar(f_max) or not f_max == np.inf:
-            _ = pm.Potential('f_max_cut', at.sum(at.where(f > f_max, np.NINF, 0.0)))
-            print("Running with f_max_cut on modes:",f_max)
-
-
-        Apx = (1 + at.square(cosi))*A*at.cos(phi)
-        Apy = (1 + at.square(cosi))*A*at.sin(phi)
-        Acx = -2*cosi*A*at.sin(phi)
-        Acy = 2*cosi*A*at.cos(phi)
-
-        h_det_mode = pm.Deterministic("h_det_mode",
-            compute_h_det_mode(t0, times, Fps, Fcs, f, gamma,
-                               Apx, Apy, Acx, Acy),
-            dims=['ifo', 'mode', 'time_index'])
-        h_det = pm.Deterministic("h_det", at.sum(h_det_mode, axis=1),
-                                 dims=['ifo', 'time_index'])
-
-        # Priors:
-
-        # Flat in M-chi already
-
-        # Amplitude prior
-        if any(flat_A):
-            # first bring us to flat in quadratures
-            pm.Potential("flat_A_quadratures_prior",
-                         0.5*at.sum((at.square(Ax_unit) + at.square(Ay_unit))*flat_A))
-            # now to flat in A
-            pm.Potential("flat_A_prior", -at.sum(at.log(A)*flat_A))
-
-        # Flat prior on the delta-fs and delta-taus
-
-        # Likelihood
-        if not prior_run:
-            for i in range(ndet):
-                key = ifos[i]
-                if isinstance(key, bytes):
-                    # Don't want byte strings in our names!
-                    key = key.decode('utf-8')
-                _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
-                            observed=strains[i], dims=['time_index'])
-        else:
-            print("Sampling prior")
-            samp_prior_cond = pm.Potential('A_prior', at.sum(at.where(A > (10*A_scale or 1e-19), np.NINF, 0.0))) #this condition is to bound flat priors just for sampling from the prior
-        
-        return model
-
-
-
-def logit(p):
-    return np.log(p) - np.log1p(-p)
-
-def make_ftau_model(t0, times, strains, Ls, **kwargs):
-    f_min = kwargs.pop("f_min")
-    f_max = kwargs.pop("f_max")
-    gamma_min = kwargs.pop("gamma_min")
-    gamma_max = kwargs.pop("gamma_max")
-    A_scale = kwargs.pop("A_scale")
-    flat_A = kwargs.pop("flat_A", True)
-    nmode = kwargs.pop("nmode", 1)
-    prior_run = kwargs.pop('prior_run', False)
-
-    if np.isscalar(flat_A):
-        flat_A = np.repeat(flat_A,nmode)
-    elif len(flat_A)!=nmode:
-        raise ValueError("flat_A must either be a scalar or array of length equal to the number of modes")
-
-    ndet = len(t0)
-    nt = len(times[0])
-
-    ifos = kwargs.pop('ifos', np.arange(ndet))
-    modes = kwargs.pop('modes', np.arange(nmode))
-
-    coords = {
-        'ifo': ifos,
-        'mode': modes,
-        'time_index': np.arange(nt)
-    }
-
-    with pm.Model(coords=coords) as model:
-        pm.ConstantData('times', times, dims=['ifo', 'time_index'])
-        pm.ConstantData('t0', t0, dims=['ifo'])
-        pm.ConstantData('L', Ls, dims=['ifo', 'time_index', 'time_index'])
-
-        f = pm.Uniform("f", f_min, f_max, dims=['mode'])
-        gamma = pm.Uniform('gamma', gamma_min, gamma_max, dims=['mode'],
-                           transform=pm.distributions.transforms.multivariate_ordered)
-
-        Ax_unit = pm.Normal("Ax_unit", dims=['mode'])
-        Ay_unit = pm.Normal("Ay_unit", dims=['mode'])
-
-        A = pm.Deterministic("A",
-            A_scale*at.sqrt(at.square(Ax_unit)+at.square(Ay_unit)),
-            dims=['mode'])
-        phi = pm.Deterministic("phi", at.arctan2(Ay_unit, Ax_unit),
-                               dims=['mode'])
-
-        tau = pm.Deterministic('tau', 1/gamma, dims=['mode'])
-        Q = pm.Deterministic('Q', np.pi*f*tau, dims=['mode'])
-
-        Apx = A*at.cos(phi)
-        Apy = A*at.sin(phi)
-
-        h_det_mode = pm.Deterministic("h_det_mode",
-            compute_h_det_mode(t0, times, np.ones(ndet), np.zeros(ndet),
-                               f, gamma, Apx, Apy, np.zeros(nmode),
-                               np.zeros(nmode)),
-            dims=['ifo', 'mode', 'time_index'])
-        h_det = pm.Deterministic("h_det", at.sum(h_det_mode, axis=1),
-                                 dims=['ifo', 'time_index'])
-
-        # Priors:
-
-        # Flat in M-chi already
-
-        # Amplitude prior
-        if any(flat_A):
-            # first bring us to flat in quadratures
-            pm.Potential("flat_A_quadratures_prior",
-                         0.5*at.sum((at.square(Ax_unit) + at.square(Ay_unit))*flat_A))
-            pm.Potential("flat_A_prior", -at.sum(at.log(A)*flat_A))
-
-        # Flat prior on the delta-fs and delta-taus
-
-        # Likelihood
-        if not prior_run:
-            for i in range(ndet):
-                key = ifos[i]
-                if isinstance(key, bytes):
-                # Don't want byte strings in our names!
-                   key = key.decode('utf-8')
-                _ = pm.MvNormal(f"strain_{key}", mu=h_det[i,:], chol=Ls[i],
-                            observed=strains[i], dims=['time_index'])
-        else:
-            print("Sampling prior")
-            samp_prior_cond = pm.Potential('A_prior', at.sum(at.where(A > (10*A_scale or 1e-19), np.NINF, 0.0))) #this condition is to bound flat priors just for sampling from the prior
-        
-        return model
-
-
+            if flat_amplitude_prior:
+                # We need a Jacobian that is A^-3
+                numpyro.factor('flat_A_prior', -3*jnp.sum(jnp.log(a)) + \
+                               0.5*jnp.sum((jnp.square(apx_unit) + jnp.square(apy_unit) + \
+                               jnp.square(acx_unit) + jnp.square(acy_unit))))
+                
+                if prior:
+                    raise ValueError('you did not want to impose a flat amplitude prior without a likelihood')
+
+            if not prior:
+                for i, strain in enumerate(strains):
+                    numpyro.sample(f'strain_logl_{i}', dist.MultivariateNormal(h_det[i,:], scale_tril=ls[i]), obs=strain)
+
+    return model
