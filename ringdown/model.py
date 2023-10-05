@@ -183,7 +183,10 @@ def make_model(modes : int | list[(int, int, int, int)],
         GW modes); and `ell` and `m` refer to the usual angular quantum numbers.
     """
 
-    def model(times, strains, ls, fps, fcs):
+    def model(times, strains, ls, fps, fcs,
+              predictive : bool = predictive, 
+              store_h_det : bool = store_h_det, 
+              store_h_det_mode : bool = store_h_det_mode):
         times, strains, ls, fps, fcs = map(jnp.array, (times, strains, ls, fps, fcs))
 
         # Here is where the particular model choice is made:
@@ -257,23 +260,25 @@ def make_model(modes : int | list[(int, int, int, int)],
             if not prior:
                 for i in range(times.shape[0]):
                     mm = design_matrices[i,:,:].T # (ndet, 4*nmode, ntime) => (i, ntime, 4*nmode)
+                    l = ls[i,:,:]
+                    s = strains[i,:]
 
-                    a_inv = lambda_inv + jnp.dot(mm.T, jsp.linalg.cho_solve((ls[i], True), mm))
+                    a_inv = lambda_inv + jnp.dot(mm.T, jsp.linalg.cho_solve((l, True), mm))
                     a_inv_chol = jsp.linalg.cholesky(a_inv)
 
-                    a = jsp.linalg.cho_solve((a_inv_chol, True), jnp.dot(lambda_inv, mu) + jnp.dot(mm.T, jsp.linalg.cho_solve((ls[i], True), strains[i])))
+                    a = jsp.linalg.cho_solve((a_inv_chol, True), jnp.dot(lambda_inv, mu) + jnp.dot(mm.T, jsp.linalg.cho_solve((l, True), s)))
 
                     b = jnp.dot(mm, mu)
 
-                    blogsqrtdet = jnp.sum(jnp.log(jnp.diag(ls[i]))) - jnp.sum(jnp.log(jnp.diag(lambda_inv_chol))) + jnp.sum(jnp.log(jnp.diag(a_inv_chol)))
+                    blogsqrtdet = jnp.sum(jnp.log(jnp.diag(l))) - jnp.sum(jnp.log(jnp.diag(lambda_inv_chol))) + jnp.sum(jnp.log(jnp.diag(a_inv_chol)))
 
-                    r = strains[i] - b
-                    cinv_r = jsp.linalg.cho_solve((ls[i], True), r)
+                    r = s - b
+                    cinv_r = jsp.linalg.cho_solve((l, True), r)
                     mamtcinv_r = jnp.dot(mm, jsp.linalg.cho_solve((a_inv_chol, True), jnp.dot(mm.T, cinv_r)))
-                    cinvmamtcinv_r = jsp.linalg.cho_solve((ls[i], True), mamtcinv_r)
+                    cinvmamtcinv_r = jsp.linalg.cho_solve((l, True), mamtcinv_r)
                     logl = -0.5*jnp.dot(r, cinv_r - cinvmamtcinv_r) - blogsqrtdet
 
-                    numpyro.factor(f'strain_logl_{i}', logl)
+                    numpyro.factor(f'logl_{i}', logl)
 
                     mu = a
                     lambda_inv = a_inv
