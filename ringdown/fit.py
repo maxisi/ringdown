@@ -17,7 +17,6 @@ import lal
 import logging
 from . import model
 import os
-import pymc as pm
 from . import qnms
 import warnings
 from . import waveforms

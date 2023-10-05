@@ -50,13 +50,12 @@ def rd(ts, f, gamma, Apx, Apy, Acx, Acy, Fp, Fc):
     c = decay*(Acx*ct + Acy*st)
     return Fp*p + Fc*c
 
-def rd_design_matrix(t0s, ts, f, gamma, Fp, Fc, Ascales):
-    ts = jnp.as_tensor(ts)
+def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales):
+    ts = jnp.array(ts)
     nifo, nt = ts.shape
 
     nmode = f.shape[0]
 
-    t0s = jnp.reshape(t0s, (nifo, 1, 1))
     ts = jnp.reshape(ts, (nifo, 1, nt))
     f = jnp.reshape(f, (1, nmode, 1))
     gamma = jnp.reshape(gamma, (1, nmode, 1))
@@ -64,11 +63,9 @@ def rd_design_matrix(t0s, ts, f, gamma, Fp, Fc, Ascales):
     Fc = jnp.reshape(Fc, (nifo, 1, 1))
     Ascales = jnp.reshape(Ascales, (1, nmode, 1))
 
-    t = ts - t0s
-
-    ct = jnp.cos(2*np.pi*f*t)
-    st = jnp.sin(2*np.pi*f*t)
-    decay = jnp.exp(-gamma*t)
+    ct = jnp.cos(2*np.pi*f*ts)
+    st = jnp.sin(2*np.pi*f*ts)
+    decay = jnp.exp(-gamma*ts)
     return jnp.concatenate((Ascales*Fp*decay*ct, Ascales*Fp*decay*st, Ascales*Fc*decay*ct, Ascales*Fc*decay*st), axis=1)
 
 def chi_factors(chi, coeffs):
@@ -76,27 +73,27 @@ def chi_factors(chi, coeffs):
     log1mc2 = log1mc*log1mc
     log1mc3 = log1mc2*log1mc
     log1mc4 = log1mc2*log1mc2
-    v = jnp.stack([chi, jnp.array([1.0]), log1mc, log1mc2,
+    v = jnp.stack([chi, jnp.ones_like(chi), log1mc, log1mc2,
                    log1mc3, log1mc4])
     return jnp.dot(coeffs, v)
 
-def compute_h_det_mode(t0s, ts, Fps, Fcs, fs, gammas, Apxs, Apys, Acxs, Acys):
-    ndet = len(t0s)
-    nmode = fs.shape[0]
-    nsamp = ts[0].shape[0]
+# def compute_h_det_mode(t0s, ts, Fps, Fcs, fs, gammas, Apxs, Apys, Acxs, Acys):
+#     ndet = len(t0s)
+#     nmode = fs.shape[0]
+#     nsamp = ts[0].shape[0]
 
-    t0s = jnp.array(t0s).reshape((ndet, 1, 1))
-    ts = jnp.array(ts).reshape((ndet, 1, nsamp))
-    Fps = jnp.array(Fps).reshape((ndet, 1, 1))
-    Fcs = jnp.array(Fcs).reshape((ndet, 1, 1))
-    fs = jnp.array(fs).reshape((1, nmode, 1))
-    gammas = jnp.array(gammas).reshape((1, nmode, 1))
-    Apxs = jnp.array(Apxs).reshape((1, nmode, 1))
-    Apys = jnp.array(Apys).reshape((1, nmode, 1))
-    Acxs = jnp.array(Acxs).reshape((1, nmode, 1))
-    Acys = jnp.array(Acys).reshape((1, nmode, 1))
+#     t0s = jnp.array(t0s).reshape((ndet, 1, 1))
+#     ts = jnp.array(ts).reshape((ndet, 1, nsamp))
+#     Fps = jnp.array(Fps).reshape((ndet, 1, 1))
+#     Fcs = jnp.array(Fcs).reshape((ndet, 1, 1))
+#     fs = jnp.array(fs).reshape((1, nmode, 1))
+#     gammas = jnp.array(gammas).reshape((1, nmode, 1))
+#     Apxs = jnp.array(Apxs).reshape((1, nmode, 1))
+#     Apys = jnp.array(Apys).reshape((1, nmode, 1))
+#     Acxs = jnp.array(Acxs).reshape((1, nmode, 1))
+#     Acys = jnp.array(Acys).reshape((1, nmode, 1))
 
-    return rd(ts - t0s, fs, gammas, Apxs, Apys, Acxs, Acys, Fps, Fcs)
+#     return rd(ts - t0s, fs, gammas, Apxs, Apys, Acxs, Acys, Fps, Fcs)
 
 def a_from_quadratures(Apx, Apy, Acx, Acy):
     A = 0.5*(jnp.sqrt(jnp.square(Acy + Apx) + jnp.square(Acx - Apy)) +
@@ -127,16 +124,23 @@ def flat_A_quadratures_prior(Apx_unit, Apy_unit, Acx_unit, Acy_unit):
     return 
 
 def get_quad_derived_quantities(design_matrices, quads, a_scale, store_h_det, store_h_det_mode, compute_h_det=False):
-    nifo, nmodes, ntimes = design_matrices.shape
-    apx = numpyro.deterministic('apx', quads[:nmodes] * a_scale)
-    apy = numpyro.deterministic('apy', quads[nmodes:2*nmodes] * a_scale)
-    acx = numpyro.deterministic('acx', quads[2*nmodes:3*nmodes] * a_scale)
-    acy = numpyro.deterministic('acy', quads[3*nmodes:] * a_scale)
+    nifo, nmodes4, ntimes = design_matrices.shape
+    nmodes = nmodes4 // 4
 
-    a = numpyro.deterministic('a', a_from_quadratures(apx, apy, acx, acy))
-    ellip = numpyro.deterministic('ellip', ellip_from_quadratures(apx, apy, acx, acy))
-    phi_r = numpyro.deterministic('phi_r', phiR_from_quadratures(apx, apy, acx, acy))
-    phi_l = numpyro.deterministic('phi_l', phiL_from_quadratures(apx, apy, acx, acy))
+    apx_unit = quads[:nmodes]
+    apy_unit = quads[nmodes:2*nmodes]
+    acx_unit = quads[2*nmodes:3*nmodes]
+    acy_unit = quads[3*nmodes:]
+
+    apx = numpyro.deterministic('apx', apx_unit * a_scale)
+    apy = numpyro.deterministic('apy', apy_unit * a_scale)
+    acx = numpyro.deterministic('acx', acx_unit * a_scale)
+    acy = numpyro.deterministic('acy', acy_unit * a_scale)
+
+    a = numpyro.deterministic('a', a_scale * a_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit))
+    ellip = numpyro.deterministic('ellip', ellip_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit))
+    phi_r = numpyro.deterministic('phi_r', phiR_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit))
+    phi_l = numpyro.deterministic('phi_l', phiL_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit))
     theta = numpyro.deterministic('theta', -0.5*(phi_r + phi_l))
     phi = numpyro.deterministic('phi', 0.5*(phi_r - phi_l))
 
@@ -145,7 +149,7 @@ def get_quad_derived_quantities(design_matrices, quads, a_scale, store_h_det, st
         hh = design_matrices * quads[jnp.newaxis,:,jnp.newaxis]
 
         for i in range(nmodes):
-            h_det_mode = h_det_mode.at[:,i,:].set(jnp.sum(hh[:,i:nmodes:,:], axis=1))
+            h_det_mode = h_det_mode.at[:,i,:].set(jnp.sum(hh[:,i::nmodes,:], axis=1))
         h_det = jnp.sum(h_det_mode, axis=1)
 
         if store_h_det_mode:
@@ -156,8 +160,8 @@ def get_quad_derived_quantities(design_matrices, quads, a_scale, store_h_det, st
         return a, h_det
 
 def make_model(modes : int | list[(int, int, int, int)], 
+               a_scale_max : float,
                marginalized : bool = True, 
-               a_scale_max : float = None, 
                m_min : float | None = None, m_max : float | None = None,
                chi_min : float = 0.0, chi_max : float = 0.99,
                df_min : None | list[None | float] = None, df_max : None | list[None | float] = None,
@@ -179,7 +183,8 @@ def make_model(modes : int | list[(int, int, int, int)],
         GW modes); and `ell` and `m` refer to the usual angular quantum numbers.
     """
 
-    def model(t0s, times, strains, ls, fps, fcs):
+    def model(times, strains, ls, fps, fcs):
+        times, strains, ls, fps, fcs = map(jnp.array, (times, strains, ls, fps, fcs))
 
         # Here is where the particular model choice is made:
         #
@@ -198,40 +203,41 @@ def make_model(modes : int | list[(int, int, int, int)],
                 f = numpyro.sample('f', dist.Uniform(f_min, f_max), sample_shape=(modes,))
                 g = numpyro.sample('g', dist.Uniform(g_min, g_max, support=dist.constraints.ordered_vector), sample_shape=(modes,))
         elif isinstance(modes, list):
-            fcs = []
-            gcs = []
+            fcoeffs = []
+            gcoeffs = []
             for mode in modes:
                 c = qnms.KerrMode(mode).coefficients
-                fcs.append(c[0])
-                gcs.append(c[1])
-            fcs = jnp.array(fcs)
-            gcs = jnp.array(gcs)
+                fcoeffs.append(c[0])
+                gcoeffs.append(c[1])
+            fcoeffs = jnp.array(fcoeffs)
+            gcoeffs = jnp.array(gcoeffs)
 
             m = numpyro.sample('m', dist.Uniform(m_min, m_max))
             chi = numpyro.sample('chi', dist.Uniform(chi_min, chi_max))
 
             f0 = FREF*MREF/m
-            f_gr = f0*chi_factors(chi, fcs)
-            g_gr = f0*chi_factors(chi, gcs)
+            f_gr = f0*chi_factors(chi, fcoeffs)
+            g_gr = f0*chi_factors(chi, gcoeffs)
 
             if df_min is None or df_max is None:
                 f = numpyro.deterministic('f', f_gr)
             else:
                 df_unit = numpyro.sample('df_unit', dist.Uniform(0, 1), sample_shape=(len(modes),))
-                df_min = jnp.array([0.0 if x is None else x for x in df_min])
-                df_max = jnp.array([0.0 if x is None else x for x in df_max])
+                # Don't want to shadow df_min and df_max
+                df_low = jnp.array([0.0 if x is None else x for x in df_min])
+                df_high = jnp.array([0.0 if x is None else x for x in df_max])
                 
-                df = numpyro.deterministic('df', df_unit*(df_max - df_min) + df_min)
+                df = numpyro.deterministic('df', df_unit*(df_high - df_low) + df_low)
                 f = numpyro.deterministic('f', f_gr * jnp.exp(df))
 
             if dg_min is None or dg_max is None:
                 g = numpyro.deterministic('g', g_gr)
             else:
                 dg_unit = numpyro.sample('dg_unit', dist.Uniform(0, 1), sample_shape=(len(modes),))
-                dg_min = jnp.array([0.0 if x is None else x for x in dg_min])
-                dg_max = jnp.array([0.0 if x is None else x for x in dg_max])
+                dg_low = jnp.array([0.0 if x is None else x for x in dg_min])
+                dg_high = jnp.array([0.0 if x is None else x for x in dg_max])
                 
-                dg = numpyro.deterministic('dg', dg_unit*(dg_max - dg_min) + dg_min)
+                dg = numpyro.deterministic('dg', dg_unit*(dg_high - dg_low) + dg_low)
                 g = numpyro.deterministic('g', g_gr * jnp.exp(dg))
         # At this point the frequencies `f` and damping rates `g` of the various
         # modes should be established, and we can proceed with the rest of the
@@ -243,13 +249,13 @@ def make_model(modes : int | list[(int, int, int, int)],
 
         if marginalized:
             a_scale = numpyro.sample('a_scale', dist.Uniform(0, a_scale_max), sample_shape=(len(modes),))
-            design_matrices = rd_design_matrix(t0s, times, f, g, fps, fcs, a_scale)
+            design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scale)
 
             mu = jnp.zeros(4*len(modes))
             lambda_inv = jnp.eye(4*len(modes))
             lambda_inv_chol = jnp.eye(4*len(modes))
             if not prior:
-                for i in range(len(t0s)):
+                for i in range(times.shape[0]):
                     mm = design_matrices[i,:,:].T # (ndet, 4*nmode, ntime) => (i, ntime, 4*nmode)
 
                     a_inv = lambda_inv + jnp.dot(mm.T, jsp.linalg.cho_solve((ls[i], True), mm))
@@ -292,7 +298,8 @@ def make_model(modes : int | list[(int, int, int, int)],
 
                 get_quad_derived_quantities(design_matrices, quads, a_scale, store_h_det, store_h_det_mode)
         else:
-            design_matrices = rd_design_matrix(t0s, times, f, g, fps, fcs, a_scale_max)
+            a_scales = a_scale_max*jnp.ones(len(modes))
+            design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scales)
             apx_unit = numpyro.sample('apx_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
             apy_unit = numpyro.sample('apy_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
             acx_unit = numpyro.sample('acx_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
@@ -313,6 +320,6 @@ def make_model(modes : int | list[(int, int, int, int)],
 
             if not prior:
                 for i, strain in enumerate(strains):
-                    numpyro.sample(f'strain_logl_{i}', dist.MultivariateNormal(h_det[i,:], scale_tril=ls[i]), obs=strain)
+                    numpyro.sample(f'logl_{i}', dist.MultivariateNormal(h_det[i,:], scale_tril=ls[i, :, :]), obs=strain)
 
     return model
