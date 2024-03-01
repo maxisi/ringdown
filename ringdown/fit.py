@@ -779,7 +779,7 @@ class Fit(object):
         if acf is not None:
             self.acfs[data.ifo] = acf
 
-    def load_data(self, path_input, ifos=None, **kws):
+    def load_data(self, path_input, ifos=None, channel=None, **kws):
         """Load data from disk.
 
         Additional arguments are passed to :meth:`ringdown.data.Data.read`.
@@ -789,14 +789,22 @@ class Fit(object):
         path_input : dict, str
             dictionary of data paths indexed by interferometer keys, or path
             string replacement pattern, e.g.,
-            ``'path/to/{i}-{ifo}_GWOSC_16KHZ_R1-1126259447-32.hdf5'``
-            where `i` and `ifo` will be respectively replaced by the first
-            letter and key for each detector listed in `ifos` (e.g., `H` and
-            `H1` for LIGO Hanford).
+            ``'path/to/{i}-{ifo}_GWOSC_16KHZ_R1-1126259447-32.hdf5'`` where `i`
+            and `ifo` will be respectively replaced by the first letter and key
+            for each detector listed in `ifos` (e.g., `H` and `H1` for LIGO
+            Hanford).
 
         ifos : list
-            list of detector keys (e.g., ``['H1', 'L1']``), not required 
-            if `path_input` is a dictionary.
+            list of detector keys (e.g., ``['H1', 'L1']``), not required if
+            `path_input` is a dictionary.
+        
+        channel : dict, str
+            dictionary of channel names indexed by interferometer keys, or
+            channel name string replacement pattern, e.g.,
+            ``'H1:GWOSC-16KHZ_R1_STRAIN'`` where `i` and `ifo` will be
+            respectively replaced by the first letter and key for each detector
+            listed in `ifos` (e.g., `H` and `H1` for LIGO Hanford).  Only used
+            when `kind = 'frame'`.
         """
         # TODO: add ability to generate synthetic data here?
         if isinstance(path_input, str):
@@ -812,9 +820,24 @@ class Fit(object):
         else:
             path_dict = path_input
         path_dict = {k: os.path.abspath(v) for k,v in path_dict.items()}
+        if channel is not None:
+            if isinstance(channel, str):
+                try:
+                    channel_dict = literal_eval(channel)
+                except (ValueError,SyntaxError):
+                    if ifos is None:
+                        raise ValueError("must provide IFO list.")
+                    channel_dict = {}
+                    for ifo in ifos:
+                        i = '' if not ifo else ifo[0]
+                        channel_dict[ifo] = channel.format(i=i, ifo=ifo)
+            else:
+                channel_dict = channel
+        else:
+            channel_dict = {k: None for k in path_dict.keys()}
         tslide = kws.pop('slide', {}) or {}
         for ifo, path in path_dict.items():
-            self.add_data(Data.read(path, ifo=ifo, **kws))
+            self.add_data(Data.read(path, ifo=ifo, channel=channel_dict[ifo], **kws))
         # apply time slide if requested
         for i, dt in tslide.items():
             d = self.data[i]

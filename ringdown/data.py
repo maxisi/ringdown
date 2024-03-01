@@ -71,12 +71,14 @@ class Series(pd.Series):
                 return cls(h, index=time, **kws)
         elif kind == 'frame':
             channel = kws.pop('channel')
+            if channel is None:
+                raise KeyError('channel must be specificed for frame files')
             try:
                 from gwpy.timeseries import TimeSeries
             except ImportError:
                 raise ImportError("cannot load frame files without gwpy")
             ts = TimeSeries.read(path, channel)
-            return cls(ts.value, index=ts.times, **kws)
+            return cls(ts.value, index=np.array(ts.times), **kws) # gwpy puts units on its times, we remove them.
         elif kind in ['hdf', 'csv']:
             read_func = getattr(pd, 'read_{}'.format(kind))
             # get list of arguments accepted by pandas read function in order
