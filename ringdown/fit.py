@@ -904,7 +904,6 @@ class Fit(object):
         from_psd : bool
             read in a PSD and convert to ACF.
         """
-        kws['header'] = kws.get('header', None)
         if isinstance(path_input, str):
             try:
                 path_dict = literal_eval(path_input)
