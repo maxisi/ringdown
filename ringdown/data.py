@@ -51,6 +51,7 @@ class Series(pd.Series):
             series loaded from disk
         """
         kind = (kind or '').lower()
+        channel = kws.pop('channel', None)
         if not kind:
             # attempt to guess filetype
             ext = os.path.splitext(path)[1].lower().strip('.')
@@ -70,7 +71,6 @@ class Series(pd.Series):
                 time = t0 + dt*arange(len(h))
                 return cls(h, index=time, **kws)
         elif kind == 'frame':
-            channel = kws.pop('channel')
             if channel is None:
                 raise KeyError('channel must be specificed for frame files')
             try:
@@ -96,9 +96,11 @@ class Series(pd.Series):
             if kind == 'csv' and 'float_precision' not in read_kws:
                 logging.warning("specify `float_precision='round_trip'` or risk "
                                 "strange errors due to precission loss")
+            if kind == 'csv':
+                cls_kws['header'] = kws.get('header', None)
             # squeeze if needed (since sequeeze argument no longer accepted)
             d = read_func(path, **read_kws)
-            if squeeze:
+            if squeeze and not isinstance(d, pd.Series):
                 d = d.squeeze("columns")
             return cls(d, **cls_kws)
         else:
