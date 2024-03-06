@@ -819,12 +819,17 @@ class Fit(object):
         keys = ('chain', 'draw', 'ifo', 'time_index')
         self.result.posterior['whitened_residual'] = \
             self.result.posterior.whitened_residual.transpose(*keys)
+        lnlike = -self.result.posterior.whitened_residual**2/2
         try:
-            self.result.log_likelihood['whitened_pointwise_loglike'] =\
-                -self.result.posterior.whitened_residual**2/2
+            self.result.log_likelihood['whitened_pointwise_loglike'] = lnlike    
         except AttributeError:
             # We assume that log-likelihood isn't created yet.
-            self.result.add_groups(dict(log_likelihood=dict_to_dataset({'whitened_pointwise_loglike': -self.result.posterior.whitened_residual**2/2}, coords=self.result.posterior.coords, dims={'whitened_pointwise_loglike': ['chain', 'draw', 'ifo', 'time_index']})))
+            self.result.add_groups(dict(
+                log_likelihood=dict_to_dataset(
+                    {'whitened_pointwise_loglike': lnlike},
+                    coords=self.result.posterior.coords,
+                    dims={'whitened_pointwise_loglike': keys}
+                    )))
 
     def add_data(self, data, time=None, ifo=None, acf=None):
         """Add data to fit.
