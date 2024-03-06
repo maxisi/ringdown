@@ -384,7 +384,7 @@ class Fit(object):
         return self._pymc_model
 
     @classmethod
-    def from_config(cls, config_input,no_cond=False):
+    def from_config(cls, config_input, no_cond=False):
         """Creates a :class:`Fit` instance from a configuration file.
         
         Has the ability to load and condition data, as well as to inject a
@@ -416,10 +416,10 @@ class Fit(object):
         def try_parse(x):
             try:
                 return float(x)
-            except (TypeError,ValueError):
+            except (TypeError, ValueError):
                 try:
                     return literal_eval(x)
-                except (TypeError,ValueError,SyntaxError):
+                except (TypeError, ValueError, SyntaxError):
                     if x == "inf":
                         return np.inf
                     else:
