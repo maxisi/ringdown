@@ -31,7 +31,7 @@ def np2(x):
 
 Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 
-MODELS = ('ftau', 'mchi', 'mchi_aligned', 'mchi_marginal', 'mchiq')
+MODELS = ('ftau', 'ftau_marginal', 'mchi', 'mchi_aligned', 'mchi_marginal', 'mchiq')
 
 class Fit(object):
     """ A ringdown fit. Contains all the information required to setup and run
@@ -200,6 +200,18 @@ class Fit(object):
                 f_min=None,
                 gamma_max=None,
                 gamma_min=None,
+                prior_run=False
+            ))
+        elif self.model == 'ftau_marginal':
+            del default['A_scale']
+            default.update(dict(
+                A_scale_max=None,
+                f_max=None,
+                f_min=None,
+                gamma_max=None,
+                gamma_min=None,
+                order_fs=False,
+                order_gammas=False,
                 prior_run=False
             ))
         elif self.model == 'mchi':
@@ -379,6 +391,8 @@ class Fit(object):
                 self._pymc_model = model.make_mchi_aligned_model(**self.model_input)
             elif self.model == 'ftau':
                 self._pymc_model = model.make_ftau_model(**self.model_input)
+            elif self.model == 'ftau_marginal':
+                self._pymc_model = model.make_ftau_marginalized_model(**self.model_input)
             else:
                 raise NotImplementedError(f'unrecognized model {self.model}')
         return self._pymc_model
@@ -777,7 +791,7 @@ class Fit(object):
                         kws['draws'] = draws
                         rkws.update(kws)
 
-        if self.model == 'mchi_marginal' and not prior:
+        if 'marginal' in self.model and not prior:
             # This model doesn't have observables because of its structure, so we have to add them in later
             od_dict = {}
             for ifo in self.ifos:
@@ -820,9 +834,9 @@ class Fit(object):
         self.result.posterior['whitened_residual'] = \
             self.result.posterior.whitened_residual.transpose(*keys)
         lnlike = -self.result.posterior.whitened_residual**2/2
-        try:
+        if hasattr(self.result, 'log_likelihood'):
             self.result.log_likelihood['whitened_pointwise_loglike'] = lnlike    
-        except AttributeError:
+        else:
             # We assume that log-likelihood isn't created yet.
             self.result.add_groups(dict(
                 log_likelihood=dict_to_dataset(
@@ -1120,6 +1134,7 @@ class Fit(object):
         antenna_patterns = antenna_patterns or {}
         for ifo, data in self.data.items():
             # TODO: should we have an elliptical+ftau model?
+            # NOTE: YES, currently ftau_marginal
             if ifo is None or self.model=='ftau':
                 dt_ifo = 0
                 self.antenna_patterns[ifo] = (1, 1)

@@ -1,4 +1,4 @@
-__all__ = ['make_mchi_model', 'make_mchi_aligned_model', 'make_ftau_model']
+__all__ = ['make_mchi_model', 'make_mchi_aligned_model', 'make_ftau_model', 'make_ftau_marginalized_model']
 
 import pytensor.tensor as at
 import pytensor.tensor.slinalg as atl
@@ -685,3 +685,156 @@ def make_ftau_model(t0, times, strains, Ls, **kwargs):
         return model
 
 
+def make_ftau_marginalized_model(t0, times, strains, Ls, Fps, Fcs, order_fs=False,
+                                 order_gammas=False, **kwargs):
+    f_min = kwargs.pop("f_min")
+    f_max = kwargs.pop("f_max")
+    gamma_min = kwargs.pop("gamma_min")
+    gamma_max = kwargs.pop("gamma_max")
+    A_scale_max = kwargs.pop("A_scale_max")
+    # flat_A = kwargs.pop("flat_A", True)
+    nmode = kwargs.pop("nmode", 1)
+    prior_run = kwargs.pop('prior_run', False)
+
+    # if np.isscalar(flat_A):
+    #     flat_A = np.repeat(flat_A,nmode)
+    # elif len(flat_A)!=nmode:
+    #     raise ValueError("flat_A must either be a scalar or array of length equal to the number of modes")
+    
+    if not np.isscalar(f_min) and not np.isscalar(f_max):
+        if len(f_min)!= len(f_max) or len(f_min)!= nmode:
+            raise ValueError("f_min, f_max must be scalar or arrays of length "
+                             "equal to the number of modes")
+        for el in np.arange(len(f_min)):
+            if f_min[el] == f_max[el]:
+                raise ValueError("f_min and f_max must not be equal")
+    
+    if not np.isscalar(gamma_min) and not np.isscalar(gamma_max):
+        if len(gamma_min)!= len(gamma_max) or len(gamma_min)!= nmode:
+            raise ValueError("gamma_min, gamma_max must be scalar or arrays of length "
+                             "equal to the number of modes")
+        for el in np.arange(len(gamma_min)):
+            if gamma_min[el] == gamma_max[el]:
+                raise ValueError("gamma_min and gamma_max must not be equal")
+
+    ndet = len(t0)
+    nt = len(times[0])
+
+    ifos = kwargs.pop('ifos', np.arange(ndet))
+    modes = kwargs.pop('modes', np.arange(nmode))
+
+    coords = {
+        'ifo': ifos,
+        'mode': modes,
+        'time_index': np.arange(nt)
+    }
+
+    Llogdet = np.array([np.sum(np.log(np.diag(L))) for L in Ls])
+
+    with pm.Model(coords=coords) as model:
+        pm.ConstantData('times', times, dims=['ifo', 'time_index'])
+        pm.ConstantData('t0', t0, dims=['ifo'])
+        pm.ConstantData('L', Ls, dims=['ifo', 'time_index', 'time_index'])
+        
+        if order_fs:
+            f = pm.Uniform('f', f_min, f_max, dims=['mode'],
+                           transform=pm.distributions.transforms.multivariate_ordered)
+        else:
+            f = pm.Uniform("f", f_min, f_max, dims=['mode'])
+
+        if order_gammas:
+            gamma = pm.Uniform('gamma', gamma_min, gamma_max, dims=['mode'],
+                            transform=pm.distributions.transforms.multivariate_ordered)
+        else:
+            gamma = pm.Uniform('gamma', gamma_min, gamma_max, dims=['mode'])
+
+        A_scale = pm.Uniform('A_scale', 0, A_scale_max, dims=['mode'])
+
+        Apx_unit = pm.Normal("Apx_unit", dims=['mode'])
+        Apy_unit = pm.Normal("Apy_unit", dims=['mode'])
+        Acx_unit = pm.Normal("Acx_unit", dims=['mode'])
+        Acy_unit = pm.Normal("Acy_unit", dims=['mode'])
+
+        tau = pm.Deterministic('tau', 1/gamma, dims=['mode'])
+        Q = pm.Deterministic('Q', np.pi*f*tau, dims=['mode'])
+
+        # Priors:
+
+        # Flat in M-chi already
+
+        # Flat prior on the delta-fs and delta-taus
+
+        design_matrices = rd_design_matrix(t0, times, f, gamma, Fps, Fcs, A_scale)
+
+        mu = at.zeros(4*nmode)
+        Lambda_inv = at.eye(4*nmode)
+        Lambda_inv_chol = at.eye(4*nmode)
+                
+        if not prior_run:
+            for i, key in enumerate(ifos):
+                MM = design_matrices[i, :, :].T
+                   
+                A_inv = Lambda_inv + at.dot(MM.T, _atl_cho_solve((Ls[i], True), MM))
+                A_inv_chol = atl.cholesky(A_inv)
+            
+                a = _atl_cho_solve((A_inv_chol, True), at.dot(Lambda_inv, mu) + at.dot(MM.T, _atl_cho_solve((Ls[i], True), strains[i])))
+                b = at.dot(MM, mu)
+    
+                Blogsqrtdet = Llogdet[i] - at.sum(at.log(at.diag(Lambda_inv_chol))) + at.sum(at.log(at.diag(A_inv_chol)))
+
+                r = strains[i] - b
+                Cinv_r = _atl_cho_solve((Ls[i], True), r)
+                MAMTCinv_r = at.dot(MM, _atl_cho_solve((A_inv_chol, True), at.dot(MM.T, Cinv_r)))
+                CinvMAMTCinv_r = _atl_cho_solve((Ls[i], True), MAMTCinv_r)
+                logl = -0.5*at.dot(r, Cinv_r - CinvMAMTCinv_r) - Blogsqrtdet
+
+                if isinstance(key, bytes):
+                    # Don't want byte strings in our names!
+                    key = key.decode('utf-8')
+                
+                pm.Potential(f'strain_{key}', logl)
+                    
+                mu = a
+                Lambda_inv = A_inv
+                Lambda_inv_chol = A_inv_chol
+        else:
+            # We're done.  There is no likelihood.
+            pass
+                
+        # Lambda_inv_chol.T: Lambda_inv = Lambda_inv_chol * Lambda_inv_chol.T,
+        # so Lambda = (Lambda_inv_chol.T)^{-1} Lambda_inv_chol^{-1} To achieve
+        # the desired covariance, we can *right multiply* iid N(0,1) variables
+        # by Lambda_inv_chol^{-1}, so that y = x Lambda_inv_chol^{-1} has
+        # covariance < y^T y > = (Lambda_inv_chol^{-1}).T < x^T x >
+        # Lambda_inv_chol^{-1} = (Lambda_inv_chol^{-1}).T I Lambda_inv_chol^{-1}
+        # = Lambda.
+        theta = mu + atl.solve(Lambda_inv_chol.T, at.concatenate((Apx_unit, Apy_unit, Acx_unit, Acy_unit)))
+
+        Apx = pm.Deterministic("Apx", theta[:nmode] * A_scale, dims=['mode'])
+        Apy = pm.Deterministic("Apy", theta[nmode:2*nmode] * A_scale, dims=['mode'])
+        Acx = pm.Deterministic("Acx", theta[2*nmode:3*nmode] * A_scale, dims=['mode'])
+        Acy = pm.Deterministic("Acy", theta[3*nmode:] * A_scale, dims=['mode'])
+
+        A = pm.Deterministic("A", a_from_quadratures(Apx, Apy, Acx, Acy),
+                             dims=['mode'])
+        ellip = pm.Deterministic("ellip",
+            ellip_from_quadratures(Apx, Apy, Acx, Acy),
+            dims=['mode'])
+        
+        phiR = pm.Deterministic("phiR",
+             phiR_from_quadratures(Apx, Apy, Acx, Acy),
+             dims=['mode'])
+        phiL = pm.Deterministic("phiL",
+             phiL_from_quadratures(Apx, Apy, Acx, Acy),
+             dims=['mode'])
+        theta = pm.Deterministic("theta", -0.5*(phiR + phiL), dims=['mode'])
+        phi = pm.Deterministic("phi", 0.5*(phiR - phiL), dims=['mode'])
+
+        h_det_mode = pm.Deterministic("h_det_mode",
+                compute_h_det_mode(t0, times, Fps, Fcs, f, gamma,
+                                   Apx, Apy, Acx, Acy),
+                dims=['ifo', 'mode', 'time_index'])
+        h_det = pm.Deterministic("h_det", at.sum(h_det_mode, axis=1),
+                                 dims=['ifo', 'time_index']) 
+                
+        return model
