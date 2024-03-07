@@ -692,14 +692,8 @@ def make_ftau_marginalized_model(t0, times, strains, Ls, Fps, Fcs, order_fs=Fals
     gamma_min = kwargs.pop("gamma_min")
     gamma_max = kwargs.pop("gamma_max")
     A_scale_max = kwargs.pop("A_scale_max")
-    # flat_A = kwargs.pop("flat_A", True)
     nmode = kwargs.pop("nmode", 1)
     prior_run = kwargs.pop('prior_run', False)
-
-    # if np.isscalar(flat_A):
-    #     flat_A = np.repeat(flat_A,nmode)
-    # elif len(flat_A)!=nmode:
-    #     raise ValueError("flat_A must either be a scalar or array of length equal to the number of modes")
     
     if not np.isscalar(f_min) and not np.isscalar(f_max):
         if len(f_min)!= len(f_max) or len(f_min)!= nmode:
@@ -738,13 +732,15 @@ def make_ftau_marginalized_model(t0, times, strains, Ls, Fps, Fcs, order_fs=Fals
         
         if order_fs:
             f = pm.Uniform('f', f_min, f_max, dims=['mode'],
-                           transform=pm.distributions.transforms.multivariate_ordered)
+                           testval=np.linspace(f_min, f_max, nmode),
+                           transform=pm.distributions.transforms.ordered)
         else:
             f = pm.Uniform("f", f_min, f_max, dims=['mode'])
 
         if order_gammas:
             gamma = pm.Uniform('gamma', gamma_min, gamma_max, dims=['mode'],
-                            transform=pm.distributions.transforms.multivariate_ordered)
+                               testval=np.linspace(gamma_min, gamma_max, nmode),
+                               transform=pm.distributions.transforms.ordered)
         else:
             gamma = pm.Uniform('gamma', gamma_min, gamma_max, dims=['mode'])
 
