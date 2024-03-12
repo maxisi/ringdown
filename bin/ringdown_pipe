@@ -43,8 +43,8 @@ parser.add_argument('--force', action='store_true', help="Run even if output "
                     "repeated).")
 parser.add_argument('-s', '--submit', action='store_true', help="Submit slurm "
                     "job automatically.")
-parser.add_argument('--nodes', default=20, type=int,
-                    help="Maximum number of nodes to request through SLURM.")
+parser.add_argument('--ntasks', default=-1, type=int,
+                    help="Maximum number of tasks request through SLURM.")
 parser.add_argument('--seed', default=None, type=int, help="Random seed.")
 parser.add_argument('-v', '--verbose', action='store_true')
 
@@ -225,21 +225,24 @@ logging.info("Done processing {} runs.".format(len(t0s)))
 # SLURM WORKFLOW
 ##############################################################################
 
-# rusty Broadwell nodes have 28 cores, so each can fit 7 4-core jobs at a time
-# given that, make the number of jobs executed at a time a multiple of 7
-NSLURM = 7*args.nodes
+# If given args.ntasks, then request that many tasks; otherwise try to have as
+# many tasks as there are runs to process.
+if args.ntasks < 0:
+    NTASK = len(t0s)
+else:
+    NTASK = args.ntasks
 NCPU = 4
 
 # a user may allocate up to 1280 cores at one time in a center partition, so
 # issue a warning if this limit will be exceeded
-if NSLURM*NCPU > 1280:
+if NTASK*NCPU > 1280:
     w = "Requested number of cores ({}) above 1280 user limit."
-    logging.warning(w.format(NSLURM*NCPU))
+    logging.warning(w.format(NTASK*NCPU))
 
 EXE = [
     '#! /usr/bin/env bash',
     'cd {}'.format(outdir),
-    'sbatch -p cca -n {} -c {} disBatch {}'.format(NSLURM, NCPU, PATHS['run_task']),
+    'sbatch -p cca -n {} -c {} disBatch {}'.format(NTASK, NCPU, PATHS['run_task']),
     'cd -',
 ]
 
