@@ -842,7 +842,7 @@ class Fit(object):
                 log_likelihood=dict_to_dataset(
                     {'whitened_pointwise_loglike': lnlike},
                     coords=self.result.posterior.coords,
-                    dims={'whitened_pointwise_loglike': keys}
+                    dims={'whitened_pointwise_loglike': list(keys)}
                     )))
 
     def add_data(self, data, time=None, ifo=None, acf=None):
