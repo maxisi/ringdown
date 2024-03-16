@@ -167,8 +167,7 @@ def make_model(modes : int | list[(int, int, int, int)],
                flat_amplitude_prior : bool = False,
                mode_ordering : None | str = None,
                prior : bool = False,               
-               predictive : bool = True, store_h_det : bool = True, store_h_det_mode : bool = True,
-               **kwargs):
+               predictive : bool = True, store_h_det : bool = True, store_h_det_mode : bool = True):
     """
     Arguments
     ---------
@@ -177,6 +176,68 @@ def make_model(modes : int | list[(int, int, int, int)],
         each entry should be of the form `(p, s, ell, m)`, where `p` is `1` for
         prograde `-1` for retrograde; `s` is the spin weight (`-2` for the usual
         GW modes); and `ell` and `m` refer to the usual angular quantum numbers.
+
+    a_scale_max : float
+        The maximum value of the amplitude scale parameter.  This is used to
+        define the prior on the amplitude scale parameter.
+
+    marginalized : bool
+        Whether or not to marginalize over the quadrature amplitudes
+        analytically.
+
+    m_min : float
+        The minimum mass of the black hole in solar masses.
+
+    m_max : float
+        The maximum mass of the black hole in solar masses.
+
+    chi_min : float
+        The minimum dimensionless spin of the black hole.
+
+    chi_max : float
+        The maximum dimensionless spin of the black hole.
+
+    df_min : None or float or list[None or float]
+        The minimum fractional deviation from the GR frequency.  If a list, then
+        it should have the same length as `modes`.
+
+    df_max : None or float or list[None or float]
+        The maximum fractional deviation from the GR frequency.  If a list, then
+        it should have the same length as `modes`.
+
+    dg_min : None or float or list[None or float]
+        The minimum fractional deviation from the GR damping rate.  If a list,
+        then it should have the same length as `modes`.
+
+    dg_max : None or float or list[None or float]
+        The maximum fractional deviation from the GR damping rate.  If a list,
+        then it should have the same length as `modes`.
+
+    flat_amplitude_prior : bool
+        Whether or not to impose a flat prior on the amplitude scale parameter.
+        This is only relevant if `marginalized` is `False`.
+
+    mode_ordering : None or str
+        Relevant to the case where `modes` is an integer, and the model consists
+        of arbitrary damped sinusoids.  If `None`, then the frequencies and
+        damping rates are only constrained by the bounds `f_min`, `f_max`,
+        `g_min`, and `g_max`.  If `'f'`, then the frequencies are constrained to
+        be in increasing order; if `'g'`, then the damping rates are constrained
+        to be in increasing order.
+
+    prior : bool
+        Whether or not to compute the likelihood.  If `True`, then the
+        likelihood is not computed, and the model is used for prior predictive
+        sampling.
+
+    predictive : bool
+        Whether to generate the quadrature amplitudes when `marginalized=True`.
+
+    store_h_det : bool
+        Whether to store the detector-frame waveform in the model.
+
+    store_h_det_mode : bool
+        Whether to store the mode-by-mode detector-frame waveform in the model.
     """
 
     n_modes = modes if isinstance(modes, int) else len(modes)
