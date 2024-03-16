@@ -9,10 +9,6 @@ import numpyro.distributions as dist
 from . import qnms
 import warnings
 
-# reference frequency and mass values to translate linearly between the two
-FREF = 2985.668287014743
-MREF = 68.0
-
 def rd(ts, f, gamma, Apx, Apy, Acx, Acy, Fp, Fc):
     """Generate a ringdown waveform as it appears in a detector.
     
@@ -164,12 +160,12 @@ def make_model(modes : int | list[(int, int, int, int)],
                marginalized : bool = True, 
                m_min : float | None = None, m_max : float | None = None,
                chi_min : float = 0.0, chi_max : float = 0.99,
-               df_min : None | list[None | float] = None, df_max : None | list[None | float] = None,
-               dg_min : None | list[None | float] = None, dg_max : None | list[None | float] = None,
-               f_min : None | list[float] = None, f_max : None | list[float] = None,
-               g_min : None | list[float] = None, g_max : None | list[float] = None,
+               df_min : None | float | list[None | float] = None, df_max : None | float | list[None | float] = None,
+               dg_min : None | float | list[None | float] = None, dg_max : None | float | list[None | float] = None,
+               f_min : None | float | list[float] = None, f_max : None | float | list[float] = None,
+               g_min : None | float | list[float] = None, g_max : None | float | list[float] = None,
                flat_amplitude_prior : bool = False,
-               modes_ordered_by_frequency : bool = False,
+               mode_ordering : None | str = None,
                prior : bool = False,               
                predictive : bool = False, store_h_det : bool = True, store_h_det_mode : bool = True,
                **kwargs):
@@ -183,11 +179,35 @@ def make_model(modes : int | list[(int, int, int, int)],
         GW modes); and `ell` and `m` refer to the usual angular quantum numbers.
     """
 
+    n_modes = modes if isinstance(modes, int) else len(modes)
+
+    if mode_ordering is not None:
+        if mode_ordering not in ['f', 'g']:
+            raise ValueError('mode_ordering must be None, "f", or "g"')
+        elif mode_ordering == 'f':
+            if not np.isscalar(f_min) or not np.isscalar(f_max):
+                raise ValueError('mode_ordering is "f" but f_min and/or f_max are not scalars')
+        elif mode_ordering == 'g':
+            if not np.isscalar(g_min) or not np.isscalar(g_max):
+                raise ValueError('mode_ordering is "g" but g_min and/or g_max are not scalars')
+            
+    # if df_min and df_max are floats, then make it an array
+    if df_min is not None and np.isscalar(df_min):
+        df_min = [df_min]*n_modes
+    if df_max is not None and np.isscalar(df_max):
+        df_max = [df_max]*n_modes
+    if dg_min is not None and np.isscalar(dg_min):
+        dg_min = [dg_min]*n_modes
+    if dg_max is not None and np.isscalar(dg_max):
+        dg_max = [dg_max]*n_modes
+
     def model(times, strains, ls, fps, fcs,
               predictive : bool = predictive, 
               store_h_det : bool = store_h_det, 
               store_h_det_mode : bool = store_h_det_mode):
         times, strains, ls, fps, fcs = map(jnp.array, (times, strains, ls, fps, fcs))
+
+        n_det = times.shape[0]
 
         # Here is where the particular model choice is made:
         #
@@ -199,12 +219,15 @@ def make_model(modes : int | list[(int, int, int, int)],
         # beyond-Kerr model, this is where you would put your logic to implement
         # it.
         if isinstance(modes, int):
-            if modes_ordered_by_frequency:
+            if mode_ordering == 'f':
                 f = numpyro.sample('f', dist.Uniform(f_min, f_max, support=dist.constraints.ordered_vector), sample_shape=(modes,))
                 g = numpyro.sample('g', dist.Uniform(g_min, g_max), sample_shape=(modes,))
-            else:
+            elif mode_ordering == 'g':
                 f = numpyro.sample('f', dist.Uniform(f_min, f_max), sample_shape=(modes,))
                 g = numpyro.sample('g', dist.Uniform(g_min, g_max, support=dist.constraints.ordered_vector), sample_shape=(modes,))
+            else:
+                f = numpyro.sample('f', dist.Uniform(f_min, f_max), sample_shape=(modes,))
+                g = numpyro.sample('g', dist.Uniform(g_min, g_max), sample_shape=(modes,))
         elif isinstance(modes, list):
             fcoeffs = []
             gcoeffs = []
@@ -218,7 +241,7 @@ def make_model(modes : int | list[(int, int, int, int)],
             m = numpyro.sample('m', dist.Uniform(m_min, m_max))
             chi = numpyro.sample('chi', dist.Uniform(chi_min, chi_max))
 
-            f0 = FREF*MREF/m
+            f0 = 1 / (m*qnms.T_MSUN)
             f_gr = f0*chi_factors(chi, fcoeffs)
             g_gr = f0*chi_factors(chi, gcoeffs)
 
@@ -258,13 +281,13 @@ def make_model(modes : int | list[(int, int, int, int)],
             lambda_inv = jnp.eye(4*len(modes))
             lambda_inv_chol = jnp.eye(4*len(modes))
             if not prior:
-                for i in range(times.shape[0]):
+                for i in range(n_det):
                     mm = design_matrices[i,:,:].T # (ndet, 4*nmode, ntime) => (i, ntime, 4*nmode)
                     l = ls[i,:,:]
                     s = strains[i,:]
 
                     a_inv = lambda_inv + jnp.dot(mm.T, jsp.linalg.cho_solve((l, True), mm))
-                    a_inv_chol = jsp.linalg.cholesky(a_inv)
+                    a_inv_chol = jsp.linalg.cholesky(a_inv, lower=True)
 
                     a = jsp.linalg.cho_solve((a_inv_chol, True), jnp.dot(lambda_inv, mu) + jnp.dot(mm.T, jsp.linalg.cho_solve((l, True), s)))
 
@@ -303,7 +326,7 @@ def make_model(modes : int | list[(int, int, int, int)],
 
                 get_quad_derived_quantities(design_matrices, quads, a_scale, store_h_det, store_h_det_mode)
         else:
-            a_scales = a_scale_max*jnp.ones(len(modes))
+            a_scales = a_scale_max*jnp.ones(n_modes)
             design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scales)
             apx_unit = numpyro.sample('apx_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
             apy_unit = numpyro.sample('apy_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
