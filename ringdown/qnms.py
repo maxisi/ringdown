@@ -7,7 +7,12 @@ from collections import namedtuple
 
 T_MSUN = lal.MSUN_SI * lal.G_SI / lal.C_SI**3
 
-ModeIndex = namedtuple('ModeIndex', ['p', 's', 'l', 'm', 'n'])
+ModeIndexBase = namedtuple('ModeIndex', ['p', 's', 'l', 'm', 'n'])
+
+class ModeIndex(ModeIndexBase):
+    def to_bytestring(self):
+        s = f"p={self.p}, s={self.s}, l={self.l}, m={self.m}, n={self.n}"
+        return bytes(s, 'utf-8')
 
 def construct_mode_list(modes):
     if modes is None:

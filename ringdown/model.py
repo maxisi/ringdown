@@ -1,13 +1,11 @@
-__all__ = ['make_model']
+__all__ = ['make_model', 'get_model_dimensions']
 
-from dataclasses import dataclass
+import numpy as np
 import jax.numpy as jnp
 import jax.scipy as jsp
-import numpy as np
 import numpyro
 import numpyro.distributions as dist
 from . import qnms
-import warnings
 
 def rd(ts, f, gamma, Apx, Apy, Acx, Acy, Fp, Fc):
     """Generate a ringdown waveform as it appears in a detector.
@@ -62,7 +60,9 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales):
     ct = jnp.cos(2*np.pi*f*ts)
     st = jnp.sin(2*np.pi*f*ts)
     decay = jnp.exp(-gamma*ts)
-    return jnp.concatenate((Ascales*Fp*decay*ct, Ascales*Fp*decay*st, Ascales*Fc*decay*ct, Ascales*Fc*decay*st), axis=1)
+    return jnp.concatenate((Ascales*Fp*decay*ct, Ascales*Fp*decay*st,
+                            Ascales*Fc*decay*ct, Ascales*Fc*decay*st), 
+                            axis=1)
 
 def chi_factors(chi, coeffs):
     log1mc = jnp.log1p(-chi)
@@ -72,17 +72,6 @@ def chi_factors(chi, coeffs):
     v = jnp.stack([chi, jnp.ones_like(chi), log1mc, log1mc2,
                    log1mc3, log1mc4])
     return jnp.dot(coeffs, v)
-
-def a_from_quadratures(Apx, Apy, Acx, Acy):
-    A = 0.5*(jnp.sqrt(jnp.square(Acy + Apx) + jnp.square(Acx - Apy)) +
-             jnp.sqrt(jnp.square(Acy - Apx) + jnp.square(Acx + Apy)))
-    return A
-
-def ellip_from_quadratures(Apx, Apy, Acx, Acy):
-    A = a_from_quadratures(Apx, Apy, Acx, Acy)
-    e = 0.5*(jnp.sqrt(jnp.square(Acy + Apx) + jnp.square(Acx - Apy)) -
-             jnp.sqrt(jnp.square(Acy - Apx) + jnp.square(Acx + Apy))) / A
-    return e
 
 def Aellip_from_quadratures(Apx, Apy, Acx, Acy):
     # should be slightly cheaper than calling the two functions separately
@@ -98,10 +87,8 @@ def phiR_from_quadratures(Apx, Apy, Acx, Acy):
 def phiL_from_quadratures(Apx, Apy, Acx, Acy):
     return jnp.arctan2(-Acx - Apy, -Acy + Apx)
 
-def flat_A_quadratures_prior(Apx_unit, Apy_unit, Acx_unit, Acy_unit):
-    return 
-
-def get_quad_derived_quantities(design_matrices, quads, a_scale, store_h_det, store_h_det_mode, compute_h_det=False):
+def get_quad_derived_quantities(design_matrices, quads, a_scale, store_h_det, 
+                                store_h_det_mode, compute_h_det=False):
     nifo, nmodes4, ntimes = design_matrices.shape
     nmodes = nmodes4 // 4
 
@@ -115,8 +102,9 @@ def get_quad_derived_quantities(design_matrices, quads, a_scale, store_h_det, st
     acx = numpyro.deterministic('acx', acx_unit * a_scale)
     acy = numpyro.deterministic('acy', acy_unit * a_scale)
 
-    a = numpyro.deterministic('a', a_scale * a_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit))
-    ellip = numpyro.deterministic('ellip', ellip_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit))
+    a_norm, e = Aellip_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit)
+    a = numpyro.deterministic('a', a_scale * a_norm)
+    ellip = numpyro.deterministic('ellip', e)
     phi_r = numpyro.deterministic('phi_r', phiR_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit))
     phi_l = numpyro.deterministic('phi_l', phiL_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit))
     theta = numpyro.deterministic('theta', -0.5*(phi_r + phi_l))
@@ -140,27 +128,35 @@ def get_quad_derived_quantities(design_matrices, quads, a_scale, store_h_det, st
 def make_model(modes : int | list[(int, int, int, int)], 
                a_scale_max : float,
                marginalized : bool = True, 
-               m_min : float | None = None, m_max : float | None = None,
-               chi_min : float = 0.0, chi_max : float = 0.99,
-               df_min : None | float | list[None | float] = None, df_max : None | float | list[None | float] = None,
-               dg_min : None | float | list[None | float] = None, dg_max : None | float | list[None | float] = None,
-               f_min : None | float | list[float] = None, f_max : None | float | list[float] = None,
-               g_min : None | float | list[float] = None, g_max : None | float | list[float] = None,
+               m_min : float | None = None,
+               m_max : float | None = None,
+               chi_min : float = 0.0,
+               chi_max : float = 0.99,
+               df_min : None | float | list[None | float] = None,
+               df_max : None | float | list[None | float] = None,
+               dg_min : None | float | list[None | float] = None,
+               dg_max : None | float | list[None | float] = None,
+               f_min : None | float | list[float] = None,
+               f_max : None | float | list[float] = None,
+               g_min : None | float | list[float] = None,
+               g_max : None | float | list[float] = None,
                flat_amplitude_prior : bool = False,
                mode_ordering : None | str = None,
                prior : bool = False,               
-               predictive : bool = True, store_h_det : bool = True, store_h_det_mode : bool = True):
+               predictive : bool = True, 
+               store_h_det : bool = True, 
+               store_h_det_mode : bool = True):
     """
     Arguments
     ---------
     modes : int or list[tuple]
-        If integer, the number of `f`, `tau` modes to use.  If list of tuples,
+        If integer, the number of damped sinusoids to use.  If list of tuples,
         each entry should be of the form `(p, s, ell, m)`, where `p` is `1` for
         prograde `-1` for retrograde; `s` is the spin weight (`-2` for the usual
         GW modes); and `ell` and `m` refer to the usual angular quantum numbers.
 
     a_scale_max : float
-        The maximum value of the amplitude scale parameter.  This is used to
+        The maximum value of the amplitude scale parameter. This is used to
         define the prior on the amplitude scale parameter.
 
     marginalized : bool
@@ -220,6 +216,12 @@ def make_model(modes : int | list[(int, int, int, int)],
 
     store_h_det_mode : bool
         Whether to store the mode-by-mode detector-frame waveform in the model.
+
+    Returns
+    -------
+    model : function
+        A model function that can be used with `numpyro` to sample from the
+        posterior distribution of the ringdown parameters.
     """
 
     n_modes = modes if isinstance(modes, int) else len(modes)
@@ -248,6 +250,25 @@ def make_model(modes : int | list[(int, int, int, int)],
               predictive : bool = predictive, 
               store_h_det : bool = store_h_det, 
               store_h_det_mode : bool = store_h_det_mode):
+        """The ringdown model.
+
+        Arguments
+        ---------
+        times : array_like
+            The times at which the ringdown waveform should be evaluated; list
+            of 1D arrays for each IFO, or a 2D array with shape (n_det,
+            n_times).
+        strains : array_like
+            The strain data; list of 1D arrays for each IFO, or a 2D array with
+            shape (n_det, n_times).
+        ls : array_like
+            The noise covariance matrices; list of 2D arrays for each IFO, or a
+            3D array with shape (n_det, n_times, n_times).
+        fps : array_like
+            The "plus" polarization coefficients for each IFO; length `n_det`.
+        fcs : array_like
+            The "cross" polarization coefficients for each IFO; length `n_det`.
+        """
         times, strains, ls, fps, fcs = map(jnp.array, (times, strains, ls, fps, fcs))
 
         n_det = times.shape[0]
@@ -263,11 +284,17 @@ def make_model(modes : int | list[(int, int, int, int)],
         # it.
         if isinstance(modes, int):
             if mode_ordering == 'f':
-                f = numpyro.sample('f', dist.Uniform(f_min, f_max, support=dist.constraints.ordered_vector), sample_shape=(modes,))
-                g = numpyro.sample('g', dist.Uniform(g_min, g_max), sample_shape=(modes,))
+                f = numpyro.sample('f', dist.Uniform(f_min, f_max, 
+                                                     support=dist.constraints.ordered_vector), 
+                                                     sample_shape=(modes,))
+                g = numpyro.sample('g', dist.Uniform(g_min, g_max),
+                                    sample_shape=(modes,))
             elif mode_ordering == 'g':
-                f = numpyro.sample('f', dist.Uniform(f_min, f_max), sample_shape=(modes,))
-                g = numpyro.sample('g', dist.Uniform(g_min, g_max, support=dist.constraints.ordered_vector), sample_shape=(modes,))
+                f = numpyro.sample('f', dist.Uniform(f_min, f_max), 
+                                   sample_shape=(modes,))
+                g = numpyro.sample('g', dist.Uniform(g_min, g_max, 
+                                                     support=dist.constraints.ordered_vector), 
+                                                     sample_shape=(modes,))
             else:
                 f = numpyro.sample('f', dist.Uniform(f_min, f_max), sample_shape=(modes,))
                 g = numpyro.sample('g', dist.Uniform(g_min, g_max), sample_shape=(modes,))
@@ -317,7 +344,8 @@ def make_model(modes : int | list[(int, int, int, int)],
         quality = numpyro.deterministic('quality', np.pi*f*tau)
 
         if marginalized:
-            a_scale = numpyro.sample('a_scale', dist.Uniform(0, a_scale_max), sample_shape=(len(modes),))
+            a_scale = numpyro.sample('a_scale', dist.Uniform(0, a_scale_max), 
+                                     sample_shape=(len(modes),))
             design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scale)
 
             mu = jnp.zeros(4*len(modes))
@@ -394,3 +422,14 @@ def make_model(modes : int | list[(int, int, int, int)],
                     numpyro.sample(f'logl_{i}', dist.MultivariateNormal(h_det[i,:], scale_tril=ls[i, :, :]), obs=strain)
 
     return model
+
+
+# TODO: make this a function based on model settings
+MODEL_VARIABLES_BY_MODE = ['a_scale', 'a', 'acx', 'acy', 'apx', 'apy', 'acx_unit', 'acy_unit', 'apx_unit', 'apy_unit', 
+                    'ellip', 'f', 'g', 'omega', 'phi', 'phi_l', 'phi_r', 'quality', 'tau', 'theta']
+MODEL_DIMENSIONS = {n: ['mode'] for n in MODEL_VARIABLES_BY_MODE}
+MODEL_DIMENSIONS['h_det'] = ['ifo', 'time_index']
+MODEL_DIMENSIONS['h_det_mode'] = ['ifo', 'mode', 'time_index']
+
+def get_model_dimensions(*args, **kwargs):
+    return MODEL_DIMENSIONS

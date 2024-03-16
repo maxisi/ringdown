@@ -14,12 +14,30 @@ import copy as cp
 from .data import *
 import lal
 import logging
-from . import model
+from .model import make_model, get_model_dimensions
 import os
 from . import qnms
 import warnings
 from . import waveforms
 import inspect
+import jax
+import numpyro.infer
+
+# TODO: support different samplers?
+KERNEL = numpyro.infer.NUTS
+SAMPLER = numpyro.infer.MCMC
+
+KERNEL_ARGS = inspect.signature(KERNEL).parameters.keys()
+SAMPLER_ARGS = inspect.signature(SAMPLER).parameters.keys()
+# for safety check that there are no overlapping keys
+for k in SAMPLER_ARGS:
+    if k in KERNEL_ARGS:
+        logging.warning(f"overlapping keys in {KERNEL} and {SAMPLER}: {k}")
+
+MODEL_ARGS = inspect.signature(make_model).parameters.keys()
+
+DEF_RUN_KWS = dict(dense_mass=True, num_warmup=1000, num_samples=1000,
+                       num_chains=4)
 
 def np2(x):
     """Returns the next power of two as big as or larger than x."""
@@ -111,11 +129,10 @@ class Fit(object):
         self._n_analyze = None
         # set modes dynamically
         self.modes = None
-        # parse specified modes (will also set _n_modes)
         self.set_modes(modes)
-        # assume rest of kwargs are to be passed to stan_data (e.g. prior)
-        self._model_settings = kws
-        self._prior_settings = {}
+        # assume rest of kwargs are to be passed to make_model
+        self._model_settings = {}
+        self.update_model(**kws)
 
     @property
     def n_modes(self) -> int:
@@ -165,7 +182,7 @@ class Fit(object):
             coeffs = qnms.KerrMode(mode).coefficients
             f_coeffs.append(coeffs[0])
             g_coeffs.append(coeffs[1])
-        return array(f_coeffs), array(g_coeffs)
+        return np.array(f_coeffs), np.array(g_coeffs)
 
     @property
     def analysis_data(self) -> dict:
@@ -180,21 +197,21 @@ class Fit(object):
         return data
 
     @property
-    def prior_settings(self) -> dict:
+    def model_settings(self) -> dict:
         """Prior options as currently set.
         """
-        return self._prior_settings
+        return self._model_settings
 
-    # @property
-    # def valid_model_options(self) -> list:
-    #     """Valid prior parameters for the selected model. These can be set
-    #     through :meth:`Fit.update_prior`.
-    #     """
-    #     return
+    @property
+    def valid_model_settings(self) -> list:
+        """Valid prior parameters for the selected model. These can be set
+        through :meth:`Fit.update_model`.
+        """
+        return MODEL_ARGS
 
-    def update_prior(self, **kws):
-        """Set or modify prior options.  For example,
-        ``fit.update_prior(A_scale=1e-21)`` sets the `A_scale` parameter to
+    def update_model(self, **kws):
+        """Set or modify prior options or other model settings.  For example,
+        ``fit.update_model(A_scale=1e-21)`` sets the `A_scale` parameter to
         `1e-21`.
 
         Valid arguments for the selected model can be found in
@@ -205,12 +222,22 @@ class Fit(object):
         if self.prior is not None:
             logging.warning("updating prior of Fit with preexisting prior results!")
 
+        # check whether the option is valid, regardless of case
         for k, v in kws.items():
-            self._prior_settings[k.lower()] = v
+            if k in self.valid_model_settings:
+                self._model_settings[k] = v
+            elif k.lower() in self.valid_model_settings:
+                self._model_settings[k] = v
+            elif k.upper() in self.valid_model_settings:
+                self._model_settings[k] = v
+            else:
+                logging.warning(f"unknown model argument: {k}")
+            
 
     @property
     def run_input(self) -> dict:
-        """Arguments to be passed to sampler.
+        """Arguments to be passed to model function at runtime:
+        [times, strains, ls, fp, fc].
         """
         if not self.acfs:
             logging.warning("computing ACFs with default settings")
@@ -225,54 +252,17 @@ class Fit(object):
         times = [np.array(d.time) - self.start_times[i] 
                  for i,d in data_dict.items()]
 
-        input = dict(
-            # data related quantities
-            times=times,
-            strains=[s.values for s in data_dict.values()],
-            ls=[a.iloc[:self.n_analyze].cholesky for a in self.acfs.values()],
-            fps = fp,
-            fcs = fc
-        )
-
-        # IFO coordinate names must be bytestrings in order to serialize and
-        # compress properly.
-        input['ifos'] = [bytes(str(i), 'utf-8') for i in self.ifos]
-
-        if 'mchi' in self.model:
-            if self.modes is None:
-                raise RuntimeError("fit has no modes (see fit.set_modes)")
-            f_coeff, g_coeff = self.spectral_coefficients
-            input.update(dict(
-                f_coeffs=f_coeff,
-                g_coeffs=g_coeff,
-            ))
-
-            # Mode coordinate names must also be bytestrings in order to
-            # serialize and compress properly
-            input['modes'] = [bytes(f'{m.p}{m.l}{m.m}{m.n}', 'utf-8') for m in
-                              self.modes]
-
-        input.update(self.prior_settings)
-
-        for k, v in input.items():
-            if v is None:
-                raise ValueError('please specify {}'.format(k))
+        # arguments to be passed to function returned by model_function
+        # make sure this agrees with that function call!
+        # [times, strains, ls, fp, fc]
+        input = [
+            times,
+            [s.values for s in data_dict.values()],
+            [a.iloc[:self.n_analyze].cholesky for a in self.acfs.values()],
+            fp,
+            fc
+        ]
         return input
-
-    @property
-    def pymc_model(self):
-        if self._pymc_model is None:
-            if self.model == 'mchi':
-                self._pymc_model = model.make_mchi_model(**self.model_input)
-            elif self.model == 'mchi_marginal':
-                self._pymc_model = model.make_mchi_marginalized_model(**self.model_input)
-            elif self.model == 'mchi_aligned':
-                self._pymc_model = model.make_mchi_aligned_model(**self.model_input)
-            elif self.model == 'ftau':
-                self._pymc_model = model.make_ftau_model(**self.model_input)
-            else:
-                raise NotImplementedError(f'unrecognized model {self.model}')
-        return self._pymc_model
 
     @classmethod
     def from_config(cls, config_input,no_cond=False):
@@ -582,11 +572,9 @@ class Fit(object):
             else:
                 self.data[i] = self.data[i] + h
         self.update_info('injection', no_noise=no_noise, **kws)
-
-    DEF_RUN_KWS = dict(init='jitter+adapt_full', target_accept=0.9)
     
     def run(self, prior=False, suppress_warnings=True, store_residuals=True,
-            min_ess=None, **kws):
+            min_ess=None, prng=None, **kwargs):
         """Fit model.
 
         Additional keyword arguments not listed below are passed to the sampler,
@@ -611,10 +599,10 @@ class Fit(object):
             if given, keep re-running the sampling with longer chains until the
             minimum effective sample size exceeds `min_ess` (def. `None`).
 
-        \*\*kws :
+        \*\*kwargs :
             arguments passed to sampler.
         """
-        ess_run = -1.0 #ess after sampling finishes, to be set by loop below
+        ess_run = -1.0 # ess after sampling finishes, to be set by loop below
         if min_ess is None:
             min_ess = 0.0
 
@@ -632,53 +620,102 @@ class Fit(object):
         # parse keyword arguments
         filter = 'ignore' if suppress_warnings else 'default'
 
-        # run keyword arguments
-        rkws = cp.deepcopy(self.DEF_RUN_KWS)
-        rkws.update(kws)
+        # create model
+        model = make_model(self.modes, prior=prior, **self.model_settings)
 
-        # run model and store
-        logging.info('running {} (prior = {})'.format(self.model, prior))
+        logging.info('running {} mode fit'.format(self.modes))
+        logging.info('prior run: {}'.format(prior))
+        logging.info('model settings: {}'.format(self._model_settings))
+
+        # parse keyword arguments to be passed to KERNEL and SAMPLER, with
+        # defaults based on DEF_RUN_KWS
+        kws = cp.deepcopy(DEF_RUN_KWS)
+        kws.update(kwargs)
+
+        # form kernel with dynamically determined options
+        kernel_kws = kws.pop('kernel', {})
+        kernel_kws.update({k: v for k,v in kws.items() if k in KERNEL_ARGS})
+        logging.info('kernel settings: {}'.format(kernel_kws))
+
+        # form sampler with dynamically determined options
+        sampler_kws = kws.pop('sampler', {})
+        sampler_kws.update({k: v for k,v in kws.items() if k in SAMPLER_ARGS})
+        logging.info('sampler settings: {}'.format(sampler_kws))
+        
+        # run sampler passing leftover kwargs to run method
+        run_kws = {k: v for k,v in kws.items() if k not in SAMPLER_ARGS and 
+                   k not in KERNEL_ARGS}
+        logging.info('run settings: {}'.format(run_kws))
+        
+        if isinstance(prng, int):
+            prng = jax.random.PRNGKey(prng)
+        elif prng is None:
+            prng = jax.random.PRNGKey(np.random.randint(1<<31))
+
+        run_input = self.run_input
+
         with warnings.catch_warnings():
             warnings.simplefilter(filter)
-            self.update_prior(prior_run=prior)
-            with self.pymc_model:
-                while ess_run < min_ess:
+            self.update_settings(prior=prior)
+            while ess_run < min_ess:
 
-                    if not np.isscalar(min_ess):
-                        raise ValueError("min_ess is not a number")
+                if not np.isscalar(min_ess):
+                    raise ValueError("min_ess is not a number")
+                
+                # make kernel, sampler and run
+                kernel = KERNEL(model, **kernel_kws)
+                sampler = SAMPLER(kernel, **sampler_kws)
+                sampler.run(prng, run_input, **run_kws)
 
-                    result = pm.sample(**rkws)
-                    if prior:
-                        self.prior = az.convert_to_inference_data(result)
-                        ess = az.ess(self.prior)
-                    else:
-                        self.result = az.convert_to_inference_data(result)
-                        ess = az.ess(self.result)
-                    mess = ess.min()
-                    mess_arr = np.array([mess[k].values[()] for k in mess.keys()])
-                    ess_run = np.min(mess_arr)
-                    if ess_run < min_ess:
-                        tune = 2*kws.get('tune', 1000)
-                        draws = 2*kws.get('draws', 1000)
-                            
-                        logging.warning(f'min ess = {ess_run:.1f} below threshold {min_ess}')
-                        logging.warning(f'fitting again with {tune} tuning steps and {draws} samples')
+                sampler = self._run(model, self.run_input, **kws)
 
-                        kws['tune'] = tune
-                        kws['draws'] = draws
-                        rkws.update(kws)
+                if isinstance(self.modes, int):
+                    mode_idx = np.arange(self.modes, dtype=int)
+                else:
+                    mode_idx = [m.to_bytestring() for m in self.modes]
 
-        if self.model == 'mchi_marginal' and not prior:
-            # This model doesn't have observables because of its structure, so we have to add them in later
-            od_dict = {}
-            for ifo in self.ifos:
-                if isinstance(ifo, bytes):
-                    ifo = ifo.decode('utf-8')
-                od_dict[f'strain_{ifo}'] = self.analysis_data[ifo]
-            self.result.add_groups(dict(observed_data=dict_to_dataset(od_dict, coords=self.result.posterior.coords, dims={k: ['time_index'] for k in od_dict.keys()}, default_dims=[])))
+                result = az.from_numpyro(sampler, 
+                        coords={'ifo': self.ifos, 
+                                'mode': mode_idx,
+                                'time_index': np.arange(self.n_analyze, dtype=int)},
+                        dims=get_model_dimensions())
+
+                if prior:
+                    self.prior = result
+                else:
+                    self.result = result
+                    
+                ess = az.ess(result)
+                mess = ess.min()
+                mess_arr = np.array([mess[k].values[()] for k in mess.keys()])
+                ess_run = np.min(mess_arr)
+                if ess_run < min_ess:
+                    # if we need to run again, double the number of tuning steps
+                    # and samples
+                    new_kws = dict(
+                        num_warmup=2*sampler_kws.get('num_warmup', 1000),
+                        num_samples=2*sampler_kws.get('num_samples', 1000)
+                    )
+                    sampler_kws.update(new_kws)
+                        
+                    logging.warning(f'min ess = {ess_run:.1f} below threshold {min_ess}')
+                    logging.warning(f'fitting again with {new_kws['num_warmup']}'
+                                    f'tuning steps and {new_kws['num_samples']} samples')
+
+                    kwargs.update(kws)
+
+        # if self.model == 'mchi_marginal' and not prior:
+        #     # This model doesn't have observables because of its structure, so we have to add them in later
+        #     od_dict = {}
+        #     for ifo in self.ifos:
+        #         if isinstance(ifo, bytes):
+        #             ifo = ifo.decode('utf-8')
+        #         od_dict[f'strain_{ifo}'] = self.analysis_data[ifo]
+        #     self.result.add_groups(dict(observed_data=dict_to_dataset(od_dict, coords=self.result.posterior.coords, dims={k: ['time_index'] for k in od_dict.keys()}, default_dims=[])))
 
         if not prior and store_residuals:
             self._generate_whitened_residuals()
+
     run.__doc__ = run.__doc__.format(DEF_RUN_KWS)
 
     def _generate_whitened_residuals(self):
