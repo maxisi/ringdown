@@ -73,24 +73,6 @@ def chi_factors(chi, coeffs):
                    log1mc3, log1mc4])
     return jnp.dot(coeffs, v)
 
-# def compute_h_det_mode(t0s, ts, Fps, Fcs, fs, gammas, Apxs, Apys, Acxs, Acys):
-#     ndet = len(t0s)
-#     nmode = fs.shape[0]
-#     nsamp = ts[0].shape[0]
-
-#     t0s = jnp.array(t0s).reshape((ndet, 1, 1))
-#     ts = jnp.array(ts).reshape((ndet, 1, nsamp))
-#     Fps = jnp.array(Fps).reshape((ndet, 1, 1))
-#     Fcs = jnp.array(Fcs).reshape((ndet, 1, 1))
-#     fs = jnp.array(fs).reshape((1, nmode, 1))
-#     gammas = jnp.array(gammas).reshape((1, nmode, 1))
-#     Apxs = jnp.array(Apxs).reshape((1, nmode, 1))
-#     Apys = jnp.array(Apys).reshape((1, nmode, 1))
-#     Acxs = jnp.array(Acxs).reshape((1, nmode, 1))
-#     Acys = jnp.array(Acys).reshape((1, nmode, 1))
-
-#     return rd(ts - t0s, fs, gammas, Apxs, Apys, Acxs, Acys, Fps, Fcs)
-
 def a_from_quadratures(Apx, Apy, Acx, Acy):
     A = 0.5*(jnp.sqrt(jnp.square(Acy + Apx) + jnp.square(Acx - Apy)) +
              jnp.sqrt(jnp.square(Acy - Apx) + jnp.square(Acx + Apy)))
