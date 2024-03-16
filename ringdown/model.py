@@ -167,7 +167,7 @@ def make_model(modes : int | list[(int, int, int, int)],
                flat_amplitude_prior : bool = False,
                mode_ordering : None | str = None,
                prior : bool = False,               
-               predictive : bool = False, store_h_det : bool = True, store_h_det_mode : bool = True,
+               predictive : bool = True, store_h_det : bool = True, store_h_det_mode : bool = True,
                **kwargs):
     """
     Arguments
