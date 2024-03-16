@@ -1,10 +1,9 @@
 """Module defining the core :class:`Fit` class.
 """
 
-__all__ = ['Target', 'Fit', 'MODELS']
+__all__ = ['Target', 'Fit']
 
-from pylab import *
-
+import numpy as np
 import arviz as az
 import json
 from arviz.data.base import dict_to_dataset
@@ -20,6 +19,7 @@ import os
 from . import qnms
 import warnings
 from . import waveforms
+import inspect
 
 def np2(x):
     """Returns the next power of two as big as or larger than x."""
@@ -28,9 +28,16 @@ def np2(x):
         p = p << 1
     return p
 
-Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
+# TODO: use this maybe?
+def get_default_args(func):
+    signature = inspect.signature(func)
+    return {
+        k: v.default
+        for k, v in signature.parameters.items()
+        if v.default is not inspect.Parameter.empty
+    }
 
-MODELS = ('ftau', 'mchi', 'mchi_aligned', 'mchi_marginal', 'mchiq')
+Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 
 class Fit(object):
     """ A ringdown fit. Contains all the information required to setup and run
@@ -39,7 +46,7 @@ class Fit(object):
     Example usage::
 
         import ringdown as rd
-        fit = rd.Fit('mchi', modes=[(1,-2,2,2,0), (1,-2,2,2,1)])
+        fit = rd.Fit(modes=[(1,-2,2,2,0), (1,-2,2,2,1)])
         fit.load_data('{i}-{i}1_GWOSC_16KHZ_R1-1126259447-32.hdf5', ifos=['H1', 'L1'], kind='gwosc')
         fit.set_target(1126259462.4083147, ra=1.95, dec=-1.27, psi=0.82, duration=0.05)
         fit.condition_data(ds=8)
@@ -48,8 +55,6 @@ class Fit(object):
 
     Attributes
     ----------
-    model : str
-        name of Stan model to be fit.
     data : dict
         dictionary containing data, indexed by detector name.
     acfs : dict
@@ -92,9 +97,7 @@ class Fit(object):
         creating a configuration file through :meth:`Fit.to_config`.
     """
 
-    _compiled_models = {}
-
-    def __init__(self, model='mchi', modes=None, **kws):
+    def __init__(self, modes=None, **kws):
         self.info = {}
         self.data = {}
         self.injections = {}
@@ -102,39 +105,26 @@ class Fit(object):
         self.start_times = {}
         self.antenna_patterns = {}
         self.target = Target(None, None, None, None)
-        if model.lower() in MODELS:
-            self.model = model.lower()
-        else:
-            raise ValueError('invalid model {:s}; options are {}'.format(model,
-                                                                         MODELS))
         self.result = None
         self.prior = None
         self._duration = None
         self._n_analyze = None
         # set modes dynamically
-        self._nmodes = None
         self.modes = None
+        # parse specified modes (will also set _n_modes)
         self.set_modes(modes)
         # assume rest of kwargs are to be passed to stan_data (e.g. prior)
-        self._prior_settings = kws
-        self._pymc_model = None
+        self._model_settings = kws
+        self._prior_settings = {}
 
     @property
     def n_modes(self) -> int:
         """ Number of damped sinusoids to be included in template.
         """
-        return self._n_modes or len(self.modes)
-
-    @property
-    def _model(self):
-        if self.model is None:
-            raise ValueError('you must specify a model')
-        elif self.model not in self._compiled_models:
-            if self.model in MODELS:
-                self.compile()
-            else:
-                raise ValueError('unrecognized model %r' % self.model)
-        return self._compiled_models[self.model]
+        if isinstance(self.modes, int):
+            return self.modes
+        else:
+            return len(self.modes)
     
     @property
     def injection_parameters(self) -> dict:
@@ -190,104 +180,17 @@ class Fit(object):
         return data
 
     @property
-    def _default_prior(self):
-        default = {'A_scale': None}
-        if self.model == 'ftau':
-            # TODO: set default priors based on sampling rate and duration
-            default.update(dict(
-                f_max=None,
-                f_min=None,
-                gamma_max=None,
-                gamma_min=None,
-                prior_run=False
-            ))
-        elif self.model == 'mchi':
-            default.update(dict(
-                perturb_f=zeros(self.n_modes or 1),
-                perturb_tau=zeros(self.n_modes or 1),
-                df_min=-0.5,
-                dtau_min=-0.5,
-                df_max=0.5,
-                dtau_max=0.5,
-                M_min=None,
-                M_max=None,
-                chi_min=0,
-                chi_max=0.99,
-                flat_A=0,
-                flat_A_ellip=0,
-                f_min=0.0,
-                f_max=np.inf,
-                prior_run=False
-            ))
-        elif self.model == 'mchi_marginal':
-            del default['A_scale']
-            default.update(dict(
-                A_scale_max=None,
-                perturb_f=zeros(self.n_modes or 1),
-                perturb_tau=zeros(self.n_modes or 1),
-                df_min=-0.5,
-                dtau_min=-0.5,
-                df_max=0.5,
-                dtau_max=0.5,
-                M_min=None,
-                M_max=None,
-                chi_min=0,
-                chi_max=0.99,
-                f_min=0.0,
-                f_max=np.inf,
-                prior_run=False
-            ))
-        elif self.model == 'mchi_aligned':
-            default.update(dict(
-                perturb_f=zeros(self.n_modes or 1),
-                perturb_tau=zeros(self.n_modes or 1),
-                df_min=-0.5,
-                dtau_min=-0.5,
-                df_max=0.5,
-                dtau_max=0.5,
-                M_min=None,
-                M_max=None,
-                chi_min=0,
-                chi_max=0.99,
-                cosi_min=-1,
-                cosi_max=1,
-                flat_A=0,
-                f_min=0.0,
-                f_max=np.inf,
-                prior_run=False
-            ))
-        elif self.model == 'mchiq':
-             default.update(dict(
-                 M_min=None,
-                 M_max=None,
-                 r2_qchi_min=0.0,
-                 r2_qchi_max=1.0,
-                 theta_qchi_min=0.0,
-                 theta_qchi_max=pi/2,
-                 df_coeffs=[],
-                 dg_coeffs=[],
-                 flat_A=0,
-                 flat_A_ellip=0,
-                 f_min=0.0,
-                 f_max=np.inf,
-                 prior_run=False
-             ))
-        return default
-
-    @property
     def prior_settings(self) -> dict:
         """Prior options as currently set.
         """
-        prior = self._default_prior
-        prior.update(self._prior_settings)
-        return prior
+        return self._prior_settings
 
-    @property
-    def valid_model_options(self) -> list:
-        """Valid prior parameters for the selected model. These can be set
-        through :meth:`Fit.update_prior`.
-        """
-        return list(self._default_prior.keys())
+    # @property
+    # def valid_model_options(self) -> list:
+    #     """Valid prior parameters for the selected model. These can be set
+    #     through :meth:`Fit.update_prior`.
+    #     """
+    #     return
 
     def update_prior(self, **kws):
         """Set or modify prior options.  For example,
@@ -298,25 +201,15 @@ class Fit(object):
         :attr:`Fit.valid_model_options`.
         """
         if self.result is not None:
-            # TODO: fail?
             logging.warning("updating prior of Fit with preexisting results!")
-        valid_keys = self.valid_model_options
-        valid_keys_low = [k.lower() for k in valid_keys]
-        for k, v in kws.items():
-            if k.lower() in valid_keys_low:
-                i = valid_keys_low.index(k.lower())
-                self._prior_settings[valid_keys[i]] = v
-            else:
-                raise ValueError('{} is not a valid model argument.'
-                                 'Valid options are: {}'.format(k, valid_keys))
-        # reset model cache
-        self._pymc_model = None
-
         if self.prior is not None:
             logging.warning("updating prior of Fit with preexisting prior results!")
 
+        for k, v in kws.items():
+            self._prior_settings[k.lower()] = v
+
     @property
-    def model_input(self) -> dict:
+    def run_input(self) -> dict:
         """Arguments to be passed to sampler.
         """
         if not self.acfs:
@@ -329,17 +222,16 @@ class Fit(object):
         fp = [x[0] for x in fpfc]
         fc = [x[1] for x in fpfc]
 
+        times = [np.array(d.time) - self.start_times[i] 
+                 for i,d in data_dict.items()]
+
         input = dict(
             # data related quantities
-            nsamp=self.n_analyze,
-            nmode=self.n_modes,
-            nobs=len(data_dict),
-            t0=list(self.start_times.values()),
-            times=[array(d.time) for d in data_dict.values()],
+            times=times,
             strains=[s.values for s in data_dict.values()],
-            Ls=[a.iloc[:self.n_analyze].cholesky for a in self.acfs.values()],
-            Fps = fp,
-            Fcs = fc
+            ls=[a.iloc[:self.n_analyze].cholesky for a in self.acfs.values()],
+            fps = fp,
+            fcs = fc
         )
 
         # IFO coordinate names must be bytestrings in order to serialize and
@@ -971,7 +863,7 @@ class Fit(object):
         self.update_info('acf', path=path_dict, from_psd=from_psd, **kws)
 
     def set_tone_sequence(self, nmode, p=1, s=-2, l=2, m=2):
-        """ Set template modes to be a sequence of overtones with a given
+        """Set template modes to be a sequence of overtones with a given
         angular structure.
 
         To set an arbitrary set of modes, use :meth:`Fit.set_modes`
@@ -992,8 +884,11 @@ class Fit(object):
         indexes = [(p, s, l, m, n) for n in range(nmode)]
         self.set_modes(indexes)
 
-    def set_modes(self, modes):
-        """ Establish list of modes to include in analysis template.
+    def set_modes(self, modes : int | list[tuple[int, int, int, int, int]]):
+        """Establish list of modes to include in analysis template.
+
+        Modes can be an integer, in which case `n` arbitrary damped sinusoids
+        will be fit.
 
         Modes identified by their `(p, s, l, m, n)` indices, where:
           - `p` is `1` for prograde modes, and `-1` for retrograde modes;
@@ -1009,19 +904,12 @@ class Fit(object):
         modes : list
             list of tuples with quasinormal mode `(p, s, l, m, n)` numbers.
         """
-        try:
+        if isinstance(modes, int):
             # if modes is integer, interpret as number of modes
-            self._n_modes = int(modes)
-            self.modes = None
-        except (TypeError, ValueError):
+            self.modes = modes
+        else:
             # otherwise, assume it is a mode index list
-            self._n_modes = None
             self.modes = qnms.construct_mode_list(modes)
-            if self.model == 'mchi_aligned':
-                ls_valid = [mode.l == 2 for mode in self.modes]
-                ms_valid = [abs(mode.m) == 2 for mode in self.modes]
-                if not (all(ls_valid) and all(ms_valid)):
-                    raise ValueError("mchi_aligned model only accepts l=m=2 modes")
 
     def set_target(self, t0, ra=None, dec=None, psi=None, delays=None,
                    antenna_patterns=None, duration=None, n_analyze=None):
