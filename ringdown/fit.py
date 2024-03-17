@@ -14,7 +14,7 @@ import copy as cp
 from .data import *
 import lal
 import logging
-from .model import make_model, get_model_dimensions
+from .model import make_model, get_arviz
 import os
 from . import qnms
 import warnings
@@ -39,21 +39,29 @@ MODEL_ARGS = inspect.signature(make_model).parameters.keys()
 DEF_RUN_KWS = dict(dense_mass=True, num_warmup=1000, num_samples=1000,
                        num_chains=4)
 
+def form_opt(x):
+    """Utility to format options in config."""
+    return np.array2string(np.array(x), separator=', ')
+
+def try_parse(x):
+    """Attempt to parse a string as a number, dict, or list."""
+    try:
+        return float(x)
+    except (TypeError,ValueError):
+        try:
+            return literal_eval(x)
+        except (TypeError,ValueError,SyntaxError):
+            if x == "inf":
+                return np.inf
+            else:
+                return x
+
 def np2(x):
     """Returns the next power of two as big as or larger than x."""
     p = 1
     while p < x:
         p = p << 1
     return p
-
-# TODO: use this maybe?
-def get_default_args(func):
-    signature = inspect.signature(func)
-    return {
-        k: v.default
-        for k, v in signature.parameters.items()
-        if v.default is not inspect.Parameter.empty
-    }
 
 Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 
@@ -68,7 +76,7 @@ class Fit(object):
         fit.load_data('{i}-{i}1_GWOSC_16KHZ_R1-1126259447-32.hdf5', ifos=['H1', 'L1'], kind='gwosc')
         fit.set_target(1126259462.4083147, ra=1.95, dec=-1.27, psi=0.82, duration=0.05)
         fit.condition_data(ds=8)
-        fit.update_prior(A_scale=1e-21, M_min=50, M_max=150)
+        fit.update_model(A_scale=1e-21, M_min=50, M_max=150)
         fit.run()
 
     Attributes
@@ -207,7 +215,7 @@ class Fit(object):
         """Valid prior parameters for the selected model. These can be set
         through :meth:`Fit.update_model`.
         """
-        return MODEL_ARGS
+        return list(MODEL_ARGS)
 
     def update_model(self, **kws):
         """Set or modify prior options or other model settings.  For example,
@@ -265,7 +273,8 @@ class Fit(object):
         return input
 
     @classmethod
-    def from_config(cls, config_input,no_cond=False):
+    def from_config(cls, config_input : str | configparser.ConfigParser,
+                    no_cond: bool = False):
         """Creates a :class:`Fit` instance from a configuration file.
         
         Has the ability to load and condition data, as well as to inject a
@@ -293,29 +302,40 @@ class Fit(object):
                 raise FileNotFoundError(config_input)
             config = configparser.ConfigParser()
             config.read(config_input)
-        # utility function to parse arguments
-        def try_parse(x):
-            try:
-                return float(x)
-            except (TypeError,ValueError):
-                try:
-                    return literal_eval(x)
-                except (TypeError,ValueError,SyntaxError):
-                    if x == "inf":
-                        return np.inf
-                    else:
-                        return x
                     
+        # parse model options
+        model_opts = {k: try_parse(v) for k,v in config['model'].items()}
+        if 'name' in model_opts:
+            warnings.warn("model name is deprecated, use explicit mode options instead")
+            logging.info("trying to guess mode configuration based on model name")
+            name = model_opts.pop('name')
+            if 'aligned' in name:
+                raise NotImplementedError("aligned model not yet supported")
+            model_opts['marginalized'] = 'marginalized' in name
+        if config.has_section('prior'):
+            prior = {k: try_parse(v) for k,v in config['prior'].items()}
+            model_opts.update(prior)
+
+        # look for some legacy options and replace them with current arguments
+        # accepted by make_model
+        legacy = {
+            'a_scale_max': ['A_scale', 'a_scale', 'A_SCALE'],
+            'flat_amplitude_prior': ['flat_a', 'flat_A', 'FLAT_A'],
+        }
+        for new, old in legacy.items():
+            for k in old:
+                if k in model_opts:
+                    warnings.warn(f"replacing deprecated option {k} with {new}")
+                    model_opts[new] = model_opts.pop(k)
+        
         # create fit object
-        fit = cls(config['model']['name'], modes=config['model']['modes'])
-        # add priors
-        prior = config['prior']
-        fit.update_prior(**{k: try_parse(v) for k,v in prior.items()
-                             if "drift" not in k})
+        fit = cls(**model_opts)
+        
         if 'data' not in config:
             # the rest of the options require loading data, so if no pointer to
             # data was provided, just exit
             return fit
+        
         # load data
         ifo_input = config.get('data', 'ifos', fallback='')
         try:
@@ -323,12 +343,15 @@ class Fit(object):
         except (ValueError,SyntaxError):
             ifos = [i.strip() for i in ifo_input.split(',')]
         path_input = config['data']['path']
+        
         # NOTE: not popping in order to preserve original ConfigParser
         kws = {k: try_parse(v) for k,v in config['data'].items()
                   if k not in ['ifos', 'path']}
         fit.load_data(path_input, ifos, **kws)
+
         # add target
         fit.set_target(**{k: try_parse(v) for k,v in config['target'].items()})
+        
         # inject signal if requested
         if config.has_section('injection'):
             inj_kws = {k: try_parse(v) for k,v in config['injection'].items()}
@@ -364,10 +387,12 @@ class Fit(object):
             # no injection requested, so set some dummy defaults
             no_noise = False
             post_cond = False
+        
         # condition data if requested
         if config.has_section('condition') and not no_cond:
             cond_kws = {k: try_parse(v) for k,v in config['condition'].items()}
             fit.condition_data(**cond_kws)
+        
         # load or produce ACFs
         if config.get('acf', 'path', fallback=False):
             kws = {k: try_parse(v) for k,v in config['acf'].items()
@@ -376,6 +401,7 @@ class Fit(object):
         else:
             acf_kws = {} if 'acf' not in config else config['acf']
             fit.compute_acfs(**{k: try_parse(v) for k,v in acf_kws.items()})
+        
         if no_noise:
             # no-noise injection, so replace data by simulated signal
             if post_cond:
@@ -419,24 +445,21 @@ class Fit(object):
             configuration file object.
         """
         config = configparser.ConfigParser()
-        # utility to format options in config
-        def form_opt(x):
-            return array2string(array(x), separator=', ')
         # model options
         config['model'] = {}
-        config['model']['name'] = self.model
-        if self.modes is None:
+        if isinstance(self.modes, int):
             config['model']['modes'] = str(self.n_modes)
         else:
             config['model']['modes'] = str([tuple(m) for m in self.modes])
         # prior options
-        config['prior'] = {k:form_opt(v) for k,v in self.prior_settings.items()}
+        config['model'].update({k: form_opt(v) for k,v 
+                                in self.model_settings.items()})
         # rest of options require data, so exit of none were added
         if not self.ifos:
             return config
         # data, injection, conditioning and acf options
         for sec, opts in self.info.items():
-            config[sec] = {k: form_opt(v) for k,v in self.info[sec].items()}
+            config[sec] = {k: form_opt(v) for k,v in opts.items()}
         # target options
         config['target'] = {k: str(v) for k,v in self.target._asdict().items()}
         config['target']['duration'] = str(self.duration)
@@ -656,7 +679,7 @@ class Fit(object):
 
         with warnings.catch_warnings():
             warnings.simplefilter(filter)
-            self.update_settings(prior=prior)
+
             while ess_run < min_ess:
 
                 if not np.isscalar(min_ess):
@@ -665,26 +688,14 @@ class Fit(object):
                 # make kernel, sampler and run
                 kernel = KERNEL(model, **kernel_kws)
                 sampler = SAMPLER(kernel, **sampler_kws)
-                sampler.run(prng, run_input, **run_kws)
+                sampler.run(prng, *run_input, **run_kws)
 
-                sampler = self._run(model, self.run_input, **kws)
-
-                if isinstance(self.modes, int):
-                    mode_idx = np.arange(self.modes, dtype=int)
-                else:
-                    mode_idx = [m.to_bytestring() for m in self.modes]
-
-                result = az.from_numpyro(sampler, 
-                        coords={'ifo': self.ifos, 
-                                'mode': mode_idx,
-                                'time_index': np.arange(self.n_analyze, dtype=int)},
-                        dims=get_model_dimensions())
-
+                result = get_arviz(sampler, ifos=self.ifos, modes=self.modes)
                 if prior:
                     self.prior = result
                 else:
                     self.result = result
-                    
+
                 ess = az.ess(result)
                 mess = ess.min()
                 mess_arr = np.array([mess[k].values[()] for k in mess.keys()])
@@ -698,26 +709,19 @@ class Fit(object):
                     )
                     sampler_kws.update(new_kws)
                         
-                    logging.warning(f'min ess = {ess_run:.1f} below threshold {min_ess}')
-                    logging.warning(f'fitting again with {new_kws['num_warmup']}'
-                                    f'tuning steps and {new_kws['num_samples']} samples')
+                    logging.warning(f"min ess = {ess_run:.1f} below threshold {min_ess}")
+                    logging.warning(f"fitting again with {new_kws['num_warmup']}"
+                                    f"tuning steps and {new_kws['num_samples']} samples")
 
                     kwargs.update(kws)
+        self.update_info('run', **kwargs)
 
-        # if self.model == 'mchi_marginal' and not prior:
-        #     # This model doesn't have observables because of its structure, so we have to add them in later
-        #     od_dict = {}
-        #     for ifo in self.ifos:
-        #         if isinstance(ifo, bytes):
-        #             ifo = ifo.decode('utf-8')
-        #         od_dict[f'strain_{ifo}'] = self.analysis_data[ifo]
-        #     self.result.add_groups(dict(observed_data=dict_to_dataset(od_dict, coords=self.result.posterior.coords, dims={k: ['time_index'] for k in od_dict.keys()}, default_dims=[])))
-
-        if not prior and store_residuals:
-            self._generate_whitened_residuals()
+        # if not prior and store_residuals:
+        #     self._generate_whitened_residuals()
 
     run.__doc__ = run.__doc__.format(DEF_RUN_KWS)
 
+    # TODO: fix this, and need to add observed data to result also
     def _generate_whitened_residuals(self):
         # Adduct the whitened residuals to the result.
         residuals = {}
@@ -1001,9 +1005,9 @@ class Fit(object):
             analysis segment length in seconds, or time unit indexing data
             (overrides `n_analyze`).
         n_analyze : int
-            number of datapoints to include in analysis segment.
+            number of data points to include in analysis segment.
         delays : dict
-            dictionary with delayes from geocenter for each detector, as would
+            dictionary with delays from geocenter for each detector, as would
             be computed by `lal.TimeDelayFromEarthCenter` (optional).
         antenna_patterns : dict
             dictionary with tuples for plus and cross antenna patterns for
@@ -1017,7 +1021,7 @@ class Fit(object):
         antenna_patterns = antenna_patterns or {}
         for ifo, data in self.data.items():
             # TODO: should we have an elliptical+ftau model?
-            if ifo is None or self.model=='ftau':
+            if ifo is None:
                 dt_ifo = 0
                 self.antenna_patterns[ifo] = (1, 1)
             else:
@@ -1090,7 +1094,7 @@ class Fit(object):
             # find sample closest to (but no later than) requested start time
             for ifo, d in self.data.items():
                 t0 = self.start_times[ifo]
-                i0_dict[ifo] = argmin(abs(d.time - t0))
+                i0_dict[ifo] = np.argmin(abs(d.time - t0))
         return i0_dict
 
     @property
@@ -1193,7 +1197,7 @@ class Fit(object):
         hs = self.result.posterior.h_det.stack(samples=('chain', 'draw'))
         # whiten the reconstructions using the Cholesky factors, L, with shape
         # (ifo, time, time). the resulting object will have shape (ifo, time, sample)
-        return linalg.solve(self.result.constant_data.L, hs)
+        return np.linalg.solve(self.result.constant_data.L, hs)
 
     def compute_posterior_snrs(self, optimal=True, network=True) -> np.ndarray:
         """Efficiently computes signal-to-noise ratios from posterior samples,
@@ -1227,7 +1231,7 @@ class Fit(object):
         # get whitened reconstructions from posterior (ifo, time, sample)
         whs = self.whitened_templates
         # take the norm across time to get optimal snrs for each (ifo, sample)
-        opt_ifo_snrs = linalg.norm(whs, axis=1)
+        opt_ifo_snrs = np.linalg.norm(whs, axis=1)
         if optimal:
             snrs = opt_ifo_snrs
         else:
@@ -1237,14 +1241,14 @@ class Fit(object):
                 ds = self.result.observed_data.strain
             else:
                 # strain values stored in "new" PyMC structure
-                ds = array([d.values for d in self.result.observed_data.values()])
+                ds = np.array([d.values for d in self.result.observed_data.values()])
             # whiten it with the Cholesky factors, so shape will remain (ifo, time)
-            wds = linalg.solve(self.result.constant_data.L, ds)
+            wds = np.linalg.solve(self.result.constant_data.L, ds)
             # take inner product between whitened template and data, and normalize
-            snrs = einsum('ijk,ij->ik', whs, wds)/opt_ifo_snrs
+            snrs = np.einsum('ijk,ij->ik', whs, wds)/opt_ifo_snrs
         if network:
             # take norm across detectors
-            return linalg.norm(snrs, axis=0)
+            return np.linalg.norm(snrs, axis=0)
         else:
             return snrs
 

@@ -1,4 +1,4 @@
-__all__ = ['make_model', 'get_model_dimensions']
+__all__ = ['make_model', 'get_arviz']
 
 import numpy as np
 import jax.numpy as jnp
@@ -6,6 +6,10 @@ import jax.scipy as jsp
 import numpyro
 import numpyro.distributions as dist
 from . import qnms
+import arviz as az
+from arviz.data.base import dict_to_dataset
+import logging
+import warnings
 
 def rd(ts, f, gamma, Apx, Apy, Acx, Acy, Fp, Fc):
     """Generate a ringdown waveform as it appears in a detector.
@@ -410,7 +414,7 @@ def make_model(modes : int | list[(int, int, int, int)],
             
             if flat_amplitude_prior:
                 # We need a Jacobian that is A^-3
-                numpyro.factor('flat_A_prior', -3*jnp.sum(jnp.log(a)) + \
+                numpyro.factor('flat_a_prior', -3*jnp.sum(jnp.log(a)) + \
                                0.5*jnp.sum((jnp.square(apx_unit) + jnp.square(apy_unit) + \
                                jnp.square(acx_unit) + jnp.square(acy_unit))))
                 
@@ -423,13 +427,86 @@ def make_model(modes : int | list[(int, int, int, int)],
 
     return model
 
-
-# TODO: make this a function based on model settings
-MODEL_VARIABLES_BY_MODE = ['a_scale', 'a', 'acx', 'acy', 'apx', 'apy', 'acx_unit', 'acy_unit', 'apx_unit', 'apy_unit', 
-                    'ellip', 'f', 'g', 'omega', 'phi', 'phi_l', 'phi_r', 'quality', 'tau', 'theta']
+MODEL_VARIABLES_BY_MODE = ['a_scale', 'a', 'acx', 'acy', 'apx', 'apy', 
+                           'acx_unit', 'acy_unit', 'apx_unit', 'apy_unit',
+                           'ellip', 'f', 'g', 'omega', 'phi', 'phi_l',
+                           'phi_r', 'quality', 'tau', 'theta']
 MODEL_DIMENSIONS = {n: ['mode'] for n in MODEL_VARIABLES_BY_MODE}
 MODEL_DIMENSIONS['h_det'] = ['ifo', 'time_index']
 MODEL_DIMENSIONS['h_det_mode'] = ['ifo', 'mode', 'time_index']
 
-def get_model_dimensions(*args, **kwargs):
-    return MODEL_DIMENSIONS
+def get_arviz(sampler,
+              modes : None | list = None,
+              ifos : None | list = None):
+    """Convert a numpyro sampler to an arviz dataset.
+    
+    Arguments
+    ---------
+    sampler : numpyro.MCMC
+        The sampler to convert after running.
+    modes : None or array_like
+        The modes to include in the dataset.  If `None`, then all modes are
+        included.
+    ifos : None or array_like
+        The ifos to include in the dataset.  If `None`, then all ifos are
+        included.
+
+    Returns
+    -------
+    dataset : arviz.InferenceData
+        The arviz dataset.
+    """
+    samples = sampler.get_samples()
+    params_in_model = samples.keys()
+    # get dimensions
+    dims = {k: v for k,v in MODEL_DIMENSIONS.items() if k in params_in_model}
+    for x in params_in_model:
+        if x not in MODEL_DIMENSIONS:
+            warnings.warn(f'{x} not in model dimensions; please report issue')
+    # get coordinates
+    # assume that all fits will have an 'f' parameter
+    n_mode = samples['f'].shape[1]
+    if modes is None:
+        modes = np.arange(n_mode, dtype=int)
+    elif isinstance(modes, int):
+        modes = np.arange(modes, dtype=int)
+    elif all([isinstance(m, qnms.ModeIndex) for m in modes]):
+        modes = [m.to_bytestring() for m in modes]
+    else:
+        logging.warning('unrecognize mode list format')
+    if len(modes) != n_mode:
+        raise ValueError(f'expected {n_mode} modes, got {len(modes)}')
+    # get ifo from shape of Fc, assuming it's last argument provided to model
+    n_ifo = len(sampler._args[-1])
+    if ifos is None:
+        ifos = np.arange(n_ifo, dtype=int)
+    elif len(ifos) != n_ifo:
+        raise ValueError(f'expected {n_ifo} ifos, got {len(ifos)}')
+    # get times from model arguments
+    n_analyze = len(sampler._args[0][0])
+    time_index = np.arange(n_analyze, dtype=int)
+    coords = {'ifo': ifos, 'mode': modes, 'time_index': time_index}
+    # get constant_data
+    in_dims = {
+        'time': ['ifo', 'time_index'],
+        'strain': ['ifo', 'time_index'],
+        'cholesky_factor': ['ifo', 'time_index', 'time_index'],
+        'fp': ['ifo'],
+        'fc': ['ifo']
+    }
+    in_data = {k: np.array(v) for k,v in zip(in_dims.keys(), sampler._args)}
+    constant_data = dict_to_dataset(in_data, coords=coords, dims=in_dims, 
+                                    default_dims=[])
+    # TODO: somehow put strain in observed_data without overwriting that group
+    # form arviz dataset
+    result = az.from_numpyro(sampler, dims=dims, coords=coords, 
+                             constant_data=constant_data)
+    # get observed data
+    # data_dict = {}
+    # for i, ifo in enumerate(ifos):
+    #     data_dict[f'strain_{ifo}'] = sampler._args[1][i]
+    # od = dict(observed_data=dict_to_dataset(data_dict, coords=coords,
+    #                                         dims={k: ['time_index'] for k in data_dict.keys()},
+    #                                         default_dims=[]))
+    # result.add_group(od)
+    return result
