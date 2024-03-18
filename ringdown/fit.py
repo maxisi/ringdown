@@ -724,7 +724,7 @@ class Fit(object):
             residuals_stacked[ifo] = residuals[ifo].stack(sample=['chain',
                                                                   'draw'])
         residuals_whitened = self.whiten(residuals_stacked)
-        d = self.result.posterior.dims
+        d = self.result.posterior.sizes
         residuals_whitened = {
             i: v.reshape((d['time_index'], d['chain'], d['draw']))
             for i,v in residuals_whitened.items()
