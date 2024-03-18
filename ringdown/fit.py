@@ -661,6 +661,9 @@ class Fit(object):
 
         run_input = self.run_input
 
+        jax_device_count = jax.device_count()
+        logging.info(f"running on {jax_device_count} devices")
+
         with warnings.catch_warnings():
             warnings.simplefilter(filter)
 

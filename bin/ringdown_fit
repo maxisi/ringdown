@@ -59,8 +59,8 @@ if __name__ == "__main__":
     # check for numpy threading options
     os.environ["OMP_NUM_THREADS"] = str(args.omp_num_threads)
 
-    from jax import config
-    config.update("jax_enable_x64", True)
+    from jax import config as jax_config
+    jax_config.update("jax_enable_x64", True)
     import numpyro
 
     numpyro.set_platform(args.platform)
@@ -74,6 +74,10 @@ if __name__ == "__main__":
     
     if config.has_section('run'):
         run_kws = {k: literal_eval(v) for k,v in config['run'].items()}
+        if run_kws.pop('omp_num_threads'):
+            logging.warning("omp_num_threads is set in the configuration file, "
+                            "but it will be ignored. Use the command line "
+                            "option instead.")
     else:
         run_kws = {}
     run_kws['prior'] = args.prior or run_kws.get('prior', False)
