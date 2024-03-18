@@ -1144,8 +1144,7 @@ class Fit(object):
             dictionary of :class:`ringdown.data.Data` with whitned data for
             each detector.
         """
-        return {i: self.acfs[i].whiten(d)
-                for i,d in datas.items()}
+        return {i: self.acfs[i].whiten(d) for i,d in datas.items()}
 
     def draw_sample(self, map=False, prior=False, rng=None, seed=None):
         """Draw a sample from the posterior.
@@ -1271,6 +1270,8 @@ class Fit(object):
         See https://arxiv.org/abs/1507.04544 for definitions and discussion.  A
         larger WAIC indicates that the model has better predictive accuarcy on
         the fitted data set."""
+        if self.result is None:
+            raise RuntimeError("no results available")
         return az.waic(self.result, var_name='whitened_pointwise_loglike')
     
     @property
@@ -1285,4 +1286,6 @@ class Fit(object):
         evaluated on hypothetical data from a replication of the observation
         averaged over the posterior) of the model; larger LOO values indicate
         higher predictive accuracy (i.e. explanatory power) for the model."""
+        if self.result is None:
+            raise RuntimeError("no results available")
         return az.loo(self.result, var_name='whitened_pointwise_loglike')
