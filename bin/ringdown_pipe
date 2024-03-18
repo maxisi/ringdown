@@ -45,6 +45,12 @@ parser.add_argument('-s', '--submit', action='store_true', help="Submit slurm "
                     "job automatically.")
 parser.add_argument('--ntasks', default=-1, type=int,
                     help="Maximum number of tasks request through SLURM.")
+parser.add_argument('--device-count', type=int, default=None,
+                    help="Number of GPUs/CPUs to use for each task "
+                    "(default: 1 for GPUs and 4 for CPUs)")
+parser.add_argument('--platform', options=['cpu', 'gpu'], default='cpu',
+                    help="Platform to run on (default 'cpu').")
+parser.add_argument('--constraints', default=None, help="SLURM constraints.")
 parser.add_argument('--seed', default=None, type=int, help="Random seed.")
 parser.add_argument('-v', '--verbose', action='store_true')
 
@@ -192,8 +198,18 @@ np.savetxt(PATHS["t0"], t0s)
 if rerun and os.path.exists(PATHS['run_task']):
     os.remove(PATHS['run_task'])
 
-TASK = "mkdir -p {rundir}; cd {rundir}; ringdown_fit -o {result} {config} "\
-       "&> run.log\n"
+# determine how many devices to use, will default to 1 for GPUs and 4 for CPUs
+if args.device_count is not None:
+    NDEVICE = args.device_count
+elif args.platform == 'gpu':
+    NDEVICE = 1
+else:
+    NDEVICE = 4
+
+device_opts = f"--platform {args.platform} --device-count {NDEVICE}"
+
+TASK = "mkdir -p {rundir}; cd {rundir}; ringdown_fit -o {result} %s {config} "\
+       "&> run.log\n" % device_opts
 
 logging.info(f"Processing {len(t0s)} start times (recorded in {PATHS['t0']})")
 for i, t0 in enumerate(t0s):
@@ -231,20 +247,32 @@ if args.ntasks < 0:
     NTASK = len(t0s)
 else:
     NTASK = args.ntasks
-NCPU = 4
 
 # a user may allocate up to 1280 cores at one time in a center partition, so
 # issue a warning if this limit will be exceeded
-if NTASK*NCPU > 1280:
+if NTASK*NDEVICE > 1280:
     w = "Requested number of cores ({}) above 1280 user limit."
-    logging.warning(w.format(NTASK*NCPU))
+    logging.warning(w.format(NTASK*NDEVICE))
 
-EXE = [
-    '#! /usr/bin/env bash',
-    'cd {}'.format(outdir),
-    'sbatch -p cca -n {} -c {} disBatch {}'.format(NTASK, NCPU, PATHS['run_task']),
-    'cd -',
-]
+if args.platform == 'cpu':
+    EXE = [
+        '#! /usr/bin/env bash',
+        'cd {}'.format(outdir),
+        f"sbatch -p cca -n {NTASK} -c {NDEVICE} disBatch {PATHS['run_task']}",
+        'cd -',
+    ]
+else:
+    # see https://wiki.flatironinstitute.org/SCC/Software/UsingTheGPUNodes
+    NCPU = 16
+    EXE = [
+        '#! /usr/bin/env bash',
+        'cd {}'.format(outdir),
+        f"sbatch -p gpu -n {NTASK} --gpus-per-task={NDEVICE} --cpus-per-task={NCPU} --gpu-bind=closest disBatch {PATHS['run_task']}"
+        'cd -',
+    ]
+
+if args.constraints:
+    EXE[2] = EXE[2].replace('sbatch', f"sbatch -C {args.constraints}")
 
 epath = PATHS['exe']
 with open(epath, 'w') as f:
