@@ -48,7 +48,7 @@ parser.add_argument('--ntasks', default=-1, type=int,
 parser.add_argument('--device-count', type=int, default=None,
                     help="Number of GPUs/CPUs to use for each task "
                     "(default: 1 for GPUs and 4 for CPUs)")
-parser.add_argument('--platform', options=['cpu', 'gpu'], default='cpu',
+parser.add_argument('--platform', choices=['cpu', 'gpu'], default='cpu',
                     help="Platform to run on (default 'cpu').")
 parser.add_argument('--constraints', default=None, help="SLURM constraints.")
 parser.add_argument('--seed', default=None, type=int, help="Random seed.")
