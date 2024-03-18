@@ -700,8 +700,8 @@ class Fit(object):
                     kwargs.update(kws)
         self.update_info('run', **kwargs)
 
-        # if not prior and store_residuals:
-        #     self._generate_whitened_residuals()
+        if not prior and store_residuals:
+            self._generate_whitened_residuals()
 
     run.__doc__ = run.__doc__.format(DEF_RUN_KWS)
 
@@ -718,8 +718,8 @@ class Fit(object):
                 ifo_key = bytes(str(ifo), 'utf-8') # IFO coordinates are bytestrings
             else:
                 raise KeyError(f"IFO {ifo} is not a valid indexing ifo for the result posterior")
-            r = self.result.observed_data[f'strain_{ifo}'] -\
-                self.result.posterior.h_det.loc[:,:,ifo_key,:]
+            r = self.result.constant_data['strain'].sel(ifo=ifo_key) -\
+                self.result.posterior.h_det.sel(ifo=ifo_key)
             residuals[ifo] = r.transpose('chain', 'draw', 'time_index')
             residuals_stacked[ifo] = residuals[ifo].stack(sample=['chain',
                                                                   'draw'])

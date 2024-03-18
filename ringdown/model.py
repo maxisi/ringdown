@@ -485,28 +485,19 @@ def get_arviz(sampler,
     # get times from model arguments
     n_analyze = len(sampler._args[0][0])
     time_index = np.arange(n_analyze, dtype=int)
-    coords = {'ifo': ifos, 'mode': modes, 'time_index': time_index}
+    coords = {'ifo': ifos, 'mode': modes, 'time_index': time_index, 'time_index_1': time_index}
     # get constant_data
     in_dims = {
         'time': ['ifo', 'time_index'],
         'strain': ['ifo', 'time_index'],
-        'cholesky_factor': ['ifo', 'time_index', 'time_index'],
+        'cholesky_factor': ['ifo', 'time_index', 'time_index_1'],
         'fp': ['ifo'],
         'fc': ['ifo']
     }
     in_data = {k: np.array(v) for k,v in zip(in_dims.keys(), sampler._args)}
-    constant_data = dict_to_dataset(in_data, coords=coords, dims=in_dims, 
-                                    default_dims=[])
-    # TODO: somehow put strain in observed_data without overwriting that group
-    # form arviz dataset
+    dims.update(in_dims)
+
     result = az.from_numpyro(sampler, dims=dims, coords=coords, 
-                             constant_data=constant_data)
-    # get observed data
-    # data_dict = {}
-    # for i, ifo in enumerate(ifos):
-    #     data_dict[f'strain_{ifo}'] = sampler._args[1][i]
-    # od = dict(observed_data=dict_to_dataset(data_dict, coords=coords,
-    #                                         dims={k: ['time_index'] for k in data_dict.keys()},
-    #                                         default_dims=[]))
-    # result.add_group(od)
+                             constant_data=in_data)
+
     return result
