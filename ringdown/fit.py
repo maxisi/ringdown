@@ -111,9 +111,6 @@ class Fit(object):
         tuple with source right ascension, declination and polarization angle.
     analysis_data : dict
         dictionary of truncated analysis data that will be fed to Stan model.
-    spectral_coefficients : tuple
-        tuple of arrays containing dimensionless frequency and damping rate
-        fit coefficients to be passed internally to Stan model.
     model_data : dict
         arguments passed to Stan model internally.
     info : dict
@@ -176,22 +173,6 @@ class Fit(object):
         """
         return (self.target.ra, self.target.dec, self.target.psi)
 
-    # this can be generalized for charged bhs based on model name
-    @property
-    def spectral_coefficients(self) -> tuple:
-        """Regression coefficients used by sampler to obtain mode frequencies
-        and damping times as a function of physical black hole parameters.
-        """
-        if self.modes is None:
-            return
-        f_coeffs = []
-        g_coeffs = []
-        for mode in self.modes:
-            coeffs = qnms.KerrMode(mode).coefficients
-            f_coeffs.append(coeffs[0])
-            g_coeffs.append(coeffs[1])
-        return np.array(f_coeffs), np.array(g_coeffs)
-
     @property
     def analysis_data(self) -> dict:
         """Slice of data to be analyzed for each detector. Extracted from
@@ -240,7 +221,10 @@ class Fit(object):
                 self._model_settings[k] = v
             else:
                 logging.warning(f"unknown model argument: {k}")
-            
+    
+    def update_prior(self, *args, **kwargs):
+        warnings.warn("update_prior is deprecated, use update_model instead")
+        self.update_model(*args, **kwargs)
 
     @property
     def run_input(self) -> dict:
@@ -613,7 +597,7 @@ class Fit(object):
             whether to sample the prior (def. `False`).
 
         suppress_warnings : bool
-            supress some annoying warnings from pymc (def. `True`).
+            suppress some sampler warnings (def. `True`).
 
         store_residuals : bool
             compute whitened residuals point-wise and store in ``Fit.result``.
