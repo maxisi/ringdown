@@ -42,9 +42,12 @@ def get_parser():
     p.add_argument('-o', '--output', default=None,
                    help="output result path (default: `{}`).".format(DEFOUT))
     p.add_argument('--prior', action='store_true', help="sample from prior.")
-    p.add_argument('--omp-num-threads', type=int, default=1)
-    p.add_argument('--platform', choices=['cpu', 'gpu'], default='cpu')
-    p.add_argument('--device-count', type=int, default=None)
+    p.add_argument('--omp-num-threads', help='number of threads for numpy.',
+                   type=int, default=1)
+    p.add_argument('--platform', choices=['cpu', 'gpu'], default='cpu',
+                   help="device platform (default: cpu).")
+    p.add_argument('--device-count', type=int, default=None,
+                   help="number of devices to use.")
     p.add_argument('--force', action='store_true',
                    help="overwrites output file if it already exists.")
     p.add_argument('-v', '--verbose', action='store_true')
