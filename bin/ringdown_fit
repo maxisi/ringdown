@@ -42,6 +42,9 @@ def get_parser():
     p.add_argument('-o', '--output', default=None,
                    help="output result path (default: `{}`).".format(DEFOUT))
     p.add_argument('--prior', action='store_true', help="sample from prior.")
+    p.add_argument('--omp-num-threads', type=int, default=1)
+    p.add_argument('--platform', choices=['cpu', 'gpu'], default='cpu')
+    p.add_argument('--device-count', type=int, default=None)
     p.add_argument('--force', action='store_true',
                    help="overwrites output file if it already exists.")
     p.add_argument('-v', '--verbose', action='store_true')
@@ -54,6 +57,13 @@ if __name__ == "__main__":
     if args.verbose:
         logging.getLogger().setLevel(logging.INFO)
     
+    # check for numpy threading options
+    os.environ["OMP_NUM_THREADS"] = str(args.opm_num_threads)
+
+    numpyro.set_platform(args.platform)
+    if args.device_count is not None:
+        numpyro.set_host_device_count(args.device_count)
+
     print("Loading: {}".format(os.path.abspath(args.config)))
     
     config = configparser.ConfigParser()
@@ -61,14 +71,6 @@ if __name__ == "__main__":
     
     if config.has_section('run'):
         run_kws = {k: literal_eval(v) for k,v in config['run'].items()}
-
-        # check for numpy threading options
-        os.environ["OMP_NUM_THREADS"] = str(run_kws.pop('omp_num_threads', 1))
-
-        if 'platform' in run_kws:
-            numpyro.set_platform(run_kws.pop('platform').lower())
-        if 'device_count' in run_kws:
-            numpyro.set_host_device_count(int(run_kws.pop('device_count')))
         
     else:
         run_kws = {}
