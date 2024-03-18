@@ -21,7 +21,7 @@
 
 import sys
 import os
-from pylab import *
+import numpy as np
 import ringdown as rd
 import argparse
 import configparser
@@ -163,9 +163,9 @@ t0ref = config.getfloat(T0_SECT, T0_KEYS['ref'], fallback=0)
 
 # Now we can safely interpret the options assuming one of three cases
 if T0_KEYS['list'] in config[T0_SECT]:
-    t0s = array(literal_eval(config.get(T0_SECT, T0_KEYS['list'])))
+    t0s = np.array(literal_eval(config.get(T0_SECT, T0_KEYS['list'])))
 elif T0_KEYS['delta'] in config[T0_SECT]:
-    dt0s = array(literal_eval(config.get(T0_SECT, T0_KEYS['delta'])))
+    dt0s = np.array(literal_eval(config.get(T0_SECT, T0_KEYS['delta'])))
     t0s = dt0s*tm_ref + t0ref
 elif any([k in config[T0_SECT] for k in start_stop_step]):
     if not all([k in config[T0_SECT] for k in start_stop_step]):
@@ -177,13 +177,13 @@ elif any([k in config[T0_SECT] for k in start_stop_step]):
     if start > 500 and t0ref > 1E8:
         logging.warning("high reference time and stepping start---did you "
                         "accidentally provide GPS times twice?")
-    t0s = arange(start, stop, step)*tm_ref + t0ref
+    t0s = np.arange(start, stop, step)*tm_ref + t0ref
 else:
     raise ValueError("no timing instructions in [{}] section; valid options "
                      "are: {}".format(T0_SECT, list(T0_KEYS.values())))
 
 # Record start times
-savetxt(PATHS["t0"], t0s)
+np.savetxt(PATHS["t0"], t0s)
 
 ##############################################################################
 # SET UP RUNS
