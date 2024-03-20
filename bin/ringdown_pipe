@@ -50,6 +50,8 @@ parser.add_argument('--device-count', type=int, default=None,
                     "(default: 1 for GPUs and 4 for CPUs)")
 parser.add_argument('--platform', choices=['cpu', 'gpu'], default='cpu',
                     help="Platform to run on (default 'cpu').")
+parser.add_argument('--omp-num-threads', type=int, default=1,
+                    help="Number of threads for numpy.")
 parser.add_argument('--constraints', default=None, help="SLURM constraints.")
 parser.add_argument('--seed', default=None, type=int, help="Random seed.")
 parser.add_argument('-v', '--verbose', action='store_true')
@@ -206,7 +208,7 @@ elif args.platform == 'gpu':
 else:
     NDEVICE = 4
 
-device_opts = f"--platform {args.platform} --device-count {NDEVICE}"
+device_opts = f"--platform {args.platform} --device-count {NDEVICE} --omp-num-threads {args.omp_num_threads}"
 
 TASK = "mkdir -p {rundir}; cd {rundir}; ringdown_fit -o {result} %s {config} "\
        "&> run.log\n" % device_opts
