@@ -295,7 +295,7 @@ class Fit(object):
             name = model_opts.pop('name')
             if 'aligned' in name:
                 raise NotImplementedError("aligned model not yet supported")
-            model_opts['marginalized'] = 'marginalized' in name
+            model_opts['marginalized'] = 'marginal' in name
         if config.has_section('prior'):
             prior = {k: try_parse(v) for k,v in config['prior'].items()}
             model_opts.update(prior)
