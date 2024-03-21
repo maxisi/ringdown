@@ -288,6 +288,9 @@ def make_model(modes : int | list[(int, int, int, int)],
         # it.
         if isinstance(modes, int):
             if mode_ordering == 'f':
+                if not np.isscalar(f_min) or not np.isscalar(f_max):
+                    raise ValueError('mode_ordering is "f" but f_min and/or f_max are not scalars')
+
                 # Sure would be nice if numpyro had `OrderedBoundedVector` or
                 # something similar.  But because it doesn't, we have to do it
                 # with transformations.  This takes:
@@ -314,6 +317,9 @@ def make_model(modes : int | list[(int, int, int, int)],
                 g = numpyro.sample('g', dist.Uniform(g_min, g_max),
                                     sample_shape=(modes,))
             elif mode_ordering == 'g':
+                if not np.isscalar(g_min) or not np.isscalar(g_max):
+                    raise ValueError('mode_ordering is "g" but g_min and/or g_max are not scalars')
+
                 f = numpyro.sample('f', dist.Uniform(f_min, f_max), 
                                    sample_shape=(modes,))
                 
