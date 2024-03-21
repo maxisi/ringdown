@@ -325,9 +325,9 @@ class Fit(object):
         if 'perturb_tau' in model_opts:
             warnings.warn("perturb_tau is deprecated, just use dg_min/max instead")
             perturb_tau = model_opts.pop('perturb_tau')
-            if 'dtau_min' in model_opts:
-                model_opts['dg_min'] = - model_opts.pop('dtau_max') * perturb_tau
             if 'dtau_max' in model_opts:
+                model_opts['dg_min'] = - model_opts.pop('dtau_max') * perturb_tau
+            if 'dtau_min' in model_opts:
                 model_opts['dg_max'] = - model_opts.pop('dtau_min') * perturb_tau
             
         # create fit object
