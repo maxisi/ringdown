@@ -288,17 +288,19 @@ def make_model(modes : int | list[(int, int, int, int)],
         # it.
         if isinstance(modes, int):
             if mode_ordering == 'f':
-                f = numpyro.sample('f', dist.Uniform(f_min, f_max, 
-                                                     support=dist.constraints.ordered_vector), 
-                                                     sample_shape=(modes,))
+                f = numpyro.sample('f', 
+                                   dist.TransformedDistribution(
+                                        dist.Uniform(f_min, f_max).expand([modes]),
+                                        dist.transforms.OrderedTransform()))
                 g = numpyro.sample('g', dist.Uniform(g_min, g_max),
                                     sample_shape=(modes,))
             elif mode_ordering == 'g':
                 f = numpyro.sample('f', dist.Uniform(f_min, f_max), 
                                    sample_shape=(modes,))
-                g = numpyro.sample('g', dist.Uniform(g_min, g_max, 
-                                                     support=dist.constraints.ordered_vector), 
-                                                     sample_shape=(modes,))
+                g = numpyro.sample('g', 
+                                   dist.TransformedDistribution(
+                                       dist.Uniform(g_min, g_max).expand([modes]),
+                                       dist.transforms.OrderedTransform()))
             else:
                 f = numpyro.sample('f', dist.Uniform(f_min, f_max), sample_shape=(modes,))
                 g = numpyro.sample('g', dist.Uniform(g_min, g_max), sample_shape=(modes,))
@@ -322,7 +324,7 @@ def make_model(modes : int | list[(int, int, int, int)],
             if df_min is None or df_max is None:
                 f = numpyro.deterministic('f', f_gr)
             else:
-                df_unit = numpyro.sample('df_unit', dist.Uniform(0, 1), sample_shape=(len(modes),))
+                df_unit = numpyro.sample('df_unit', dist.Uniform(0, 1), sample_shape=(n_modes,))
                 # Don't want to shadow df_min and df_max
                 df_low = jnp.array([0.0 if x is None else x for x in df_min])
                 df_high = jnp.array([0.0 if x is None else x for x in df_max])
@@ -333,7 +335,7 @@ def make_model(modes : int | list[(int, int, int, int)],
             if dg_min is None or dg_max is None:
                 g = numpyro.deterministic('g', g_gr)
             else:
-                dg_unit = numpyro.sample('dg_unit', dist.Uniform(0, 1), sample_shape=(len(modes),))
+                dg_unit = numpyro.sample('dg_unit', dist.Uniform(0, 1), sample_shape=(n_modes,))
                 dg_low = jnp.array([0.0 if x is None else x for x in dg_min])
                 dg_high = jnp.array([0.0 if x is None else x for x in dg_max])
                 
@@ -349,12 +351,12 @@ def make_model(modes : int | list[(int, int, int, int)],
 
         if marginalized:
             a_scale = numpyro.sample('a_scale', dist.Uniform(0, a_scale_max), 
-                                     sample_shape=(len(modes),))
+                                     sample_shape=(n_modes,))
             design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scale)
 
-            mu = jnp.zeros(4*len(modes))
-            lambda_inv = jnp.eye(4*len(modes))
-            lambda_inv_chol = jnp.eye(4*len(modes))
+            mu = jnp.zeros(4*n_modes)
+            lambda_inv = jnp.eye(4*n_modes)
+            lambda_inv_chol = jnp.eye(4*n_modes)
             if not prior:
                 for i in range(n_det):
                     mm = design_matrices[i,:,:].T # (ndet, 4*nmode, ntime) => (i, ntime, 4*nmode)
@@ -392,10 +394,10 @@ def make_model(modes : int | list[(int, int, int, int)],
                 # covariance < y^T y > = (Lambda_inv_chol^{-1}).T < x^T x >
                 # Lambda_inv_chol^{-1} = (Lambda_inv_chol^{-1}).T I Lambda_inv_chol^{-1}
                 # = Lambda.
-                apx_unit = numpyro.sample('apx_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
-                apy_unit = numpyro.sample('apy_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
-                acx_unit = numpyro.sample('acx_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
-                acy_unit = numpyro.sample('acy_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
+                apx_unit = numpyro.sample('apx_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
+                apy_unit = numpyro.sample('apy_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
+                acx_unit = numpyro.sample('acx_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
+                acy_unit = numpyro.sample('acy_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
 
                 quads = mu + jsp.linalg.solve(lambda_inv_chol.T, jnp.concatenate((apx_unit, apy_unit, acx_unit, acy_unit)))
 
@@ -403,10 +405,10 @@ def make_model(modes : int | list[(int, int, int, int)],
         else:
             a_scales = a_scale_max*jnp.ones(n_modes)
             design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scales)
-            apx_unit = numpyro.sample('apx_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
-            apy_unit = numpyro.sample('apy_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
-            acx_unit = numpyro.sample('acx_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
-            acy_unit = numpyro.sample('acy_unit', dist.Normal(0, 1), sample_shape=(len(modes),))
+            apx_unit = numpyro.sample('apx_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
+            apy_unit = numpyro.sample('apy_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
+            acx_unit = numpyro.sample('acx_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
+            acy_unit = numpyro.sample('acy_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
 
             quads = jnp.concatenate((apx_unit, apy_unit, acx_unit, acy_unit))
             a, h_det = get_quad_derived_quantities(design_matrices, quads, a_scale_max, 
