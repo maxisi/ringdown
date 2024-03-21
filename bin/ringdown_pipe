@@ -52,7 +52,8 @@ parser.add_argument('--platform', choices=['cpu', 'gpu'], default='cpu',
                     help="Platform to run on (default 'cpu').")
 parser.add_argument('--omp-num-threads', type=int, default=1,
                     help="Number of threads for numpy.")
-parser.add_argument('--constraints', default=None, help="SLURM constraints.")
+parser.add_argument('-C', '--constraints', help="SLURM constraints.")
+parser.add_argument('-t', '--time', help="SLURM time directive.")
 parser.add_argument('--seed', default=None, type=int, help="Random seed.")
 parser.add_argument('-v', '--verbose', action='store_true')
 
@@ -269,7 +270,7 @@ else:
     EXE = [
         '#! /usr/bin/env bash',
         'cd {}'.format(outdir),
-        f"sbatch -p gpu -n {NTASK} --gpus-per-task={NDEVICE} --cpus-per-task={NCPU} --gpu-bind=closest disBatch {PATHS['run_task']}"
+        f"sbatch -p gpu -n {NTASK} --gpus-per-task={NDEVICE} --cpus-per-task={NCPU} --gpu-bind=closest disBatch {PATHS['run_task']}",
         'cd -',
     ]
 

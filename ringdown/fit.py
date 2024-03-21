@@ -959,10 +959,10 @@ class Fit(object):
         modes : list
             list of tuples with quasinormal mode `(p, s, l, m, n)` numbers.
         """
-        if isinstance(modes, int):
+        try:
             # if modes is integer, interpret as number of modes
-            self.modes = modes
-        else:
+            self.modes = int(modes)
+        except Exception:
             # otherwise, assume it is a mode index list
             self.modes = qnms.construct_mode_list(modes)
 
