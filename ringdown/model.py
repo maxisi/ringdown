@@ -301,8 +301,13 @@ def make_model(modes : int | list[(int, int, int, int)],
                 # log_jac = log(d(f)/d(f_latent))
                 #
                 # which, happily, is provided by the composed transformation
-                f_latent = numpyro.sample('f_latent', dist.ImproperUniform(dist.constraints.real, (), (n_modes,)))
-                f_transform = dist.transforms.ComposeTransform([dist.transforms.OrderedTransform(), dist.transforms.SigmoidTransform(), dist.transforms.AffineTransform(f_min, f_max - f_min)])
+                f_latent = numpyro.sample('f_latent',
+                    dist.ImproperUniform(dist.constraints.real, (), (n_modes,)))
+                f_transform = dist.transforms.ComposeTransform([
+                    dist.transforms.OrderedTransform(),
+                    dist.transforms.SigmoidTransform(),
+                    dist.transforms.AffineTransform(f_min, f_max - f_min)
+                ])
                 f = numpyro.deterministic('f', f_transform(f_latent))
                 numpyro.factor('f_transform', f_transform.log_abs_det_jacobian(f_latent, f))
 
@@ -312,8 +317,13 @@ def make_model(modes : int | list[(int, int, int, int)],
                 f = numpyro.sample('f', dist.Uniform(f_min, f_max), 
                                    sample_shape=(modes,))
                 
-                g_latent = numpyro.sample('g_latent', dist.ImproperUniform(dist.constraints.real, (), (n_modes,)))
-                g_transform = dist.transforms.ComposeTransform([dist.transforms.OrderedTransform(), dist.transforms.SigmoidTransform(), dist.transforms.AffineTransform(g_min, g_max - g_min)])
+                g_latent = numpyro.sample('g_latent', dist.ImproperUniform(
+                    dist.constraints.real, (), (n_modes,)))
+                g_transform = dist.transforms.ComposeTransform([
+                    dist.transforms.OrderedTransform(),
+                    dist.transforms.SigmoidTransform(),
+                    dist.transforms.AffineTransform(g_min, g_max - g_min)
+                ])
                 g = numpyro.deterministic('g', g_transform(g_latent))
                 numpyro.factor('g_transform', g_transform.log_abs_det_jacobian(g_latent, g))
             else:
