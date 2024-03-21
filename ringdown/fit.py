@@ -305,6 +305,8 @@ class Fit(object):
         legacy = {
             'a_scale_max': ['A_scale', 'a_scale', 'A_SCALE'],
             'flat_amplitude_prior': ['flat_a', 'flat_A', 'FLAT_A'],
+            'g_min': ['gamma_min'],
+            'g_max': ['gamma_max']
         }
         for new, old in legacy.items():
             for k in old:
