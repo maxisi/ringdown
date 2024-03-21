@@ -296,6 +296,7 @@ class Fit(object):
             if 'aligned' in name:
                 raise NotImplementedError("aligned model not yet supported")
             model_opts['marginalized'] = 'marginal' in name
+
         if config.has_section('prior'):
             prior = {k: try_parse(v) for k,v in config['prior'].items()}
             model_opts.update(prior)
@@ -314,6 +315,21 @@ class Fit(object):
                     warnings.warn(f"replacing deprecated option {k} with {new}")
                     model_opts[new] = model_opts.pop(k)
         
+        if 'perturb_f' in model_opts:
+            warnings.warn("perturb_f is deprecated, just use df_min/max instead")
+            perturb_f = model_opts.pop('perturb_f')
+            for k in ['df_min', 'df_max']:
+                if k in model_opts:
+                    model_opts[k] *= perturb_f
+        
+        if 'perturb_tau' in model_opts:
+            warnings.warn("perturb_tau is deprecated, just use dg_min/max instead")
+            perturb_tau = model_opts.pop('perturb_tau')
+            if 'dtau_min' in model_opts:
+                model_opts['dg_min'] = - model_opts.pop('dtau_max') * perturb_tau
+            if 'dtau_max' in model_opts:
+                model_opts['dg_max'] = - model_opts.pop('dtau_min') * perturb_tau
+            
         # create fit object
         fit = cls(**model_opts)
         
@@ -641,54 +657,66 @@ class Fit(object):
         kws = cp.deepcopy(DEF_RUN_KWS)
         kws.update(kwargs)
 
-        # form kernel with dynamically determined options
+        # tease out kernel options dynamically
         kernel_kws = kws.pop('kernel', {})
         kernel_kws.update({k: v for k,v in kws.items() if k in KERNEL_ARGS})
         logging.info('kernel settings: {}'.format(kernel_kws))
 
-        # form sampler with dynamically determined options
+        # tease out sampler options dynamically
         sampler_kws = kws.pop('sampler', {})
         sampler_kws.update({k: v for k,v in kws.items() if k in SAMPLER_ARGS})
         logging.info('sampler settings: {}'.format(sampler_kws))
         
-        # run sampler passing leftover kwargs to run method
+        # assume leftover arguments will be passed to run method
         run_kws = {k: v for k,v in kws.items() if k not in SAMPLER_ARGS and 
                    k not in KERNEL_ARGS}
         logging.info('run settings: {}'.format(run_kws))
         
+        # create random number generator
         if isinstance(prng, int):
             prng = jax.random.PRNGKey(prng)
         elif prng is None:
             prng = jax.random.PRNGKey(np.random.randint(1<<31))
 
+        # log some runtime information
+        jax_device_count = jax.device_count()
+        platform = jax.lib.xla_bridge.get_backend().platform.upper()
+        logging.info(f"running on {jax_device_count} {platform}")
+
+        omp_num_threads = int(os.environ.get("OMP_NUM_THREADS", 1))
+        logging.info(f"using {omp_num_threads} OMP threads")
+
+        # get run input and run
         run_input = self.run_input
 
-        jax_device_count = jax.device_count()
-        logging.info(f"running on {jax_device_count} devices")
-
+        run_count = 1
         with warnings.catch_warnings():
             warnings.simplefilter(filter)
-
             while ess_run < min_ess:
-
                 if not np.isscalar(min_ess):
                     raise ValueError("min_ess is not a number")
-                
+         
                 # make kernel, sampler and run
                 kernel = KERNEL(model, **kernel_kws)
                 sampler = SAMPLER(kernel, **sampler_kws)
                 sampler.run(prng, *run_input, **run_kws)
 
+                # turn sampler into arviz object and store
                 result = get_arviz(sampler, ifos=self.ifos, modes=self.modes)
                 if prior:
                     self.prior = result
                 else:
                     self.result = result
 
+                # check effective number of samples and rerun if necessary
                 ess = az.ess(result)
                 mess = ess.min()
                 mess_arr = np.array([mess[k].values[()] for k in mess.keys()])
                 ess_run = np.min(mess_arr)
+                
+                logging.info(f"min ess = {int(ess_run)} after {run_count} runs")
+                run_count += 1
+
                 if ess_run < min_ess:
                     # if we need to run again, double the number of tuning steps
                     # and samples
@@ -710,7 +738,6 @@ class Fit(object):
 
     run.__doc__ = run.__doc__.format(DEF_RUN_KWS)
 
-    # TODO: fix this, and need to add observed data to result also
     def _generate_whitened_residuals(self):
         # Adduct the whitened residuals to the result.
         residuals = {}
