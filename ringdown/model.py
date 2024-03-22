@@ -335,6 +335,12 @@ def make_model(modes : int | list[(int, int, int, int)],
                 g = numpyro.deterministic('g', g_transform(g_latent))
                 numpyro.factor('g_transform', g_transform.log_abs_det_jacobian(g_latent, g))
             else:
+                if not np.isscalar(f_min) or not np.isscalar(f_max):
+                    f_min = jnp.array(f_min)
+                    f_max = jnp.array(f_max)
+                if not np.isscalar(g_min) or not np.isscalar(g_max):
+                    g_min = jnp.array(g_min)
+                    g_max = jnp.array(g_max)
                 f = numpyro.sample('f', dist.Uniform(f_min, f_max), sample_shape=(modes,))
                 g = numpyro.sample('g', dist.Uniform(g_min, g_max), sample_shape=(modes,))
         elif isinstance(modes, list):
