@@ -259,6 +259,10 @@ def make_model(modes : int | list[(int, int, int, int)],
         if not np.isscalar(g_min) or not np.isscalar(g_max):
             g_min = jnp.array(g_min)
             g_max = jnp.array(g_max)
+        for a in [f_min, f_max, g_min, g_max]:
+            if a.shape[0] != n_modes:
+                raise ValueError('f_min, f_max, g_min, and g_max must have '
+                                 'the same length as modes')
             
     # if df_min and df_max are floats, then make it an array
     if df_min is not None and np.isscalar(df_min):
