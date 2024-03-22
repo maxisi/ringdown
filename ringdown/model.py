@@ -230,6 +230,7 @@ def make_model(modes : int | list[(int, int, int, int)],
 
     n_modes = modes if isinstance(modes, int) else len(modes)
 
+    # check arguments for free damped sinusoid fits
     if mode_ordering is not None:
         if not isinstance(modes, int):
             raise ValueError('mode_ordering is only relevant if modes is an int')
@@ -242,6 +243,16 @@ def make_model(modes : int | list[(int, int, int, int)],
             if not np.isscalar(g_min) or not np.isscalar(g_max):
                 raise ValueError('mode_ordering is "g" but g_min and/or g_max are not scalars')
     elif isinstance(modes, int):
+        # for sampling below, we want to make sure all of these are arrays
+        if np.isscalar(f_min):
+            f_min = [f_min]*n_modes
+        if np.isscalar(f_max):
+            f_max = [f_max]*n_modes
+        if np.isscalar(g_min):
+            g_min = [g_min]*n_modes
+        if np.isscalar(g_max):
+            g_max = [g_max]*n_modes
+        # turn lists into jnp arrays
         if not np.isscalar(f_min) or not np.isscalar(f_max):
             f_min = jnp.array(f_min)
             f_max = jnp.array(f_max)
@@ -336,8 +347,8 @@ def make_model(modes : int | list[(int, int, int, int)],
                 g = numpyro.deterministic('g', g_transform(g_latent))
                 numpyro.factor('g_transform', g_transform.log_abs_det_jacobian(g_latent, g))
             else:
-                f = numpyro.sample('f', dist.Uniform(f_min, f_max), sample_shape=(modes,))
-                g = numpyro.sample('g', dist.Uniform(g_min, g_max), sample_shape=(modes,))
+                f = numpyro.sample('f', dist.Uniform(f_min, f_max))
+                g = numpyro.sample('g', dist.Uniform(g_min, g_max))
         elif isinstance(modes, list):
             fcoeffs = []
             gcoeffs = []
@@ -358,7 +369,7 @@ def make_model(modes : int | list[(int, int, int, int)],
             if df_min is None or df_max is None:
                 f = numpyro.deterministic('f', f_gr)
             else:
-                df_unit = numpyro.sample('df_unit', dist.Uniform(0, 1), sample_shape=(n_modes,))
+                df_unit = numpyro.sample('df_unit', dist.Uniform(0, 1), sample_shape=(n_modes,1))
                 # Don't want to shadow df_min and df_max
                 df_low = jnp.array([0.0 if x is None else x for x in df_min])
                 df_high = jnp.array([0.0 if x is None else x for x in df_max])
