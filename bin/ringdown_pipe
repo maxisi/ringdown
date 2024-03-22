@@ -218,7 +218,7 @@ task_opts = [
 ]
 
 TASK = "mkdir -p {rundir}; cd {rundir}; ringdown_fit {config} %s"\
-       "&> run.log\n" % ' '.join(task_opts)
+       "&>> run.log\n" % ' '.join(task_opts)
 
 logging.info(f"Processing {len(t0s)} start times (recorded in {PATHS['t0']})")
 for i, t0 in enumerate(t0s):
