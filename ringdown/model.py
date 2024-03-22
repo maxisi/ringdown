@@ -231,6 +231,8 @@ def make_model(modes : int | list[(int, int, int, int)],
     n_modes = modes if isinstance(modes, int) else len(modes)
 
     if mode_ordering is not None:
+        if not isinstance(modes, int):
+            raise ValueError('mode_ordering is only relevant if modes is an int')
         if mode_ordering not in ['f', 'g']:
             raise ValueError('mode_ordering must be None, "f", or "g"')
         elif mode_ordering == 'f':
@@ -239,6 +241,13 @@ def make_model(modes : int | list[(int, int, int, int)],
         elif mode_ordering == 'g':
             if not np.isscalar(g_min) or not np.isscalar(g_max):
                 raise ValueError('mode_ordering is "g" but g_min and/or g_max are not scalars')
+    elif isinstance(modes, int):
+        if not np.isscalar(f_min) or not np.isscalar(f_max):
+            f_min = jnp.array(f_min)
+            f_max = jnp.array(f_max)
+        if not np.isscalar(g_min) or not np.isscalar(g_max):
+            g_min = jnp.array(g_min)
+            g_max = jnp.array(g_max)
             
     # if df_min and df_max are floats, then make it an array
     if df_min is not None and np.isscalar(df_min):
@@ -288,10 +297,6 @@ def make_model(modes : int | list[(int, int, int, int)],
         # it.
         if isinstance(modes, int):
             if mode_ordering == 'f':
-                if not np.isscalar(f_min) or not np.isscalar(f_max):
-                    raise ValueError('mode_ordering is "f" but f_min and/or '
-                                     'f_max are not scalars')
-
                 # Sure would be nice if numpyro had `OrderedBoundedVector` or
                 # something similar.  But because it doesn't, we have to do it
                 # with transformations.  This takes:
@@ -318,10 +323,6 @@ def make_model(modes : int | list[(int, int, int, int)],
                 g = numpyro.sample('g', dist.Uniform(g_min, g_max),
                                     sample_shape=(modes,))
             elif mode_ordering == 'g':
-                if not np.isscalar(g_min) or not np.isscalar(g_max):
-                    raise ValueError('mode_ordering is "g" but g_min and/or '
-                                     'g_max are not scalars')
-
                 f = numpyro.sample('f', dist.Uniform(f_min, f_max), 
                                    sample_shape=(modes,))
                 
@@ -335,12 +336,6 @@ def make_model(modes : int | list[(int, int, int, int)],
                 g = numpyro.deterministic('g', g_transform(g_latent))
                 numpyro.factor('g_transform', g_transform.log_abs_det_jacobian(g_latent, g))
             else:
-                if not np.isscalar(f_min) or not np.isscalar(f_max):
-                    f_min = jnp.array(f_min)
-                    f_max = jnp.array(f_max)
-                if not np.isscalar(g_min) or not np.isscalar(g_max):
-                    g_min = jnp.array(g_min)
-                    g_max = jnp.array(g_max)
                 f = numpyro.sample('f', dist.Uniform(f_min, f_max), sample_shape=(modes,))
                 g = numpyro.sample('g', dist.Uniform(g_min, g_max), sample_shape=(modes,))
         elif isinstance(modes, list):
