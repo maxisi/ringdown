@@ -209,10 +209,16 @@ elif args.platform == 'gpu':
 else:
     NDEVICE = 4
 
-device_opts = f"--platform {args.platform} --device-count {NDEVICE} --omp-num-threads {args.omp_num_threads}"
+task_opts = [
+    "-o {result}",
+    f"--platform {args.platform}",
+    f"--device-count {NDEVICE}",
+    f"--omp-num-threads {args.omp_num_threads}",
+    "--verbose"
+]
 
-TASK = "mkdir -p {rundir}; cd {rundir}; ringdown_fit -o {result} %s {config} "\
-       "&> run.log\n" % device_opts
+TASK = "mkdir -p {rundir}; cd {rundir}; ringdown_fit {config} %s"\
+       "&> run.log\n" % ' '.join(task_opts)
 
 logging.info(f"Processing {len(t0s)} start times (recorded in {PATHS['t0']})")
 for i, t0 in enumerate(t0s):

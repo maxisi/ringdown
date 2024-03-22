@@ -681,10 +681,9 @@ class Fit(object):
         # log some runtime information
         jax_device_count = jax.device_count()
         platform = jax.lib.xla_bridge.get_backend().platform.upper()
-        logging.info(f"running on {jax_device_count} {platform}")
-
         omp_num_threads = int(os.environ.get("OMP_NUM_THREADS", 1))
-        logging.info(f"using {omp_num_threads} OMP threads")
+        logging.info(f"running on {jax_device_count} {platform} using "
+                     f"{omp_num_threads} OMP threads")
 
         # get run input and run
         run_input = self.run_input
