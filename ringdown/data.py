@@ -5,7 +5,7 @@ detectors.
 __all__ = ['Series', 'TimeSeries', 'FrequencySeries', 'Data',
            'AutoCovariance', 'PowerSpectrum']
 
-from pylab import *
+import numpy as np
 import scipy.signal as sig
 import lal
 import scipy.linalg as sl
@@ -68,7 +68,7 @@ class Series(pd.Series):
                 T = f['meta/Duration'][()]
                 h = f['strain/Strain'][:]
                 dt = T/len(h)
-                time = t0 + dt*arange(len(h))
+                time = t0 + dt*np.arange(len(h))
                 return cls(h, index=time, **kws)
         elif kind == 'frame':
             if channel is None:
@@ -126,7 +126,7 @@ class Series(pd.Series):
         """
         kws = self._DEF_INTERP_KWS.copy()
         kws.update(**kwargs)
-        if any(iscomplex(self.values)):
+        if any(np.iscomplex(self.values)):
             re_interp_func = interp1d(self.index, self.values.real, **kws)
             im_interp_func = interp1d(self.index, self.values.imag, **kws)
             interp = re_interp_func(new_index) + 1j*im_interp_func(new_index)
@@ -317,32 +317,40 @@ class Data(TimeSeries):
             d = None
         return d
 
-    def condition(self, t0=None, ds=None, flow=None, fhigh=None, trim=0.25,
-                  digital_filter=False, remove_mean=True, decimate_kws=None,
-                  scipy_dec=None, slice_left = None, slice_right = None):
+    def condition(self,
+                  t0 : float | None = None,
+                  ds : int | None = None,
+                  flow : float | None = None,
+                  fhigh : float | None = None,
+                  trim : float = 0.25,
+                  digital_filter : bool = True,
+                  remove_mean : bool = True,
+                  decimate_kws : dict | None = None,
+                  slice_left : float | None = None,
+                  slice_right : float | None = None):
         """Condition data.
 
         Arguments
         ---------
+        t0 : float
+            target time to be preserved after downsampling.
+        ds : int
+            decimation factor for downsampling.
         flow : float
             lower frequency for high passing.
         fhigh : float
             higher frequency for low passing.
-        ds : int
-            decimation factor for downsampling.
+        trim : float
+            fraction of data to trim from edges after conditioning, to avoid
+            spectral issues if filtering (default 0.25).
         digital_filter : bool
             apply digital antialiasing filter by discarding Fourier components
             higher than Nyquist; otherwise, filter through
-            :func:`scipy.signal.decimate`. Defaults to False.
-        t0 : float
-            target time to be preserved after downsampling.
+            :func:`scipy.signal.decimate`.(default True).
         remove_mean : bool
-            explicitly remove mean from time series after conditioning.
+            explicitly remove mean from time series after conditioning (default True).
         decimate_kws : dict
             options for decimation function.
-        trim : float
-            fraction of data to trim from edges after conditioning, to avoid
-            spectral issues if filtering.
         slice_left : float
             number of seconds before t0 to slice the strain data, e.g. to avoid NaNs
         slice_right : float
@@ -366,10 +374,12 @@ class Data(TimeSeries):
         decimate_kws = decimate_kws or {}
 
         if t0 is not None:
+            if t0 < raw_time[0] or t0 > raw_time[-1]:
+                raise ValueError("t0 must be within the time series")
             ds = int(ds or 1)
-            i = argmin(abs(raw_time - t0))
-            raw_time = roll(raw_time, -(i % ds))
-            raw_data = roll(raw_data, -(i % ds))
+            i = np.argmin(abs(raw_time - t0))
+            raw_time = np.roll(raw_time, -(i % ds))
+            raw_data = np.roll(raw_data, -(i % ds))
 
         fny = 0.5/(raw_time[1] - raw_time[0])
         # Filter
@@ -387,10 +397,6 @@ class Data(TimeSeries):
             cond_data = raw_data
 
         # Decimate
-        if scipy_dec is not None:
-            logging.warn("scipy_dec arg is deprecated, use digital_filter")
-            digital_filter = not scipy_dec
-
         if ds and ds > 1:
             if digital_filter:
                 # fft data
@@ -418,7 +424,7 @@ class Data(TimeSeries):
         cond_data = cond_data[istart:iend]
 
         if remove_mean:
-            cond_data -= mean(cond_data)
+            cond_data -= np.mean(cond_data)
 
         return Data(cond_data, index=cond_time, ifo=self.ifo)
 
@@ -442,7 +448,7 @@ class PowerSpectrum(FrequencySeries):
     def __init__(self, *args, delta_f=None, **kwargs):
         super(PowerSpectrum, self).__init__(*args, **kwargs)
         if delta_f is not None:
-            self.index = arange(len(self))*delta_f
+            self.index = np.arange(len(self))*delta_f
 
     @property
     def _constructor(self):
@@ -517,7 +523,7 @@ class PowerSpectrum(FrequencySeries):
                 return func(f)
             else:
                 return cls._pad_low_freqs(f, f_ref, p_ref)
-        psd = cls(vectorize(get_psd_bin)(freq), index=freq)
+        psd = cls(np.vectorize(get_psd_bin)(freq), index=freq)
         return psd
         
     @staticmethod
@@ -591,7 +597,7 @@ class AutoCovariance(TimeSeries):
     def __init__(self, *args, delta_t=None, **kwargs):
         super(AutoCovariance, self).__init__(*args, **kwargs)
         if delta_t is not None:
-            self.index = arange(len(self))*delta_t
+            self.index = np.arange(len(self))*delta_t
 
     @property
     def _constructor(self):
@@ -628,7 +634,7 @@ class AutoCovariance(TimeSeries):
         n = n or len(d)
         if method.lower() == 'td':
             rho = sig.correlate(d, d, **kws)
-            rho = ifftshift(rho)
+            rho = np.fft.ifftshift(rho)
             rho = rho[:n] / len(d)
         elif method.lower() == 'fd':
             kws['fs'] = kws.get('fs', 1/dt)
@@ -662,7 +668,7 @@ class AutoCovariance(TimeSeries):
         """Cholesky factor :math:`L` of covariance matrix :math:`C = L^TL`.
         """
         if getattr(self, '_cholesky', None) is None:
-            self._cholesky = linalg.cholesky(self.matrix)
+            self._cholesky = np.linalg.cholesky(self.matrix)
         return self._cholesky
 
     def compute_snr(self, x, y=None):
@@ -691,7 +697,7 @@ class AutoCovariance(TimeSeries):
 
         if y is None: y = x
         ow_x = sl.solve_toeplitz(self.iloc[:len(x)], x)
-        return dot(ow_x, y)/sqrt(dot(x, ow_x))
+        return np.dot(ow_x, y)/np.sqrt(np.dot(x, ow_x))
 
     def whiten(self, data):
         """Whiten stretch of data using ACF.

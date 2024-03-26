@@ -471,7 +471,7 @@ class Fit(object):
                 config.write(f)
         return config
 
-    def update_info(self, section, **kws):
+    def update_info(self, section: str, **kws) -> None:
         """Update fit information stored in :attr:`Fit.info`, e.g., data
         provenance or injection properties. If creating a config file through
         :meth:`Fit.to_config`, `section` will operate as a name for a section
@@ -509,13 +509,13 @@ class Fit(object):
         self._pymc_model = None
         return cp.deepcopy(self)
 
-    def condition_data(self, preserve_acfs=False, **kwargs):
+    def condition_data(self, preserve_acfs : bool = False, **kwargs):
         """Condition data for all detectors by calling
         :meth:`ringdown.data.Data.condition`. Docstring for that function
         below.
 
         The `preserve_acfs` argument determines whether to preserve original
-        ACFs in fit after conditioning.
+        ACFs in fit after conditioning (default False).
 
         """
         new_data = {}
@@ -1062,7 +1062,6 @@ class Fit(object):
         delays = delays or {}
         antenna_patterns = antenna_patterns or {}
         for ifo, data in self.data.items():
-            # TODO: should we have an elliptical+ftau model?
             if ifo is None:
                 dt_ifo = 0
                 self.antenna_patterns[ifo] = (1, 1)
@@ -1159,7 +1158,7 @@ class Fit(object):
         else:
             return self._n_analyze
 
-    def whiten(self, datas) -> dict:
+    def whiten(self, datas: dict) -> dict:
         """Return whiten data for all detectors.
 
         See also :meth:`ringdown.data.AutoCovariance.whiten`.
