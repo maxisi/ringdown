@@ -1,6 +1,6 @@
 __all__ = ['construct_mode_list', 'KerrMode', 'get_ftau']
 
-from pylab import *
+import numpy as np
 import qnm
 import lal
 from collections import namedtuple
@@ -10,8 +10,11 @@ T_MSUN = lal.MSUN_SI * lal.G_SI / lal.C_SI**3
 ModeIndexBase = namedtuple('ModeIndex', ['p', 's', 'l', 'm', 'n'])
 
 class ModeIndex(ModeIndexBase):
-    def to_bytestring(self):
-        s = f"p={self.p}, s={self.s}, l={self.l}, m={self.m}, n={self.n}"
+    def to_bytestring(self, spin_weight=False):
+        if spin_weight
+            s = f'{self.p}{self.s}{self.l}{self.m}{self.n}'
+        else:
+            s = f'{self.p}{self.l}{self.m}{self.n}'
         return bytes(s, 'utf-8')
 
 def construct_mode_list(modes):
@@ -68,21 +71,22 @@ class KerrMode(object):
     def coefficients(self):
         i = self.index
         if i not in self._cache:
-            self._cache[i] = _COEFF_CACHE.get(i, None) or self.compute_coefficients(i)
+            self._cache[i] = _COEFF_CACHE.get(i, None) or \
+                             self.compute_coefficients(i)
         return self._cache[i]
 
     @staticmethod
     def compute_coefficients(mode, n_chi=1000, **kws):
         p, s, l, m, n = mode
-        chis = linspace(0, 1, n_chi)[:-1]
-        logchis = log1p(-chis)
-        M = column_stack((chis, ones_like(chis), logchis, logchis**2,
-                          logchis**3, logchis**4))
+        chis = np.linspace(0, 1, n_chi)[:-1]
+        logchis = np.log1p(-chis)
+        M = np.column_stack((chis, np.ones_like(chis), logchis, logchis**2,
+                             logchis**3, logchis**4))
 
         q = qnm.modes_cache(s, l, p*abs(m), n)
-        sgn = 1 if m == 0 else sign(m)
-        f = sgn*array([q(c)[0].real for c in chis])/(2*pi)
-        g = array([abs(q(c)[0].imag) for c in chis])
+        sgn = 1 if m == 0 else np.sign(m)
+        f = sgn*np.array([q(c)[0].real for c in chis])/(2*np.pi)
+        g = np.array([abs(q(c)[0].imag) for c in chis])
 
         coeff_f = np.linalg.lstsq(M, f, rcond=None, **kws)[0]
         coeff_g = np.linalg.lstsq(M, g, rcond=None, **kws)[0]
@@ -90,20 +94,20 @@ class KerrMode(object):
 
     def __call__(self, *args, **kwargs):
         f, tau = self.ftau(*args, **kwargs)
-        return 2*pi*f - 1j/tau
+        return 2*np.pi*f - 1j/tau
 
     def ftau(self, chi, m_msun=None, approx=False):
         if approx:
-            logchi = log1p(-chi)
-            c = (chi, ones_like(chi), logchi, logchi**2, logchi**3, logchi**4)
-            f, g = [dot(coeff, c) for coeff in self.coefficients]
+            logchi = np.log1p(-chi)
+            c = (chi, np.ones_like(chi), logchi, logchi**2, logchi**3, logchi**4)
+            f, g = [np.dot(coeff, c) for coeff in self.coefficients]
         else:
             p, s, l, m, n = self.index
             q = qnm.modes_cache(s, l, p*abs(m), n)
             def omega(c):
                 return q(c)[0]
-            f = sign(m)*vectorize(omega)(chi).real/(2*pi)
-            g = abs(vectorize(omega)(chi).imag)
+            f = np.sign(m)*np.vectorize(omega)(chi).real/(2*np.pi)
+            g = abs(np.vectorize(omega)(chi).imag)
         if m_msun:
            f /= (m_msun * T_MSUN)
            g /= (m_msun * T_MSUN)
@@ -114,7 +118,7 @@ class KerrMode(object):
 def get_ftau(M, chi, n, l=2, m=2):
     q22 = qnm.modes_cache(-2, l, m, n)
     omega, _, _ = q22(a=chi)
-    f = real(omega)/(2*pi) / (T_MSUN*M)
-    gamma = abs(imag(omega)) / (T_MSUN*M)
+    f = np.real(omega)/(2*np.pi) / (T_MSUN*M)
+    gamma = abs(np.imag(omega)) / (T_MSUN*M)
     return f, 1./gamma
 

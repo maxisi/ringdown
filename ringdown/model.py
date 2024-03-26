@@ -522,7 +522,7 @@ def get_arviz(sampler,
     elif isinstance(modes, int):
         modes = np.arange(modes, dtype=int)
     elif all([isinstance(m, qnms.ModeIndex) for m in modes]):
-        modes = [bytes(f'{m.p}{m.l}{m.m}{m.n}', 'utf-8') for m in modes]
+        modes = [m.to_bytestring() for m in modes]
     else:
         logging.warning('unrecognize mode list format')
     if len(modes) != n_mode:
