@@ -10,11 +10,14 @@ T_MSUN = lal.MSUN_SI * lal.G_SI / lal.C_SI**3
 ModeIndexBase = namedtuple('ModeIndex', ['p', 's', 'l', 'm', 'n'])
 
 class ModeIndex(ModeIndexBase):
-    def to_bytestring(self, spin_weight=False):
-        if spin_weight
-            s = f'{self.p}{self.s}{self.l}{self.m}{self.n}'
-        else:
-            s = f'{self.p}{self.l}{self.m}{self.n}'
+    @classmethod
+    def from_bytestring(cls, s):
+        s = s.decode('utf-8')
+        p, s, l, m, n = map(int, s.split(','))
+        return cls(p, s, l, m, n)
+
+    def to_bytestring(self):
+        s = f'{self.p},{self.s},{self.l},{self.m},{self.n}'
         return bytes(s, 'utf-8')
 
 def construct_mode_list(modes):
