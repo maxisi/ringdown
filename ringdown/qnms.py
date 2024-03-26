@@ -19,6 +19,16 @@ class ModeIndex(ModeIndexBase):
     def to_bytestring(self):
         s = f'{self.p},{self.s},{self.l},{self.m},{self.n}'
         return bytes(s, 'utf-8')
+    
+    def to_latex(self, include_prograde=False, include_spinweight=False):
+        s = f'{self.l}{self.m}{self.n}'
+
+        if include_spinweight:
+            s = f'{self.s}' + s
+        if include_prograde:
+            s = f'{self.p}' + s
+
+        return s
 
 def construct_mode_list(modes):
     if modes is None:
