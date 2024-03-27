@@ -10,7 +10,7 @@ import warnings
 
 class Ringdown(Signal):
     _metadata = ['modes']
-    _MODELS =  ['mchi', 'mchi_aligned', 'ftau', 'elliptical', 'default']
+    _MODELS =  ['mchi', 'mchi_aligned', 'mchi_aligned_marginalized', 'ftau', 'elliptical', 'default']
 
     def __init__(self, *args, modes=None, **kwargs):
         super(Ringdown, self).__init__(*args, **kwargs)
@@ -52,11 +52,28 @@ class Ringdown(Signal):
                 #     phi = phi, theta = 0
                 # the ellipticity is already computed within stan, but we need
                 # to readjust the definition of the amplitude and add theta
+
+                # this is the original hardcoded version for l=m=2 #
                 pars['cosi'] = kws.pop('cosi')*ones_like(pars['a'])
                 pars['a'] = pars['a']*(1 + pars['cosi']**2)
                 kws['theta'] = zeros_like(pars['a'])
                 if 'ellip' not in kws:
                     kws['ellip'] = 2*pars['cosi'] / (1 + pars['cosi']**2)
+            elif kws['model'] == 'mchi_aligned_marginalized':
+                # this assumes a template for the oscillatory part like
+                #     hp = (1 + cosi**2) * A * cos(wt - phi)
+                #     hc = 2*cosi * A * sin(wt - phi)
+                # in the parameterization adopted here, this corresponds to 
+                #     A = A*(1 + cosi**2), e = 2*cosi / (1 + cosi**2)
+                #     phi = phi, theta = 0
+                # the ellipticity is already computed within stan, but we need
+                # to readjust the definition of the amplitude and add theta
+                
+                pars['cosi'] = kws.pop('cosi')*ones_like(pars['a'])
+                pars['a'] = kws.pop('ap')*ones_like(pars['a'])
+                kws['theta'] = zeros_like(pars['a'])
+                if 'ellip' not in kws:
+                    kws['ellip'] = (kws.pop('ac')*ones_like(pars['ellip'])) / pars['a']
             elif kws['model'] == 'ftau':
                 # this assumes a template for the oscillatory part like
                 #     hp = Ax*cos(wt) + Ay*sin(wt) = A*cos(wt - phi)

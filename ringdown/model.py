@@ -1,9 +1,11 @@
-__all__ = ['make_mchi_model', 'make_mchi_aligned_model', 'make_ftau_model']
+__all__ = ['make_mchi_model', 'make_mchi_aligned_model', 'make_mchi_aligned_marginalized_model', 'make_ftau_model',
+           'sp_w_ylm_p', 'sp_w_ylm_c']
 
 import pytensor.tensor as at
 import pytensor.tensor.slinalg as atl
 import numpy as np
 import pymc as pm
+from scipy.special import factorial
 
 # reference frequency and mass values to translate linearly between the two
 FREF = 2985.668287014743
@@ -76,6 +78,110 @@ def rd_design_matrix(t0s, ts, f, gamma, Fp, Fc, Ascales):
     st = at.sin(2*np.pi*f*t)
     decay = at.exp(-gamma*t)
     return at.concatenate((Ascales*Fp*decay*ct, Ascales*Fp*decay*st, Ascales*Fc*decay*ct, Ascales*Fc*decay*st), axis=1)
+
+def rd_single_det_design_matrix(t0s, ts, f, gamma, A):
+    ts = at.as_tensor(ts)
+    nifo, nt = ts.shape
+
+    nmode = f.shape[0]
+
+    t0s = at.reshape(t0s, (nifo, 1, 1))
+    ts = at.reshape(ts, (nifo, 1, nt))
+    f = at.reshape(f, (1, nmode, 1))
+    gamma = at.reshape(gamma, (1, nmode, 1))
+    A = at.reshape(A, (1, nmode, 1))
+
+    t = ts - t0s
+
+    ct = at.cos(2*np.pi*f*t)
+    st = at.sin(2*np.pi*f*t)
+    decay = at.exp(-gamma*t)
+    
+    return at.concatenate((A*decay*ct, A*decay*st), axis=1)
+
+def tens_factorial(j):
+    arr = j.eval()
+    fact = factorial(arr)
+    tens_fact = at.as_tensor_variable(fact)
+    return tens_fact
+
+def tens_binom(n, k):
+    """Returns binomial coefficient, `n choose k`.
+    
+    Arguments
+    ---------
+    n: int
+      number of possibilities
+    k: int
+      number of unordered outcomes to choose
+    """
+
+    n_arr = n.eval()
+    k_arr = k.eval()
+    zer = np.zeros(len(k_arr))
+    one = np.ones(len(k_arr))
+    
+    ans = np.zeros(len(k_arr))
+
+    for idx in range(len(ans)):
+        n = n_arr[idx]
+        k = k_arr[idx]
+        if 0 <= k < n:
+            ans[idx] = factorial(int(n)) / factorial(int(k)) / factorial(int(n)-int(k))
+    
+    eidx = np.argwhere(k_arr == n_arr)
+    for idx in eidx:
+        ans[idx] = 1
+
+    zidx = np.argwhere(k_arr.any() < 0)
+    for idx in zidx:
+        ans[idx] = 0
+        
+    return at.as_tensor_variable(ans)
+
+def sp_w_ylm(es, el, em):
+    
+    ## with phi = 0
+    ## with theta = arccos(cosi)
+    
+    r = el - es
+    
+    def get_rs(r):
+        ### getting each r index for summation term
+        ### use the largest r in the vector---no harm as tens_binom(el-es, r) will return zero
+        leng = len(r.eval())
+        coll = []
+        for i in range(int(max(r.eval()))+1):
+            rs = at.as_tensor_variable(np.zeros(leng))
+            v = rs + i
+            coll.append(v)
+        return coll
+    
+    rs = get_rs(r)
+    
+    def sin_th_2(cosi):
+        return at.sqrt((1-cosi)/2)
+    
+    def cos_th_2(cosi):
+        return at.sqrt((1+cosi)/2)
+    
+    def cot_th_2(cosi):
+        return cos_th_2(cosi)/sin_th_2(cosi)
+
+    ## normalization constant is sqrt(1/0.159) ##
+    
+    return lambda cosi: (-1)**(el+em-es) * at.sqrt(tens_factorial(el+em)*
+                                                   tens_factorial(el-em)*
+                                                   ((2*el)+1)/
+                                                   (4*np.pi)/
+                                                   tens_factorial(el+es)/
+                                                   tens_factorial(el-es)) * (sin_th_2(cosi))**(2*el) * np.sum([(-1)**n * tens_binom(el-es, n) * tens_binom(el+es, n+es-em) * (cot_th_2(cosi))**((2*n)+es-em) for n in rs]) * np.sqrt(1/0.159)
+
+def sp_w_ylm_p(cosi, l, m):
+    return (sp_w_ylm(-2, l, m)(cosi) + sp_w_ylm(-2, l, m)(-cosi)) * np.sqrt(5/np.pi) # multiply by constant sqrt(5/pi) to match Max's original version
+
+def sp_w_ylm_c(cosi, l, m):
+    return (sp_w_ylm(-2, l, m)(cosi) - sp_w_ylm(-2, l, m)(-cosi)) * np.sqrt(5/np.pi)
 
 def chi_factors(chi, coeffs):
     log1mc = at.log1p(-chi)
@@ -332,6 +438,8 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
 
     ifos = kwargs.pop('ifos', np.arange(ndet))
     modes = kwargs.pop('modes', np.arange(nmode))
+    l = kwargs.pop('ls', np.zeros(nmode))
+    m = kwargs.pop('ms', np.zeros(nmode))
 
     coords = {
         'ifo': ifos,
@@ -370,9 +478,13 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
              dims=['mode'])
         tau = pm.Deterministic('tau', 1/gamma, dims=['mode'])
         Q = pm.Deterministic('Q', np.pi*f*tau, dims=['mode'])
-        Ap = pm.Deterministic('Ap', (1 + at.square(cosi))*A, dims=['mode'])
-        Ac = pm.Deterministic('Ac', 2*cosi*A, dims=['mode'])
-        ellip = pm.Deterministic('ellip', Ac/Ap, dims=['mode'])
+        
+        Ap = pm.Deterministic('Ap', sp_w_ylm_p(cosi, at.as_tensor_variable(l), at.as_tensor_variable(m))*A, dims=['mode'])
+        Ac = pm.Deterministic('Ac', sp_w_ylm_c(cosi, at.as_tensor_variable(l), at.as_tensor_variable(m))*A, dims=['mode'])
+
+        x = at.abs(sp_w_ylm(-2, at.as_tensor_variable(l), at.as_tensor_variable(m))(cosi))
+        y = at.abs(sp_w_ylm(-2, at.as_tensor_variable(l), at.as_tensor_variable(m))(-1*cosi))
+        ellip = pm.Deterministic('ellip', (x - y)/(x + y), dims=['mode'])
 
         # Check limits on f
         if not np.isscalar(f_min) or not f_min == 0.0:
@@ -382,11 +494,10 @@ def make_mchi_aligned_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
             _ = pm.Potential('f_max_cut', at.sum(at.where(f > f_max, np.NINF, 0.0)))
             print("Running with f_max_cut on modes:",f_max)
 
-
-        Apx = (1 + at.square(cosi))*A*at.cos(phi)
-        Apy = (1 + at.square(cosi))*A*at.sin(phi)
-        Acx = -2*cosi*A*at.sin(phi)
-        Acy = 2*cosi*A*at.cos(phi)
+        Apx = Ap*at.cos(phi)
+        Apy = Ap*at.sin(phi)
+        Acx = -1*Ac*at.sin(phi)
+        Acy = Ac*at.cos(phi)
 
         h_det_mode = pm.Deterministic("h_det_mode",
             compute_h_det_mode(t0, times, Fps, Fcs, f, gamma,
@@ -593,6 +704,174 @@ def make_mchi_marginalized_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs, g_c
 
         return model
 
+def make_mchi_aligned_marginalized_model(t0, times, strains, Ls, Fps, Fcs, f_coeffs,
+                            g_coeffs, **kwargs):
+    M_min = kwargs.pop("M_min")
+    M_max = kwargs.pop("M_max")
+    chi_min = kwargs.pop("chi_min")
+    chi_max = kwargs.pop("chi_max")
+    cosi_min = kwargs.pop("cosi_min")
+    cosi_max = kwargs.pop("cosi_max")
+    A_scale = kwargs.pop("A_scale")
+    df_min = kwargs.pop("df_min")
+    df_max = kwargs.pop("df_max")
+    dtau_min = kwargs.pop("dtau_min")
+    dtau_max = kwargs.pop("dtau_max")
+    perturb_f = kwargs.pop("perturb_f", 0)
+    perturb_tau = kwargs.pop("perturb_tau", 0)
+    f_min = kwargs.pop('f_min', 0.0)
+    f_max = kwargs.pop('f_max', np.inf)
+    nmode = f_coeffs.shape[0]
+    prior_run = kwargs.pop('prior_run',False)
+
+    if (cosi_min < -1) or (cosi_max > 1):
+        raise ValueError("cosi boundaries must be contained in (-1, 1)")
+    if (chi_min < 0) or (chi_max > 1):
+        raise ValueError("chi boundaries must be contained in [0, 1)")
+    
+    ndet = len(t0)
+    nt = len(times[0])
+
+    ifos = kwargs.pop('ifos', np.arange(ndet))
+    modes = kwargs.pop('modes', np.arange(nmode))
+    l = at.as_tensor_variable(kwargs.pop('ls', np.zeros(nmode)))
+    m = at.as_tensor_variable(kwargs.pop('ms', np.zeros(nmode)))
+    
+    Llogdet = np.array([np.sum(np.log(np.diag(L))) for L in Ls])
+
+    coords = {
+        'ifo': ifos,
+        'mode': modes,
+        'time_index': np.arange(nt)
+    }
+
+    with pm.Model(coords=coords) as model:
+        pm.ConstantData('times', times, dims=['ifo', 'time_index'])
+        pm.ConstantData('t0', t0, dims=['ifo'])
+        pm.ConstantData('L', Ls, dims=['ifo', 'time_index', 'time_index'])
+
+        M = pm.Uniform("M", M_min, M_max)
+        chi = pm.Uniform("chi", chi_min, chi_max)
+
+        cosi = pm.Uniform("cosi", cosi_min, cosi_max) if len(ifos) > 1 else pm.ConstantData("cosi", (cosi_min+cosi_max)/2) ### fixing cosi for single-detector fits
+        
+        A_scale = pm.Uniform('A_scale', 0, A_scale, dims=['mode'])
+
+        Ax_unit = pm.Normal("Ax_unit", dims=['mode'])
+        Ay_unit = pm.Normal("Ay_unit", dims=['mode'])
+
+        df = pm.Uniform("df", df_min, df_max, dims=['mode'])
+        dtau = pm.Uniform("dtau", dtau_min, dtau_max, dims=['mode'])
+        
+        f0 = FREF*MREF/M
+        
+        f = pm.Deterministic('f',
+            f0*chi_factors(chi, f_coeffs)*at.exp(df * perturb_f),
+            dims=['mode'])
+        gamma = pm.Deterministic('gamma',
+             f0*chi_factors(chi, g_coeffs)*at.exp(-dtau * perturb_tau),
+             dims=['mode'])
+        tau = pm.Deterministic('tau', 1/gamma, dims=['mode'])
+        Q = pm.Deterministic('Q', np.pi*f*tau, dims=['mode'])
+
+        Yp = at.reshape(sp_w_ylm_p(cosi, l, m), (1, nmode, 1))
+        Yc = at.reshape(sp_w_ylm_c(cosi, l, m), (1, nmode, 1))
+        
+        if len(ifos) == 1: ### combine Fs, Ys, As into one big amplitude param since one of the polarizations is zero (not detected by single det)
+            design_matrices = rd_single_det_design_matrix(t0, times, f, gamma, A_scale)
+
+        else:        
+            old_dms = rd_design_matrix(t0, times, f, gamma, Fps, Fcs, A_scale)
+            design_matrices = at.concatenate(((Yp * old_dms[:,:nmode,:]) + (Yc * old_dms[:,2*nmode:3*nmode,:]), 
+                                              (Yp * old_dms[:,nmode:2*nmode,:]) + (Yc * old_dms[:,3*nmode:,:])), axis=1)
+
+        mu = at.zeros(2*nmode)
+        Lambda_inv = at.eye(2*nmode)
+        Lambda_inv_chol = at.eye(2*nmode)
+        
+        # Likelihood:
+        
+        if not prior_run:
+            for i in range(ndet):
+                MM = design_matrices[i, :, :].T # (ndet, 4*nmode, ntime) => (i, ntime, 4*nmode)
+                
+                A_inv = Lambda_inv + at.dot(MM.T, _atl_cho_solve((Ls[i], True), MM))
+                A_inv_chol = atl.cholesky(A_inv)
+
+                a = _atl_cho_solve((A_inv_chol, True), at.dot(Lambda_inv, mu) + at.dot(MM.T, _atl_cho_solve((Ls[i], True), strains[i])))
+
+                b = at.dot(MM, mu)
+            
+                Blogsqrtdet = Llogdet[i] - at.sum(at.log(at.diag(Lambda_inv_chol))) + at.sum(at.log(at.diag(A_inv_chol)))
+
+                r = strains[i] - b
+                Cinv_r = _atl_cho_solve((Ls[i], True), r)
+                MAMTCinv_r = at.dot(MM, _atl_cho_solve((A_inv_chol, True), at.dot(MM.T, Cinv_r)))
+                CinvMAMTCinv_r = _atl_cho_solve((Ls[i], True), MAMTCinv_r)
+                logl = -0.5*at.dot(r, Cinv_r - CinvMAMTCinv_r) - Blogsqrtdet
+
+                key = ifos[i]
+                if isinstance(key, bytes):
+                 # Don't want byte strings in our names!
+                    key = key.decode('utf-8')
+
+                pm.Potential(f'strain_{key}', logl)
+
+                mu = a
+                Lambda_inv = A_inv
+                Lambda_inv_chol = A_inv_chol
+    
+        else:
+            # We're done.  There is no likelihood.
+            pass
+        
+        # Lambda_inv_chol.T: Lambda_inv = Lambda_inv_chol * Lambda_inv_chol.T,
+        # so Lambda = (Lambda_inv_chol.T)^{-1} Lambda_inv_chol^{-1} To achieve
+        # the desired covariance, we can *right multiply* iid N(0,1) variables
+        # by Lambda_inv_chol^{-1}, so that y = x Lambda_inv_chol^{-1} has
+        # covariance < y^T y > = (Lambda_inv_chol^{-1}).T < x^T x >
+        # Lambda_inv_chol^{-1} = (Lambda_inv_chol^{-1}).T I Lambda_inv_chol^{-1}
+        # = Lambda.
+        
+        theta = mu + atl.solve(Lambda_inv_chol.T, at.concatenate((Ax_unit, Ay_unit)))
+
+        Ax_unit_marg = theta[:nmode]
+        Ay_unit_marg = theta[nmode:2*nmode]
+
+        phi = pm.Deterministic("phi", at.arctan2(Ay_unit_marg, Ax_unit_marg), dims=['mode'])
+        
+        A = pm.Deterministic("A",
+            A_scale*at.sqrt(at.square(theta[:nmode])+at.square(theta[nmode:2*nmode])),
+            dims=['mode']) ### Note: if fitting to a single-detector event, this A parameter will include the antenna pattern and spin-weighted spherical harmonic of the detected polarization (for a fixed inclination)
+        
+        Ap = pm.Deterministic('Ap', at.reshape(Yp, (nmode, ))*A, dims=['mode'])
+        Ac = pm.Deterministic('Ac', at.reshape(Yc, (nmode, ))*A, dims=['mode'])
+        
+        x = at.abs(sp_w_ylm(-2, at.as_tensor_variable(l), at.as_tensor_variable(m))(cosi))
+        y = at.abs(sp_w_ylm(-2, at.as_tensor_variable(l), at.as_tensor_variable(m))(-1*cosi))
+        ellip = pm.Deterministic('ellip', (x - y)/(x + y), dims=['mode'])
+
+        # Check limits on f
+        if not np.isscalar(f_min) or not f_min == 0.0:
+            _ = pm.Potential('f_min_cut', at.sum(at.where(f < f_min, np.NINF, 0.0)))
+            print("Running with f_min_cut on modes:",f_min)
+        if not np.isscalar(f_max) or not f_max == np.inf:
+            _ = pm.Potential('f_max_cut', at.sum(at.where(f > f_max, np.NINF, 0.0)))
+            print("Running with f_max_cut on modes:",f_max)
+
+        Apx = Ap*at.cos(phi)
+        Apy = Ap*at.sin(phi)
+        Acx = -1*Ac*at.sin(phi)
+        Acy = Ac*at.cos(phi)
+
+        h_det_mode = pm.Deterministic("h_det_mode",
+            compute_h_det_mode(t0, times, Fps, Fcs, f, gamma,
+                               Apx, Apy, Acx, Acy),
+            dims=['ifo', 'mode', 'time_index'])
+        h_det = pm.Deterministic("h_det", at.sum(h_det_mode, axis=1),
+                                 dims=['ifo', 'time_index'])
+        
+        return model
 
 def logit(p):
     return np.log(p) - np.log1p(-p)

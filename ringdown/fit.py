@@ -31,7 +31,7 @@ def np2(x):
 
 Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
 
-MODELS = ('ftau', 'mchi', 'mchi_aligned', 'mchi_marginal', 'mchiq')
+MODELS = ('ftau', 'mchi', 'mchi_aligned', 'mchi_marginal', 'mchiq', 'mchi_aligned_marginalized')
 
 class Fit(object):
     """ A ringdown fit. Contains all the information required to setup and run
@@ -273,6 +273,24 @@ class Fit(object):
                  f_max=np.inf,
                  prior_run=False
              ))
+        elif self.model == 'mchi_aligned_marginalized':
+            default.update(dict(
+                perturb_f=zeros(self.n_modes or 1),
+                perturb_tau=zeros(self.n_modes or 1),
+                df_min=-0.5,
+                dtau_min=-0.5,
+                df_max=0.5,
+                dtau_max=0.5,
+                M_min=None,
+                M_max=None,
+                chi_min=0,
+                chi_max=0.99,
+                cosi_min=-1,
+                cosi_max=1,
+                f_min=0.0,
+                f_max=np.inf,
+                prior_run=False
+            ))
         return default
 
     @property
@@ -360,6 +378,9 @@ class Fit(object):
             # serialize and compress properly
             input['modes'] = [bytes(f'{m.p}{m.l}{m.m}{m.n}', 'utf-8') for m in
                               self.modes]
+            ### l and m of each mode to pass to mchi_aligned amplitude coefficient calculator in `model.py`
+            input['ls'] = [mo.l for mo in self.modes]
+            input['ms'] = [mo.m for mo in self.modes]
 
         input.update(self.prior_settings)
 
@@ -379,6 +400,8 @@ class Fit(object):
                 self._pymc_model = model.make_mchi_aligned_model(**self.model_input)
             elif self.model == 'ftau':
                 self._pymc_model = model.make_ftau_model(**self.model_input)
+            elif self.model == 'mchi_aligned_marginalized':
+                self._pymc_model = model.make_mchi_aligned_marginalized_model(**self.model_input)
             else:
                 raise NotImplementedError(f'unrecognized model {self.model}')
         return self._pymc_model
@@ -778,6 +801,15 @@ class Fit(object):
                         rkws.update(kws)
 
         if self.model == 'mchi_marginal' and not prior:
+            # This model doesn't have observables because of its structure, so we have to add them in later
+            od_dict = {}
+            for ifo in self.ifos:
+                if isinstance(ifo, bytes):
+                    ifo = ifo.decode('utf-8')
+                od_dict[f'strain_{ifo}'] = self.analysis_data[ifo]
+            self.result.add_groups(dict(observed_data=dict_to_dataset(od_dict, coords=self.result.posterior.coords, dims={k: ['time_index'] for k in od_dict.keys()}, default_dims=[])))
+
+        if self.model == 'mchi_aligned_marginalized' and not prior:
             # This model doesn't have observables because of its structure, so we have to add them in later
             od_dict = {}
             for ifo in self.ifos:
