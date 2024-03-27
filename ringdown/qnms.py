@@ -19,8 +19,8 @@ class ModeIndex(ModeIndexBase):
             return cls(p, s, l, m, n)
         else:
             # Try to parse old-style lmn strings:
-            l,m,n = map(int, s)
-            return cls(1, -2, l, m, n)
+            p,l,m,n = map(int, s)
+            return cls(p, -2, l, m, n)
 
     def to_bytestring(self):
         s = f'{self.p},{self.s},{self.l},{self.m},{self.n}'
