@@ -13,8 +13,14 @@ class ModeIndex(ModeIndexBase):
     @classmethod
     def from_bytestring(cls, s):
         s = s.decode('utf-8')
-        p, s, l, m, n = map(int, s.split(','))
-        return cls(p, s, l, m, n)
+
+        if ',' in s:
+            p, s, l, m, n = map(int, s.split(','))
+            return cls(p, s, l, m, n)
+        else:
+            # Try to parse old-style lmn strings:
+            l,m,n = map(int, s)
+            return cls(1, -2, l, m, n)
 
     def to_bytestring(self):
         s = f'{self.p},{self.s},{self.l},{self.m},{self.n}'
