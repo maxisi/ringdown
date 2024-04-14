@@ -12,6 +12,7 @@ from collections import namedtuple
 import configparser
 import copy as cp
 from .data import *
+from .result import Result
 import lal
 import logging
 from .model import make_model, get_arviz
@@ -742,7 +743,7 @@ class Fit(object):
                 sampler.run(prng, *run_input, **run_kws)
 
                 # turn sampler into arviz object and store
-                result = get_arviz(sampler, ifos=self.ifos, modes=self.modes)
+                result = Result(get_arviz(sampler, ifos=self.ifos, modes=self.modes))
                 if prior:
                     self.prior = result
                 else:
@@ -771,53 +772,11 @@ class Fit(object):
                                     f"tuning steps and {new_kws['num_samples']} samples")
 
                     kwargs.update(kws)
-        self.update_info('run', **kwargs)
-
         if not prior and store_residuals:
-            self._generate_whitened_residuals()
-
+            self.result._generate_whitened_residuals()
+            
+        self.update_info('run', **kwargs)
     run.__doc__ = run.__doc__.format(DEF_RUN_KWS)
-
-    def _generate_whitened_residuals(self):
-        # Adduct the whitened residuals to the result.
-        residuals = {}
-        residuals_stacked = {}
-        for ifo in self.ifos:
-            if ifo in self.result.posterior.ifo:
-                ifo_key = ifo
-            elif bytes(str(ifo), 'utf-8') in self.result.posterior.ifo:
-                # IFO coordinates are bytestrings
-                ifo_key = bytes(str(ifo), 'utf-8') # IFO coordinates are bytestrings
-            else:
-                raise KeyError(f"IFO {ifo} is not a valid indexing ifo for the result posterior")
-            r = self.result.constant_data['strain'].sel(ifo=ifo_key) -\
-                self.result.posterior.h_det.sel(ifo=ifo_key)
-            residuals[ifo] = r.transpose('chain', 'draw', 'time_index')
-            residuals_stacked[ifo] = residuals[ifo].stack(sample=['chain',
-                                                                  'draw'])
-        residuals_whitened = self.whiten(residuals_stacked)
-        d = self.result.posterior.sizes
-        residuals_whitened = {
-            i: v.reshape((d['time_index'], d['chain'], d['draw']))
-            for i,v in residuals_whitened.items()
-        }
-        resid = np.stack([residuals_whitened[i] for i in self.ifos], axis=-1)
-        keys = ('time_index', 'chain', 'draw', 'ifo')
-        self.result.posterior['whitened_residual'] = (keys, resid)
-        keys = ('chain', 'draw', 'ifo', 'time_index')
-        self.result.posterior['whitened_residual'] = \
-            self.result.posterior.whitened_residual.transpose(*keys)
-        lnlike = -self.result.posterior.whitened_residual**2/2
-        try:
-            self.result.log_likelihood['whitened_pointwise_loglike'] = lnlike    
-        except AttributeError:
-            # We assume that log-likelihood isn't created yet.
-            self.result.add_groups(dict(
-                log_likelihood=dict_to_dataset(
-                    {'whitened_pointwise_loglike': lnlike},
-                    coords=self.result.posterior.coords,
-                    dims={'whitened_pointwise_loglike': list(keys)}
-                    )))
 
     def add_data(self, data, time=None, ifo=None, acf=None):
         """Add data to fit.
@@ -1215,148 +1174,4 @@ class Fit(object):
             dictionary of :class:`ringdown.data.Data` with whitned data for
             each detector.
         """
-        return {i: self.acfs[i].whiten(d) for i,d in datas.items()}
-
-    def draw_sample(self, map=False, prior=False, rng=None, seed=None):
-        """Draw a sample from the posterior.
-
-        Arguments
-        ---------
-        map : bool
-           return maximum-probability sample; otherwise, returns random draw
-           (def., `False`) 
-        prior : bool
-            draw from prior instead of posterior samples
-        rng : numpy.random._generator.Generator
-            random number generator (optional)
-        seed : int
-            seed to initialize new random number generator (optional)
-        
-        Returns
-        -------
-        i : int
-            location of draw in stacked samples (i.e., samples obtained by
-            calling ``posterior.stack(sample=('chain', 'draw'))``)
-        pars : xarray.core.dataset.DataVariables
-            object containing drawn parameters (can be treated as dict)
-        """
-        if prior and not self.prior:
-            raise ValueError("no prior samples available")
-        elif not prior and not self.result:
-            raise ValueError("no posterior samples available")
-        # stack samples (prior or result)
-        result = self.prior if prior else self.result
-        samples = result.posterior.stack(sample=('chain', 'draw'))
-        if map:
-            # select maximum probability sample
-            logp = result.sample_stats.lp.stack(sample=('chain', 'draw'))
-            i = np.argmax(logp.values)
-        else:
-            # pick random sample
-            rng = rng or np.random.default_rng(seed)
-            i = rng.integers(len(samples['sample']))
-        sample = samples.isel(sample=i)
-        pars = sample.data_vars
-        return i, pars
-
-    @property
-    def whitened_templates(self) -> np.ndarray:
-        """Whitened templates corresponding to each posterior sample, as
-        were seen by the sampler.
-
-        Dimensions will be ``(ifo, time, sample)``.
-
-        Corresponding unwhitened templates can be obtained from posterior by
-        doing::
-
-          fit.result.posterior.h_det.stack(sample=('chain', 'draw'))
-        """
-        if self.result is None:
-            return None
-        # get reconstructions from posterior, shaped as (chain, draw, ifo, time)
-        # and stack into (ifo, time, sample)
-        hs = self.result.posterior.h_det.stack(samples=('chain', 'draw'))
-        # whiten the reconstructions using the Cholesky factors, L, with shape
-        # (ifo, time, time). the resulting object will have shape (ifo, time, sample)
-        return np.linalg.solve(self.result.constant_data.L, hs)
-
-    def compute_posterior_snrs(self, optimal=True, network=True) -> np.ndarray:
-        """Efficiently computes signal-to-noise ratios from posterior samples,
-        reproducing the computation internally carried out by the sampler.
-
-        Depending on the ``optimal`` argument, returns either the optimal SNR::
-
-          snr_opt = sqrt(dot(template, template))
-
-        or the matched filter SNR::
-
-          snr_mf = dot(data, template) / snr_opt
-
-        Arguments
-        ---------
-        optimal : bool
-            return optimal SNR, instead of matched filter SNR (def., ``True``)
-        network : bool
-            return network SNR, instead of individual-detector SNRs (def.,
-            ``True``)
-
-        Returns
-        -------
-        snrs : array
-            stacked array of SNRs, with shape ``(samples,)`` if ``network =
-            True``, or ``(ifo, samples)`` otherwise; the number of samples
-            equals the number of chains times the number of draws.
-        """
-        if self.result is None:
-            raise RuntimeError("no results available")
-        # get whitened reconstructions from posterior (ifo, time, sample)
-        whs = self.whitened_templates
-        # take the norm across time to get optimal snrs for each (ifo, sample)
-        opt_ifo_snrs = np.linalg.norm(whs, axis=1)
-        if optimal:
-            snrs = opt_ifo_snrs
-        else:
-            # get analysis data, shaped as (ifo, time)
-            if "strain" in self.result.observed_data:
-                # strain values stored in "old" PyStan structure
-                ds = self.result.observed_data.strain
-            else:
-                # strain values stored in "new" PyMC structure
-                ds = np.array([d.values for d in self.result.observed_data.values()])
-            # whiten it with the Cholesky factors, so shape will remain (ifo, time)
-            wds = np.linalg.solve(self.result.constant_data.L, ds)
-            # take inner product between whitened template and data, and normalize
-            snrs = np.einsum('ijk,ij->ik', whs, wds)/opt_ifo_snrs
-        if network:
-            # take norm across detectors
-            return np.linalg.norm(snrs, axis=0)
-        else:
-            return snrs
-
-    @property
-    def waic(self):
-        """Returns the 'widely applicable information criterion' predictive
-        accuarcy metric for the fit.
-        
-        See https://arxiv.org/abs/1507.04544 for definitions and discussion.  A
-        larger WAIC indicates that the model has better predictive accuarcy on
-        the fitted data set."""
-        if self.result is None:
-            raise RuntimeError("no results available")
-        return az.waic(self.result, var_name='whitened_pointwise_loglike')
-    
-    @property
-    def loo(self):
-        """Returns a leave-one-out estimate of the predictive accuracy of the
-        model.
-        
-        See https://arxiv.org/abs/1507.04544 for definitions and discussion,
-        including discussion of the 'Pareto stabilization' algorithm for
-        reducing the variance of the leave-one-out estimate.  The LOO is an
-        estimate of the expected log predictive density (log of the likelihood
-        evaluated on hypothetical data from a replication of the observation
-        averaged over the posterior) of the model; larger LOO values indicate
-        higher predictive accuracy (i.e. explanatory power) for the model."""
-        if self.result is None:
-            raise RuntimeError("no results available")
-        return az.loo(self.result, var_name='whitened_pointwise_loglike')
+        return {i: self.acfs[i].whiten(d) for i, d in datas.items()}
