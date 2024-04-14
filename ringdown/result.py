@@ -221,3 +221,13 @@ class Result(az.InferenceData):
                     coords=self.posterior.coords,
                     dims={'whitened_pointwise_loglike': list(keys)}
                     )))
+            
+    @property
+    def ess(self):
+        """Minimum effective sample size for all parameters in the result.
+        """
+        # check effective number of samples and rerun if necessary
+        ess = az.ess(self)
+        mess = ess.min()
+        mess_arr = np.array([mess[k].values[()] for k in mess.keys()])
+        return np.min(mess_arr)

@@ -95,9 +95,9 @@ class Fit(object):
     target : Target
         information about truncation time at geocenter and, if applicable,
         source right ascension, declination and polarization angle.
-    result : arviz.data.inference_data.InferenceData
+    result : Result, arviz.data.inference_data.InferenceData
         if model has been run, arviz object containing fit result
-    prior : arviz.data.inference_data.InferenceData
+    prior : Result, arviz.data.inference_data.InferenceData
         if model prior has been run, arviz object containing prior
     modes : list
         if applicable, list of (p, s, l, m, n) tuples identifying modes to be
@@ -750,20 +750,17 @@ class Fit(object):
                     self.result = result
 
                 # check effective number of samples and rerun if necessary
-                ess = az.ess(result)
-                mess = ess.min()
-                mess_arr = np.array([mess[k].values[()] for k in mess.keys()])
-                ess_run = np.min(mess_arr)
-                
+                ess_run = result.ess
                 logging.info(f"min ess = {int(ess_run)} after {run_count} runs")
-                run_count += 1
 
                 if ess_run < min_ess:
+                    run_count += 1
+                    
                     # if we need to run again, double the number of tuning steps
                     # and samples
                     new_kws = dict(
-                        num_warmup=2*sampler_kws.get('num_warmup', 1000),
-                        num_samples=2*sampler_kws.get('num_samples', 1000)
+                        num_warmup = 2*sampler_kws.get('num_warmup', 1000),
+                        num_samples = 2*sampler_kws.get('num_samples', 1000)
                     )
                     sampler_kws.update(new_kws)
                         
