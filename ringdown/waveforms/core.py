@@ -9,7 +9,7 @@ def _ishift(hp_t : np.array, hc_t : np.array):
     """Quadratic sub-sample interpolation to estimate the peak of a waveform.
 
     Identifies three points (a, b, c) where b is the sample peak and a and c are
-    the points immediately preceeding and following it; if the peak is at the
+    the points immediately preceding and following it; if the peak is at the
     beginning or end of the array, the points are wrapped around. The peak is
     then estimated by fitting a quadratic to these three points and finding the
     maximum of the parabola.

@@ -22,12 +22,15 @@
 import sys
 import os
 import numpy as np
-import ringdown as rd
 import argparse
 import configparser
 import logging
 import time
 from ast import literal_eval
+
+# hard code here to avoid importing the full ringdown package
+# just for ringdown.qnms.T_MSUN
+T_MSUN = 4.925490947641267e-06
 
 
 ##############################################################################
@@ -161,7 +164,7 @@ for bad_set in incompatible_sets:
 m_ref = config.getfloat(T0_SECT, 'M-ref', fallback=None)
 if m_ref:
     # reference time translating from solar masses
-    tm_ref = m_ref * rd.qnms.T_MSUN
+    tm_ref = m_ref * T_MSUN
     logging.info("Reference mass: {} Msun ({} s)".format(m_ref, tm_ref))
 else:
     # no reference mass provided, so will default to seconds

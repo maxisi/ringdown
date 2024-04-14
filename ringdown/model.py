@@ -6,6 +6,7 @@ import jax.scipy as jsp
 import numpyro
 import numpyro.distributions as dist
 from . import qnms
+from .result import Result
 import arviz as az
 from arviz.data.base import dict_to_dataset
 import logging
@@ -551,4 +552,4 @@ def get_arviz(sampler,
     result = az.from_numpyro(sampler, dims=dims, coords=coords, 
                              constant_data=in_data)
 
-    return result
+    return Result(result)

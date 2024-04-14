@@ -6,13 +6,11 @@ __all__ = ['Target', 'Fit']
 import numpy as np
 import arviz as az
 import json
-from arviz.data.base import dict_to_dataset
 from ast import literal_eval
 from collections import namedtuple
 import configparser
 import copy as cp
 from .data import *
-from .result import Result
 import lal
 import logging
 from .model import make_model, get_arviz
@@ -743,9 +741,9 @@ class Fit(object):
                 sampler = SAMPLER(kernel, **sampler_kws)
                 sampler.run(prng, *run_input, **run_kws)
 
-                # turn sampler into arviz object and store
-                result = Result(get_arviz(sampler, ifos=self.ifos,
-                                          modes=self.modes))
+                # turn sampler into Result object and store
+                # (recall that Result is a wrapper for arviz.InferenceData)
+                result = get_arviz(sampler, ifos=self.ifos, modes=self.modes)
                 if prior:
                     self.prior = result
                 else:
