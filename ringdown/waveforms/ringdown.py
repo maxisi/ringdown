@@ -1,4 +1,4 @@
-__all__ = ['Ringdown', 'simulated_template']
+__all__ = ['Ringdown']
 
 import numpy as np
 import lal
@@ -33,13 +33,13 @@ class Ringdown(Signal):
         return phi - theta, -(phi + theta)
 
     @staticmethod
-    def complex_mode(time : np.array,
-                     omega : float | np.array,
-                     gamma : float | np.array,
-                     a : float | np.array,
-                     ellip : float | np.array,
-                     theta : float | np.array,
-                     phi : float | np.array) -> np.array:
+    def complex_mode(time : np.ndarray,
+                     omega : float | np.ndarray,
+                     gamma : float | np.ndarray,
+                     a : float | np.ndarray,
+                     ellip : float | np.ndarray,
+                     theta : float | np.ndarray,
+                     phi : float | np.ndarray) -> np.ndarray:
         """ Compute complex-valued ringdown mode waveform, as given by
         Eq. (8) in Isi & Farr (2021), namely
         

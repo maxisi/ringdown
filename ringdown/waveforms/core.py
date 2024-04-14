@@ -3,7 +3,6 @@ __all__ = ['Signal', '_ishift', 'get_detector_signals', 'get_delay']
 import numpy as np
 import lal
 from ..data import Data, TimeSeries
-from scipy.interpolate import interp1d
 from inspect import getfullargspec
 
 def _ishift(hp_t : np.array, hc_t : np.array):
@@ -283,7 +282,7 @@ class Signal(TimeSeries):
         return ax
 
 
-def get_detector_signals(times : dict | np.array | None = None,
+def get_detector_signals(times : dict | np.ndarray | None = None,
                          ifos : list | None = None,
                          antenna_patterns : dict | None = None,
                          trigger_times : dict | None = None,
