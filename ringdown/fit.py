@@ -649,7 +649,8 @@ class Fit(object):
 
         {}
 
-        See docs for :func:`pymc.sample` to see all available options.
+        See docs for :func:`numpyro.infer.NUTS` and :func:`numpyro.infer.MCMC`
+        to see all available options.
 
         Arguments
         ---------
@@ -743,7 +744,8 @@ class Fit(object):
                 sampler.run(prng, *run_input, **run_kws)
 
                 # turn sampler into arviz object and store
-                result = Result(get_arviz(sampler, ifos=self.ifos, modes=self.modes))
+                result = Result(get_arviz(sampler, ifos=self.ifos,
+                                          modes=self.modes))
                 if prior:
                     self.prior = result
                 else:
@@ -751,7 +753,7 @@ class Fit(object):
 
                 # check effective number of samples and rerun if necessary
                 ess_run = result.ess
-                logging.info(f"min ess = {int(ess_run)} after {run_count} runs")
+                logging.info(f"ess = {int(ess_run)} after {run_count} runs")
 
                 if ess_run < min_ess:
                     run_count += 1
@@ -764,9 +766,11 @@ class Fit(object):
                     )
                     sampler_kws.update(new_kws)
                         
-                    logging.warning(f"min ess = {ess_run:.1f} below threshold {min_ess}")
-                    logging.warning(f"fitting again with {new_kws['num_warmup']}"
-                                    f"tuning steps and {new_kws['num_samples']} samples")
+                    logging.warning(
+                        f"""ess = {ess_run:.1f} below threshold {min_ess}; 
+                        fitting again with "{new_kws['num_warmup']} tuning
+                        steps and {new_kws['num_samples']} samples"""
+                    )
 
                     kwargs.update(kws)
         if not prior and store_residuals:
@@ -869,7 +873,7 @@ class Fit(object):
         Arguments
         ---------
         shared : bool
-            specifices if all IFOs are to share a single ACF, in which case the
+            specifies if all IFOs are to share a single ACF, in which case the
             ACF is only computed once from the data of the first IFO (useful
             for simulated data) (default False)
 
@@ -1027,8 +1031,8 @@ class Fit(object):
 
         .. warning::
           Failing to explicitly specify `duration` or `n_analyze` risks
-          inadvertedly extremely long analysis segments, with correspondingly
-          long runtimes.
+          inadvertently extremely long analysis segments, with correspondingly
+          long run times.
 
         Arguments
         ---------
@@ -1156,7 +1160,8 @@ class Fit(object):
             return self._n_analyze
 
     def whiten(self, datas: dict) -> dict:
-        """Return whiten data for all detectors.
+        """Return whiten data for all detectors using ACFs stored in
+        :attr:`Fit.acfs`.
 
         See also :meth:`ringdown.data.AutoCovariance.whiten`.
 
@@ -1167,8 +1172,8 @@ class Fit(object):
 
         Returns
         -------
-        wdatas : dict
-            dictionary of :class:`ringdown.data.Data` with whitned data for
+        whitened_datas : dict
+            dictionary of :class:`ringdown.data.Data` with whitened data for
             each detector.
         """
         return {i: self.acfs[i].whiten(d) for i, d in datas.items()}
