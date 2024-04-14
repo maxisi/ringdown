@@ -132,6 +132,7 @@ class Fit(object):
         self.prior = None
         self._duration = None
         self._n_analyze = None
+        self._raw_data = None
         # set modes dynamically
         self.modes = None
         self.set_modes(modes)
@@ -185,6 +186,13 @@ class Fit(object):
             data[i] = d.iloc[i0s[i]:i0s[i] + self.n_analyze]
         return data
 
+    @property
+    def raw_data(self) -> dict:
+        if self._raw_data is None:
+            return self.data
+        else:
+            return self._raw_data
+        
     @property
     def model_settings(self) -> dict:
         """Prior options as currently set.
@@ -258,7 +266,7 @@ class Fit(object):
 
     @classmethod
     def from_config(cls, config_input : str | configparser.ConfigParser,
-                    no_cond: bool = False):
+                    no_cond: bool = False, result : str | None = None):
         """Creates a :class:`Fit` instance from a configuration file.
         
         Has the ability to load and condition data, as well as to inject a
@@ -372,7 +380,7 @@ class Fit(object):
                     # NOTE: config file overwrites JSON!
                     json_kws.update(inj_kws)
                     inj_kws = json_kws
-                except (UnicodeDecodeError,json.JSONDecodeError):
+                except (UnicodeDecodeError, json.JSONDecodeError):
                     raise IOError(f"unable to read JSON file: {injpath}")
             no_noise = inj_kws.get('no_noise', False)
             post_cond = inj_kws.get('post_cond', False)
@@ -424,6 +432,23 @@ class Fit(object):
         elif post_cond:
             # now that we are done conditioning, inject the requested signal 
             fit.inject(**inj_kws)
+        
+        if result:
+            # attempt to load result from disk
+            if os.path.exists(result):
+                logging.warning("loading result from disk with "
+                                "no guarantee of fit correspondence!")
+                try:
+                    if result.endswith('.nc'):
+                        fit.result = az.from_netcdf(result)
+                    elif result.endswith('.json'):
+                        fit.result = az.from_json(result)
+                    else:
+                        logging.error(f"unknown result format: {result}")
+                except Exception as e:
+                    logging.error(f"unable to read result from {result}: {e}")
+            else:
+                logging.error(f"result file {result} not found")
         return fit
 
     def to_config(self, path=None):
@@ -522,6 +547,7 @@ class Fit(object):
         for k, d in self.data.items():
             t0 = self.start_times[k]
             new_data[k] = d.condition(t0=t0, **kwargs)
+        self._raw_data = self.data
         self.data = new_data
         if not preserve_acfs:
             self.acfs = {} # Just to be sure that these stay consistent
@@ -597,6 +623,21 @@ class Fit(object):
             else:
                 self.data[i] = self.data[i] + h
         self.update_info('injection', no_noise=no_noise, **kws)
+        
+    @property
+    def conditioned_injections(self) -> dict:
+        """Conditioned injections, if available.
+        """
+        if self.injections:
+            if 'condition' in self.info:
+                hdict = {i: h.condition(t0=self.start_times[i],
+                                        **self.info['condition']) 
+                        for i, h in self.injections.items()}
+            else:
+                hdict = self.injections
+        else:
+            hdict = {}
+        return hdict
     
     def run(self, prior=False, suppress_warnings=True, store_residuals=True,
             min_ess=None, prng=None, **kwargs):
