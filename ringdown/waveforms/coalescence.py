@@ -1,6 +1,6 @@
 __all__ = ['Coalescence', 'Parameters']
 
-from pylab import *
+import numpy as np
 import lal
 from .core import *
 from ..data import Data
@@ -10,8 +10,6 @@ import lalsimulation as ls
 from dataclasses import dataclass, asdict, fields
 import inspect
 import h5py
-import pandas as pd
-import warnings
 
 def docstring_parameter(*args, **kwargs):
     def dec(obj):
@@ -113,6 +111,8 @@ class Parameters:
             value = getattr(self, f.name)
             if value is not None:
                 setattr(self, f.name, float(value))
+        self._final_mass = None
+        self._final_spin = None
 
     def __getitem__(self, *args, **kwargs):
         return getattr(self, *args, **kwargs)
@@ -253,31 +253,31 @@ class Parameters:
     def spin_1(self):
         """3D dimensionless spin for first component.
         """
-        return array([self.spin_1x, self.spin_1y, self.spin_1z])
+        return np.array([self.spin_1x, self.spin_1y, self.spin_1z])
 
     @property
     def spin_2(self):
         """3D dimensionless spin for second component.
         """
-        return array([self.spin_2x, self.spin_2y, self.spin_2z])
+        return np.array([self.spin_2x, self.spin_2y, self.spin_2z])
 
     @property
     def spin_1_mag(self):
         """Dimensionless spin magnitude for first component.
         """
-        return linalg.norm(self.spin_1)
+        return np.linalg.norm(self.spin_1)
 
     @property
     def spin_2_mag(self):
         """Dimensionless spin magnitude for second component.
         """
-        return linalg.norm(self.spin_2)
+        return np.linalg.norm(self.spin_2)
 
     @property
     def cos_iota(self):
         """Cosine of the Newtonian inclination at reference frequency.
         """
-        return cos(self.iota)
+        return np.cos(self.iota)
 
     @property
     def luminosity_distance_si(self):
@@ -296,6 +296,54 @@ class Parameters:
         """Second component mass in kg.
         """
         return self.mass_2 * lal.MSUN_SI
+    
+    def compute_remnant_mchi(self, model : str ='NRSur7dq4Remnant') -> tuple:
+        """Estimate remnant mass and spin using a remnant model.
+        
+        Arguments
+        ---------
+        model : str
+            name of remnant model to use (default: 'NRSur7dq4Remnant')
+            
+        Returns
+        -------
+        mf : float
+            remnant mass.
+        chif : float
+            remnant dimensionless spin magnitude.
+        """
+        remnant = ls.nrfits.eval_nrfit(
+            self['mass_1'],
+            self['mass_2'],
+            [self['spin_1x'], self['spin_1y'], self['spin_1z']],
+            [self['spin_2x'], self['spin_2y'], self['spin_2z']],
+            model,
+            ["FinalMass", "FinalSpin"],
+            f_ref=self['f_ref'],
+        )
+        mf = remnant['FinalMass']
+        chif = np.linalg.norm(remnant['FinalSpin'])
+        return mf, chif
+    
+    @property
+    def final_mass(self):
+        if self._final_mass is None:
+            self._final_mass, self._final_spin = self.compute_remnant_mchi()
+        return self._final_mass
+    
+    @property
+    def final_spin(self):
+        if self._final_spin is None:
+            self._final_mass, self._final_spin = self.compute_remnant_mchi()
+        return self._final_spin
+    
+    @property
+    def final_mass_seconds(self):
+        return self.final_mass * lal.GMSUN_SI / lal.C_SI**3
+    
+    @property
+    def final_mass_si(self):
+        return self.final_mass * lal.MSUN_SI
 
     def get_choosetdwaveform_args(self, delta_t):
         """Construct input for :func:`ls.SimInspiralChooseTDWaveform`.
@@ -522,10 +570,10 @@ class Coalescence(Signal):
                 ipeak = n - _ishift(hp_d, hc_d)
                 ishift = ipeak - round(ipeak)
                 w = tukey(n, window)
-                shift = exp(1j*2*pi*np.fft.rfftfreq(n, dt)*ishift*dt)
+                shift = np.exp(1j*2*np.pi*np.fft.rfftfreq(n, dt)*ishift*dt)
                 hp_d = np.fft.irfft(np.fft.rfft(w*hp_d)*shift, n=n)
                 hc_d = np.fft.irfft(np.fft.rfft(w*hc_d)*shift, n=n)
-            waveTcSample = argmax(hp_d**2 + hc_d**2)
+            waveTcSample = np.argmax(hp_d**2 + hc_d**2)
         else:
             # this is what is done in LALInference
             hp_epoch = hp.epoch.gpsSeconds + hp.epoch.gpsNanoSeconds*1E-9
@@ -595,10 +643,6 @@ class Coalescence(Signal):
         t_peak : float
             peak time of the invariant strain
         """
-        # NOTE: there are functions in LALSimulation to obtain a list of
-        # individual modes for a given source but these do not work with all
-        # approximants; here I take the simpler, fail safe approach, which is
-        # to call ChooseTDWaveform several times with different mode content.
 
         #     LALDict *LALpars,                           /**< LAL dictionary containing accessory parameters */
         #     int lmax,                                   /**< generate all modes with l <= lmax */
@@ -627,10 +671,11 @@ class Coalescence(Signal):
             t = np.arange(len(hlms.mode.data.data))*self.delta_t + \
                 (float(hlms.mode.epoch) + pars['trigger_time'])
             # iterate over modes and compute magnitude squared
-            sum_h_squared = Coalescence(zeros_like(t), index=t,
+            sum_h_squared = Coalescence(np.zeros_like(t), index=t,
                                         parameters=self.parameters)
             while hlms is not None:
-                sum_h_squared += real(hlms.mode.data.data)**2 + imag(hlms.mode.data.data)**2
+                sum_h_squared += np.real(hlms.mode.data.data)**2 + \
+                                 np.imag(hlms.mode.data.data)**2
                 hlms = hlms.next
             t_peak = sum_h_squared.peak_time
             if ell_max is not None:
@@ -639,338 +684,3 @@ class Coalescence(Signal):
             self._invariant_peak = t_peak
         return self._invariant_peak
 Signal._register_model(Coalescence)
-
-
-class IMR(Signal):
-    _metadata = ['parameters','posterior_sample', 't_dict']
-
-    def __init__(self, *args, posterior_sample=None, t_dict=None, **kwargs):
-        warnings.warn("IMR is deprecated; use Coalescence", warnings.DeprecationWarning)
-        if isinstance(posterior_sample,pd.DataFrame):
-            posterior_sample = posterior_sample.squeeze().to_dict()
-
-        super(IMR, self).__init__(*args, **kwargs)
-        self.posterior_sample = posterior_sample
-        self.t_dict = t_dict
-
-    @classmethod
-    def from_posterior(cls, posterior_sample, wf=None, dt=(1/4096),
-                            interpolation_times=None, f_low=20.0, f_ref=20.0):
-        """
-        Constructs the IMR signal from a posterior sample
-
-        Arguments
-        ---------
-        posterior_sample : dataframe or dictionary
-            contains one particular posterior sample, with sky location
-            and geocent_time
-        wf : int
-            One can provide a particular waveform code they would like to run
-            with
-        dt: float
-            duration of the new interpolated signal
-        interpolation_times: dictionary of time arrays for each ifo
-            if there is a dictionary of times for each detector, this will
-            interpolate at each ifo
-        """
-        if isinstance(posterior_sample,pd.DataFrame) or isinstance(posterior_sample,pd.Series):
-            posterior_sample = posterior_sample.squeeze().to_dict()
-
-        if not isinstance(posterior_sample, dict):
-            raise ValueError("Expected posterior_sample to be a dict or a one-row pandas DataFrame or Series")
-
-        if wf is None:
-            wf = int(posterior_sample['waveform_code'])
-
-        waveform_dt = dt
-
-        t_peak, t_dict, hp,hc = complex_strain_peak_time_td(posterior_sample, wf=wf,
-                                                                 dt=dt, f_low=f_low, f_ref=f_ref)
-        signal_dict = {}
-        # At Geocent
-        geocent_time = posterior_sample['geocent_time']
-        ts_geocent = (np.arange(len(hp.data.data)))*waveform_dt + float(hp.epoch) + geocent_time
-        hpdf = Data(hp.data.data,index=ts_geocent)
-        hcdf = Data(hc.data.data,index=ts_geocent)
-        signal_dict['geocent'] = {'hp': hpdf,'hc': hcdf}
-
-        # Get Times
-        tgps = lal.LIGOTimeGPS(geocent_time)
-        gmst = lal.GreenwichMeanSiderealTime(tgps)
-            
-        params = posterior_sample.copy()
-        params.update({(k+'_peak'):v for k,v in t_dict.items()})
-        params['t0'] = t_peak
-
-        main = hpdf - 1j*hcdf
-        result = cls(main, index=ts_geocent, posterior_sample=posterior_sample, 
-                            parameters=params, t_dict=t_dict)
-            
-        return result
-
-    def time_delay(self, t0_geocent, ifo):
-        tgps = lal.LIGOTimeGPS(t0_geocent)
-        gmst = lal.GreenwichMeanSiderealTime(tgps)
-        det = lal.cached_detector_by_prefix[ifo]
-
-        if self.posterior_sample is not {}:
-            ra = self.posterior_sample['ra']
-            dec = self.posterior_sample['dec']
-            psi = self.posterior_sample['psi']
-        else:
-            raise KeyError("Posterior Samples haven't been filled into this object")
-
-        # Get patterns and timedelay
-        timedelay = lal.TimeDelayFromEarthCenter(det.location,  ra, dec, tgps)
-        return timedelay
-
-    @property
-    def _constructor(self):
-        return IMR
-
-    @property
-    def projections(self):
-        """
-        A dictionary of projections onto each detector.
-
-        Returns
-        --------
-        dict with the key value pairing {ifo : Data ...}
-
-        Note
-        ---------
-        This method projects with a timeshift, which means that
-        the time index of the projection will be shifted with respect
-        to the Signal time index so that there is an element by element
-        correspondence between the Signal values and the projected Data
-        values.
-        """
-        return {ifo: getattr(self,ifo) for ifo in ['H1','L1','V1']}
-
-    def project_with_timeshift(self, ifo):
-        """
-        Given a detector name, it projects the signal onto that
-        interferometer so that:
-
-            h = Fp*hp + Fc*hc
-            t = t + detectortimedelay
-
-        This makes sure that if we have a signal that starts at
-        the geocent signal peak, then the projected signal start
-        time corresponds to the geocent signal peak time delayed 
-        to H1 (a.k.a H1_peak)
-
-
-        Arguments
-        ---------
-        ifo : str, one of 'H1','L1' or 'V1'
-            name of the interferometer you would like to project to
-
-        Note
-        ---------
-        This method projects with a timeshift, which means that
-        the time index of the projection will be shifted with respect
-        to the Signal time index so that there is an element by element
-        correspondence between the Signal values and the projected Data
-        values.
-        """
-        tgps = lal.LIGOTimeGPS(self.posterior_sample['geocent_time'])
-        gmst = lal.GreenwichMeanSiderealTime(tgps)
-        det = lal.cached_detector_by_prefix[ifo]
-
-        if self.posterior_sample is not {}:
-            ra = self.posterior_sample['ra']
-            dec = self.posterior_sample['dec']
-            psi = self.posterior_sample['psi']
-        else:
-            raise KeyError("Posterior Samples haven't been filled into this object")
-
-        # Get patterns and timedelay
-        Fp, Fc = lal.ComputeDetAMResponse(det.response, ra, dec, psi, gmst)
-        timedelay = lal.TimeDelayFromEarthCenter(det.location,  ra, dec, tgps)
-
-        # Get new time detector time index
-        ts_detector = self.time + timedelay 
-
-        # Construct the data objects and use the antenna_patterns to project
-        hpdf = Data(self._hp, index=ts_detector,ifo=ifo)
-        hcdf = Data(self._hc, index=ts_detector, ifo=ifo)
-        signal = Fp*hpdf + Fc*hcdf
-        return signal
-
-    @property
-    def H1(self):
-        """
-        Finds the signal at H1
-        """ 
-        return self.project_with_timeshift('H1')
-
-    @property
-    def L1(self):
-        """
-        Finds the signal at L1
-        """
-        return self.project_with_timeshift('L1')
-
-    @property
-    def V1(self):
-        """
-        Finds the signal at V1
-        """
-        return self.project_with_timeshift('V1')
-
-    def whitened_projections(self, acfs, interpolate_data=False):
-        """
-        Whitens the data after projecting onto detectors
-        based on the passed acf dictionary
-
-        Returns: A dictionary of Data objects labelled by detectors
-        where the data is whitened by the corresponding acf provided
-
-        Arguments
-        ---------
-        acfs : dict 
-            dict must have key value pairs: {ifo: AutocorrelationFunction}
-
-        interpolate_data: bool (default=True)
-            Interpolates the data to the sample rate of the PSD so that
-            whitening can take place
-
-        """
-        whitened = {}
-
-        for ifo, acf in acfs.items():
-            data = getattr(self,ifo)
-            if interpolate_data:
-                # Interpolate to the new sample rate 
-                # (rest of the things remain the same)
-                duration = data.time.max() - data.time.min()
-                data = data.interpolate(times=acf.time[acf.time <= duration].time, t0=data.time[0])
-            else:
-                if acf.delta_t != data.delta_t:
-                    raise ValueError("""The data delta_t doesnot match the delta_t of the acf.
-                                        If you would like to interpolate the signal, then
-                                        set interpolate_data=True as a kwarg of this function""")
-            whitened[ifo] = acf.whiten(data)
-
-        return whitened
-
-    def whiten_with_data(self, data, acfs, t0=None, duration=None, flow=None):
-        """
-        Given a dictionary of data and a dictionary of acfs, this returns
-        the whitened data and the whitened IMR signal for each detector. One can set the
-        start time (with respect to geocent) and the duration of the required
-        returned data
-
-        Arguments:
-        -----------
-        data: dict
-            A dictionary pairing ifo strings with Data objects. This will be
-            the strain data for each detector
-        acfs: dict
-            A dictionary pairing ifo strings with Autocovariance objects. This will
-            be the acf for the noise of each detector.
-        t0: float
-            All returned timestamps will be more than this t0 (when shifted to geocent)
-        duration: float
-            All returned timestamps will be less than t0+duration (when shifted to geocent)
-        flow: float
-            The low frequency cutoff needed to condition the provided data. If not provided, it
-            is assumed the data is already conditioned
-        """
-        # Initialize the dictionaries
-        whitened_data = {}
-        whitened_signal = {}
-        signal_projections = self.projections
-
-        # Loop over the detectors
-        for ifo in data.keys():
-            # If t0 and duration not provided, set them to good default values (i.e. donot change the 
-            # length or start time of the data array)
-            start_ifo = data[ifo].time.min() if t0 is None else (t0 + self.time_delay(t0, ifo))
-            end_ifo = data[ifo].time.max() if duration is None else (start_ifo + duration)
-
-            # Get this detector's data, condition and chop it if needed
-            ds = int(round(data[ifo].fsamp/acfs[ifo].fsamp))
-            data_ifo = data[ifo].condition(flow=flow, ds=ds)[start_ifo:end_ifo]
-
-            # Interpolate this IMR signal's detector data to match the provided timestamps
-            signal_ifo = signal_projections[ifo].interpolate(times=data_ifo.time)
-
-            # Check if the provided ACF has the right sample frequency
-            if not (np.isclose(acfs[ifo].delta_t, data_ifo.delta_t) and np.isclose(acfs[ifo].delta_t, signal_ifo.delta_t)):
-                raise ValueError("The sample rates of the ACF, data and signal donot match")
-
-            # Whiten both data and the signal and append it to the dictionaries
-            whitened_data[ifo] = acfs[ifo].whiten(data_ifo)
-            whitened_signal[ifo] = acfs[ifo].whiten(signal_ifo)
-
-        return whitened_signal, whitened_data
-
-
-    def calculate_snr(self, data, acfs, t0=None, duration=None, flow=None):
-        """
-        Calculates the time-bounded matched filter SNR based on the 
-        provided data and the covariance matrix extracted from the
-        acfs provided.
-        
-        Arguments:
-        -----------
-        data: dict
-            A dictionary pairing ifo strings with Data objects. This will be
-            the strain data for each detector
-        acfs: dict
-            A dictionary pairing ifo strings with Autocovariance objects. This will
-            be the acf for the noise of each detector.
-        t0: float
-            All returned timestamps will be more than this t0 (when shifted to geocent)
-        duration: float
-            All returned timestamps will be less than t0+duration (when shifted to geocent)
-        flow: float
-            The low frequency cutoff needed to condition the provided data. If not provided, it
-            is assumed the data is already conditioned
-        """
-        whitened_signal, whitened_data = self.whiten_with_data(data=data,acfs=acfs,t0=t0,duration=duration,flow=flow)
-        SNR_squared = 0.0
-        for ifo in whitened_data.keys():
-            signal_optimal_SNR_squared = np.dot(whitened_signal[ifo].values, whitened_signal[ifo].values)
-            SNR_squared += (np.dot(whitened_signal[ifo].values, whitened_data[ifo].values)**2)/signal_optimal_SNR_squared
-        SNR = np.sqrt(SNR_squared)
-        return SNR
-
-    def plot_whitened_with_data(self, data, acfs, t0=None, duration=None, flow=None):
-        """
-        Plots the comparison of the whitened data and the IMR signal. 
-        The t0 and duration of the plot can be set
-
-        Arguments:
-        -----------
-        data: dict
-            A dictionary pairing ifo strings with Data objects. This will be
-            the strain data for each detector
-        acfs: dict
-            A dictionary pairing ifo strings with Autocovariance objects. This will
-            be the acf for the noise of each detector.
-        t0: float
-            All returned timestamps will be more than this t0 (when shifted to geocent)
-        duration: float
-            All returned timestamps will be less than t0+duration (when shifted to geocent)
-        """
-        whitened_signal, whitened_data = self.whiten_with_data(data=data,acfs=acfs,t0=t0,duration=duration, flow=flow)
-        fig,axes = subplots(len(whitened_data.keys()))
-        for i,ifo in enumerate(whitened_data.keys()):
-            data = whitened_data[ifo]
-            signal_ifo = whitened_signal[ifo]
-            axes[i].errorbar(data.time, data.values, yerr=ones_like(data.values), fmt='.', 
-             alpha=0.5, label='Data')
-            axes[i].plot(signal_ifo.time, signal_ifo.values, color="black", label='IMR')
-            axes[i].set_xlabel(r'$t / \mathrm{s}$')
-            axes[i].set_ylabel(r'$h_%s(t)$ (whitened)' % ifo[0])
-
-            # Add t_peak if needed
-            if (data.time.min() < self.t_dict[ifo]) and (self.t_dict[ifo] < data.time.max()):
-                axes[i].axvline(self.t_dict[ifo], linestyle='dashed', c='r', label='Peak Time', alpha=0.5)
-
-            axes[i].legend(loc='best')
-        show()
-        return fig, axes
