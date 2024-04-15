@@ -827,7 +827,7 @@ class Fit(object):
             hdict = {}
         return hdict
     
-    def run(self, prior=False, suppress_warnings=True, store_residuals=True,
+    def run(self, prior=False, suppress_warnings=True, store_residuals=False,
             min_ess=None, prng=None, **kwargs):
         """Fit model.
 
