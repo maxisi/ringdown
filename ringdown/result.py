@@ -9,6 +9,8 @@ import scipy.linalg as sl
 from arviz.data.base import dict_to_dataset
 import logging
 
+_WHITENED_LOGLIKE_KEY = 'whitened_pointwise_loglike'
+
 class Result(az.InferenceData):
 
     def __init__(self, *args, **kwargs):
@@ -171,7 +173,9 @@ class Result(az.InferenceData):
         See https://arxiv.org/abs/1507.04544 for definitions and discussion.  A
         larger WAIC indicates that the model has better predictive accuarcy on
         the fitted data set."""
-        return az.waic(self, var_name='whitened_pointwise_loglike')
+        if not _WHITENED_LOGLIKE_KEY in self.get('log_likelihood', {}):
+            self._generate_whitened_residuals()
+        return az.waic(self, var_name=_WHITENED_LOGLIKE_KEY)
     
     @property
     def loo(self):
@@ -185,26 +189,29 @@ class Result(az.InferenceData):
         evaluated on hypothetical data from a replication of the observation
         averaged over the posterior) of the model; larger LOO values indicate
         higher predictive accuracy (i.e. explanatory power) for the model."""
-        return az.loo(self, var_name='whitened_pointwise_loglike')
+        if not _WHITENED_LOGLIKE_KEY in self.get('log_likelihood', {}):
+            self._generate_whitened_residuals()
+        return az.loo(self, var_name=_WHITENED_LOGLIKE_KEY)
     
     def _generate_whitened_residuals(self):
         """Adduct the whitened residuals to the result.
         """
         residuals = {}
         residuals_stacked = {}
-        for ifo in self.ifos:
+        for ifo in self.ifos.values.astype(str):
             r = self.constant_data.strain.sel(ifo=ifo) -\
                 self.posterior.h_det.sel(ifo=ifo)
             residuals[ifo] = r.transpose('chain', 'draw', 'time_index')
             residuals_stacked[ifo] = residuals[ifo].stack(sample=['chain',
                                                                   'draw'])
         residuals_whitened = self.whiten(residuals_stacked)
-        d = self.result.posterior.sizes
+        d = self.posterior.sizes
         residuals_whitened = {
             i: v.reshape((d['time_index'], d['chain'], d['draw']))
             for i,v in residuals_whitened.items()
         }
-        resid = np.stack([residuals_whitened[i] for i in self.ifos], axis=-1)
+        resid = np.stack([residuals_whitened[i] 
+                          for i in self.ifos.values.astype(str)], axis=-1)
         keys = ('time_index', 'chain', 'draw', 'ifo')
         self.posterior['whitened_residual'] = (keys, resid)
         keys = ('chain', 'draw', 'ifo', 'time_index')
@@ -212,14 +219,14 @@ class Result(az.InferenceData):
             self.posterior.whitened_residual.transpose(*keys)
         lnlike = -self.posterior.whitened_residual**2/2
         try:
-            self.log_likelihood['whitened_pointwise_loglike'] = lnlike    
+            self.log_likelihood[_WHITENED_LOGLIKE_KEY] = lnlike    
         except AttributeError:
             # We assume that log-likelihood isn't created yet.
             self.add_groups(dict(
                 log_likelihood=dict_to_dataset(
-                    {'whitened_pointwise_loglike': lnlike},
+                    {_WHITENED_LOGLIKE_KEY: lnlike},
                     coords=self.posterior.coords,
-                    dims={'whitened_pointwise_loglike': list(keys)}
+                    dims={_WHITENED_LOGLIKE_KEY: list(keys)}
                     )))
             
     @property

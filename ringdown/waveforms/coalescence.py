@@ -3,7 +3,7 @@ __all__ = ['Coalescence', 'Parameters']
 import numpy as np
 import lal
 from .core import *
-from .utils import docstring_parameter
+from ..utils import docstring_parameter
 from scipy.signal import tukey
 import lal
 import lalsimulation as ls
