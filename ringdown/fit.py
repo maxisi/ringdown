@@ -7,10 +7,10 @@ import numpy as np
 import arviz as az
 import json
 from ast import literal_eval
-from collections import namedtuple
 import configparser
 import copy as cp
 from .data import *
+from . import utils
 import lal
 import logging
 from .model import make_model, get_arviz
@@ -21,7 +21,7 @@ from . import waveforms
 import inspect
 import jax
 import numpyro.infer
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass, asdict
 
 # TODO: support different samplers?
 KERNEL = numpyro.infer.NUTS
@@ -38,30 +38,6 @@ MODEL_ARGS = inspect.signature(make_model).parameters.keys()
 
 DEF_RUN_KWS = dict(dense_mass=True, num_warmup=1000, num_samples=1000,
                        num_chains=4)
-
-def form_opt(x):
-    """Utility to format options in config."""
-    return np.array2string(np.array(x), separator=', ')
-
-def try_parse(x):
-    """Attempt to parse a string as a number, dict, or list."""
-    try:
-        return float(x)
-    except (TypeError,ValueError):
-        try:
-            return literal_eval(x)
-        except (TypeError,ValueError,SyntaxError):
-            if x == "inf":
-                return np.inf
-            else:
-                return x
-
-def np2(x):
-    """Returns the next power of two as big as or larger than x."""
-    p = 1
-    while p < x:
-        p = p << 1
-    return p
 
 @dataclass
 class Target(object):
@@ -443,7 +419,7 @@ class Fit(object):
             config.read(config_input)
                     
         # parse model options
-        model_opts = {k: try_parse(v) for k,v in config['model'].items()}
+        model_opts = {k: utils.try_parse(v) for k,v in config['model'].items()}
         if 'name' in model_opts:
             warnings.warn("model name is deprecated, use explicit mode options instead")
             logging.info("trying to guess mode configuration based on model name")
@@ -453,7 +429,7 @@ class Fit(object):
             model_opts['marginalized'] = 'marginal' in name
 
         if config.has_section('prior'):
-            prior = {k: try_parse(v) for k,v in config['prior'].items()}
+            prior = {k: utils.try_parse(v) for k,v in config['prior'].items()}
             model_opts.update(prior)
 
         # look for some legacy options and replace them with current arguments
@@ -502,16 +478,16 @@ class Fit(object):
         path_input = config['data']['path']
         
         # NOTE: not popping in order to preserve original ConfigParser
-        kws = {k: try_parse(v) for k,v in config['data'].items()
+        kws = {k: utils.try_parse(v) for k,v in config['data'].items()
                   if k not in ['ifos', 'path']}
         fit.load_data(path_input, ifos, **kws)
 
         # add target
-        fit.set_target(**{k: try_parse(v) for k,v in config['target'].items()})
+        fit.set_target(**{k: utils.try_parse(v) for k,v in config['target'].items()})
         
         # inject signal if requested
         if config.has_section('injection'):
-            inj_kws = {k: try_parse(v) for k,v in config['injection'].items()}
+            inj_kws = {k: utils.try_parse(v) for k,v in config['injection'].items()}
             if 'path' in inj_kws:
                 # attempt to read injection parameters from JSON file
                 injpath = os.path.abspath(inj_kws.pop('path'))
@@ -547,17 +523,17 @@ class Fit(object):
         
         # condition data if requested
         if config.has_section('condition') and not no_cond:
-            cond_kws = {k: try_parse(v) for k,v in config['condition'].items()}
+            cond_kws = {k: utils.try_parse(v) for k,v in config['condition'].items()}
             fit.condition_data(**cond_kws)
         
         # load or produce ACFs
         if config.get('acf', 'path', fallback=False):
-            kws = {k: try_parse(v) for k,v in config['acf'].items()
+            kws = {k: utils.try_parse(v) for k,v in config['acf'].items()
                    if k not in ['path']}
             fit.load_acfs(config['acf']['path'], **kws)
         else:
             acf_kws = {} if 'acf' not in config else config['acf']
-            fit.compute_acfs(**{k: try_parse(v) for k,v in acf_kws.items()})
+            fit.compute_acfs(**{k: utils.try_parse(v) for k,v in acf_kws.items()})
         
         if no_noise:
             # no-noise injection, so replace data by simulated signal
@@ -626,14 +602,14 @@ class Fit(object):
         else:
             config['model']['modes'] = str([tuple(m) for m in self.modes])
         # prior options
-        config['model'].update({k: form_opt(v) for k,v 
+        config['model'].update({k: utils.form_opt(v) for k,v 
                                 in self.model_settings.items()})
         # rest of options require data, so exit of none were added
         if not self.ifos:
             return config
         # data, injection, conditioning and acf options
         for sec, opts in self.info.items():
-            config[sec] = {k: form_opt(v) for k,v in opts.items()}
+            config[sec] = {k: utils.form_opt(v) for k,v in opts.items()}
         config['target'] = {k: str(v) for k,v in self.info['target'].items()}
         # write file to disk if requested
         if path is not None:
@@ -947,22 +923,6 @@ class Fit(object):
         self.data[data.ifo] = data
         if acf is not None:
             self.acfs[data.ifo] = acf
-
-    @staticmethod
-    def _get_path_dict_from_pattern(path, ifos=None):
-        if isinstance(path, str):
-            path_dict = try_parse(path)
-            if isinstance(path_dict, str):
-                if ifos is None:
-                    raise ValueError("must provide IFO list.")
-                path_dict = {}
-                for ifo in ifos:
-                    i = '' if not ifo else ifo[0]
-                    path_dict[ifo] = try_parse(path).format(i=i, ifo=ifo)
-        else:
-            path_dict = path
-        path_dict = {k: os.path.abspath(v) for k,v in path_dict.items()}
-        return path_dict
     
     def load_data(self, path, ifos=None, channel=None, **kws):
         """Load data from disk.
@@ -997,15 +957,16 @@ class Fit(object):
             settings[k] = v
         
         # TODO: add ability to generate synthetic data here?
-        path_dict = self._get_path_dict_from_pattern(path, ifos)
+        path_dict = utils.get_path_dict_from_pattern(path, ifos)
         if channel is not None:
-            channel_dict = self._get_path_dict_from_pattern(channel, ifos)
+            channel_dict = utils.get_path_dict_from_pattern(channel, ifos)
         else:
             channel_dict = {k: None for k in path_dict.keys()}
             
         tslide = kws.pop('slide', {}) or {}
         for ifo, path in path_dict.items():
-            self.add_data(Data.read(path, ifo=ifo, channel=channel_dict[ifo], **kws))
+            self.add_data(Data.read(path, ifo=ifo, 
+                                    channel=channel_dict[ifo], **kws))
         # apply time slide if requested
         for i, dt in tslide.items():
             d = self.data[i]
@@ -1042,7 +1003,7 @@ class Fit(object):
 
         # Try to set a safe `nperseg` if we are using `fd` estimation
         if self.n_analyze is not None:
-            nperseg_safe = np2(16*self.n_analyze)
+            nperseg_safe = utils.np2(16*self.n_analyze)
             if kws.get('method', 'fd') == 'fd':
                 if not ('nperseg' in kws):
                     kws['nperseg'] = nperseg_safe
@@ -1083,7 +1044,7 @@ class Fit(object):
         for k, v in settings.pop('kws').items():
             settings[k] = v
             
-        path_dict = self._get_path_dict_from_pattern(path, ifos)
+        path_dict = utils.get_path_dict_from_pattern(path, ifos)
         for ifo, p in path_dict.items():
             if from_psd:
                 self.acfs[ifo] = PowerSpectrum.read(p, **kws).to_acf()

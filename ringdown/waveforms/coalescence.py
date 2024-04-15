@@ -3,19 +3,13 @@ __all__ = ['Coalescence', 'Parameters']
 import numpy as np
 import lal
 from .core import *
+from .utils import docstring_parameter
 from scipy.signal import tukey
 import lal
 import lalsimulation as ls
 from dataclasses import dataclass, asdict, fields
 import inspect
 import h5py
-
-def docstring_parameter(*args, **kwargs):
-    def dec(obj):
-        if not obj.__doc__ is None:
-            obj.__doc__ = obj.__doc__.format(*args, **kwargs)
-        return obj
-    return dec
 
 def m1m2_from_mtotq(mtot, q):
     m1 = mtot / (1 + q)
