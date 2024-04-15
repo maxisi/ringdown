@@ -3,7 +3,6 @@ __all__ = ['Coalescence', 'Parameters']
 import numpy as np
 import lal
 from .core import *
-from ..data import Data
 from scipy.signal import tukey
 import lal
 import lalsimulation as ls

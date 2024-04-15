@@ -4,14 +4,12 @@ from .data import *
 from .fit import *
 from .model import *
 from .kde_contour import *
-from .peak import *
 from .waveforms import *
 from pylab import *
 from . import qnms
 from . import data
 from . import fit
 from . import model
-from . import peak
 from . import waveforms
 
 # ############################################################################

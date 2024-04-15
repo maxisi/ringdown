@@ -21,6 +21,7 @@ from . import waveforms
 import inspect
 import jax
 import numpyro.infer
+from dataclasses import dataclass, asdict, fields
 
 # TODO: support different samplers?
 KERNEL = numpyro.infer.NUTS
@@ -62,7 +63,104 @@ def np2(x):
         p = p << 1
     return p
 
-Target = namedtuple('Target', ['t0', 'ra', 'dec', 'psi'])
+@dataclass
+class Target(object):
+    time_geocenter : float = None
+    ra : float = None
+    dec : float = None
+    psi : float = None
+    duration : float = None
+    
+    def __post_init__(self):
+        # validate input: floats or None
+        for k, v in self.as_dict().items():
+            if v is not None and not isinstance(v, lal.LIGOTimeGPS):
+                setattr(self, k, float(v))
+    
+    def as_dict(self):
+        return asdict(self)
+    
+    def get_detector_time(self, ifo):
+        """Compute detector times based on sky location.
+        
+        Arguments
+        ---------
+        ifos : list
+            list of detector names.
+        
+        Returns
+        -------
+        times : dict
+            dictionary of detector times.
+        """
+        det = lal.cached_detector_by_prefix[ifo]
+        tgps = lal.LIGOTimeGPS(self.time_geocenter)
+        dt = lal.TimeDelayFromEarthCenter(det.location, self.ra, 
+                                          self.dec, tgps)
+        return float(self.time_geocenter + dt)
+    
+    def get_antenna_patterns(self, ifo):
+        """Compute antenna patterns based on sky location.
+        
+        Arguments
+        ---------
+        ifos : list
+            list of detector names.
+        
+        Returns
+        -------
+        antenna_patterns : dict
+            dictionary of antenna patterns.
+        """
+        det = lal.cached_detector_by_prefix[ifo]
+        tgps = lal.LIGOTimeGPS(self.time_geocenter)
+        gmst = lal.GreenwichMeanSiderealTime(tgps)
+        fpfc = lal.ComputeDetAMResponse(det.response, self.ra, self.dec,
+                                        self.psi, gmst)
+        return fpfc
+    
+    @classmethod
+    def from_sky(cls, t0 : float, ra : float, dec : float, psi : float,
+                 duration : float, reference_ifo : str | None = None):
+        """Create a sky location from a reference time, either a specific
+        detector or geocenter.
+        
+        Arguments
+        ---------
+        t0 : float
+            detector time.
+        ra : float
+            source right ascension.
+        dec : float
+            source declination.
+        psi : float
+            source polarization angle.
+        duration : float
+            analysis duration in time units.
+        reference_ifo : str, None
+            detector name, or `None` for geocenter (default `None`)
+        
+        Returns
+        -------
+        sky : Target
+            a target object.
+        """
+        if reference_ifo is None:
+            tgeo = t0
+        else:
+            det = lal.cached_detector_by_prefix[reference_ifo]
+            tgps = lal.LIGOTimeGPS(t0)
+            dt = lal.TimeDelayFromEarthCenter(det.location, ra, dec, tgps)
+            tgeo = t0 - dt
+        return cls(lal.LIGOTimeGPS(tgeo), ra, dec, psi, duration)
+    
+    @property
+    def t0(self):
+        """Alias for time_geocenter."""
+        if self.time_geocenter is None:
+            return None
+        else:
+            return float(self.time_geocenter)
 
 class Fit(object):
     """ A ringdown fit. Contains all the information required to setup and run
@@ -124,20 +222,74 @@ class Fit(object):
         self.data = {}
         self.injections = {}
         self.acfs = {}
-        self.start_times = {}
-        self.antenna_patterns = {}
-        self.target = Target(None, None, None, None)
+        self.target = Target()
         self.result = None
         self.prior = None
-        self._duration = None
         self._n_analyze = None
         self._raw_data = None
+        # holders for internal target state if these are set manually
+        self._start_times = None
+        self._antenna_patterns = None
         # set modes dynamically
         self.modes = None
         self.set_modes(modes)
         # assume rest of kwargs are to be passed to make_model
         self._model_settings = {}
         self.update_model(**kws)
+    
+    def copy(self):
+        """Produce a deep copy of this `Fit` object.
+
+        Returns
+        -------
+        fit_copy : Fit
+            deep copy of `Fit`.
+        """
+        return cp.deepcopy(self)
+    
+    @property
+    def start_times(self):
+        if self._start_times is None:
+            if self.has_sky:
+                start_times = {i: self.target.get_detector_time(i) 
+                               for i in self.ifos}
+            else:
+                # no target found, return empty dict
+                start_times = {}
+        elif self.has_sky:
+            raise ValueError("conflicting targets! please use "
+                             "fit.set_target() to reset")
+        else:
+            start_times = {}
+            for i in self.ifos:
+                if i in self._start_times:
+                    start_times[i] = float(self._start_times[i])
+                else:
+                    raise ValueError(f"no start time found for {i}! please "
+                                     "use fit.set_target() to reset target")
+        return start_times
+    
+    @property
+    def antenna_patterns(self):
+        if self._antenna_patterns is None:
+            if self.has_sky:
+                antenna_patterns = {i: self.target.get_antenna_patterns(i) 
+                                    for i in self.ifos}
+            else:
+                # no target found, return empty dict
+                antenna_patterns = {}
+        elif self.has_sky:
+            raise ValueError("conflicting targets! use "
+                             "fit.set_target() to reset")
+        else:
+            antenna_patterns = {}
+            for i in self.ifos:
+                if i in self._antenna_patterns:
+                    antenna_patterns[i] = self._antenna_patterns[i]
+                else:
+                    raise ValueError(f"no antenna patterns found for {i}! "
+                                     "use fit.set_target() to reset target")
+        return antenna_patterns
 
     @property
     def n_modes(self) -> int:
@@ -147,10 +299,6 @@ class Fit(object):
             return self.modes
         else:
             return len(self.modes)
-    
-    @property
-    def injection_parameters(self) -> dict:
-        return self.info.get('injection', {})
 
     @property
     def ifos(self) -> list:
@@ -244,7 +392,7 @@ class Fit(object):
 
         data_dict = self.analysis_data
 
-        fpfc = self.antenna_patterns.values()
+        fpfc = [self.antenna_patterns[i] for i in self.ifos]
         fp = [x[0] for x in fpfc]
         fc = [x[1] for x in fpfc]
 
@@ -486,9 +634,7 @@ class Fit(object):
         # data, injection, conditioning and acf options
         for sec, opts in self.info.items():
             config[sec] = {k: form_opt(v) for k,v in opts.items()}
-        # target options
-        config['target'] = {k: str(v) for k,v in self.target._asdict().items()}
-        config['target']['duration'] = str(self.duration)
+        config['target'] = {k: str(v) for k,v in self.info['target'].items()}
         # write file to disk if requested
         if path is not None:
             with open(path, 'w') as f:
@@ -519,20 +665,6 @@ class Fit(object):
         self.info[section] = self.info.get(section, {})
         self.info[section].update(**kws)
 
-    def copy(self):
-        """Produce a deep copy of this `Fit` object.
-
-        Returns
-        -------
-        fit_copy : Fit
-            deep copy of `Fit`.
-        """
-        # we can't deepcopy the PyMC model (aesara will throw an error)
-        # so remove the cached model before copying (it can always be
-        # recompiled if needed)
-        self._pymc_model = None
-        return cp.deepcopy(self)
-
     def condition_data(self, preserve_acfs : bool = False, **kwargs):
         """Condition data for all detectors by calling
         :meth:`ringdown.data.Data.condition`. Docstring for that function
@@ -542,6 +674,11 @@ class Fit(object):
         ACFs in fit after conditioning (default False).
 
         """
+        # record all arguments
+        settings = {k: v for k,v in locals().items() if k != 'self'}
+        for k, v in settings.pop('kwargs').items():
+            settings[k] = v
+            
         new_data = {}
         for k, d in self.data.items():
             t0 = self.start_times[k]
@@ -553,7 +690,7 @@ class Fit(object):
         elif self.acfs:
             logging.warning("preserving existing ACFs after conditioning")
         # record conditioning settings
-        self.update_info('condition', **kwargs)
+        self.update_info('condition', **settings)
     condition_data.__doc__ += Data.condition.__doc__
 
     def get_templates(self, signal_buffer='auto', **kws):
@@ -591,9 +728,9 @@ class Fit(object):
         # if no sky location given, use provided APs or default to target
         if not all([k in kws for k in ['ra', 'dec']]):
             kws['antenna_patterns'] = kws.pop('antenna_patterns', None) or \
-                                      self.antenna_patterns
+                                      self.target.antenna_patterns
         for k in ['ra', 'dec', 'psi']:
-            kws[k] = kws.get(k, self.target._asdict()[k])
+            kws[k] = kws.get(k, getattr(self.target.sky_location, k))
 
         kws['times'] = {ifo: d.time.values for ifo,d in self.data.items()}
         kws['t0_default'] = self.t0
@@ -615,13 +752,22 @@ class Fit(object):
             (def. False)
 
         """
+        # record all arguments
+        settings = {k: v for k,v in locals().items() if k != 'self'}
+        for k, v in settings.pop('kws').items():
+            settings[k] = v
+            
         self.injections = self.get_templates(**kws)
         for i, h in self.injections.items():
             if no_noise:
                 self.data[i] = h
             else:
                 self.data[i] = self.data[i] + h
-        self.update_info('injection', no_noise=no_noise, **kws)
+        self.update_info('injection', **settings)
+    
+    @property
+    def injection_parameters(self) -> dict:
+        return self.info.get('injection', {})
         
     @property
     def conditioned_injections(self) -> dict:
@@ -668,6 +814,11 @@ class Fit(object):
         \*\*kwargs :
             arguments passed to sampler.
         """
+        # record all arguments
+        settings = {k: v for k,v in locals().items() if k != 'self'}
+        for k, v in settings.pop('kwargs').items():
+            settings[k] = v
+        
         ess_run = -1.0 # ess after sampling finishes, to be set by loop below
         if min_ess is None:
             min_ess = 0.0
@@ -772,9 +923,8 @@ class Fit(object):
 
                     kwargs.update(kws)
         if not prior and store_residuals:
-            self.result._generate_whitened_residuals()
-            
-        self.update_info('run', **kwargs)
+            self.result._generate_whitened_residuals() 
+        self.update_info('run', **settings)
     run.__doc__ = run.__doc__.format(DEF_RUN_KWS)
 
     def add_data(self, data, time=None, ifo=None, acf=None):
@@ -798,14 +948,30 @@ class Fit(object):
         if acf is not None:
             self.acfs[data.ifo] = acf
 
-    def load_data(self, path_input, ifos=None, channel=None, **kws):
+    @staticmethod
+    def _get_path_dict_from_pattern(path, ifos=None):
+        if isinstance(path, str):
+            path_dict = try_parse(path)
+            if isinstance(path_dict, str):
+                if ifos is None:
+                    raise ValueError("must provide IFO list.")
+                path_dict = {}
+                for ifo in ifos:
+                    i = '' if not ifo else ifo[0]
+                    path_dict[ifo] = try_parse(path).format(i=i, ifo=ifo)
+        else:
+            path_dict = path
+        path_dict = {k: os.path.abspath(v) for k,v in path_dict.items()}
+        return path_dict
+    
+    def load_data(self, path, ifos=None, channel=None, **kws):
         """Load data from disk.
 
         Additional arguments are passed to :meth:`ringdown.data.Data.read`.
 
         Arguments
         ---------
-        path_input : dict, str
+        path : dict, str
             dictionary of data paths indexed by interferometer keys, or path
             string replacement pattern, e.g.,
             ``'path/to/{i}-{ifo}_GWOSC_16KHZ_R1-1126259447-32.hdf5'`` where `i`
@@ -825,35 +991,18 @@ class Fit(object):
             listed in `ifos` (e.g., `H` and `H1` for LIGO Hanford).  Only used
             when `kind = 'frame'`.
         """
+        # record all arguments
+        settings = {k: v for k,v in locals().items() if k != 'self'}
+        for k, v in settings.pop('kws').items():
+            settings[k] = v
+        
         # TODO: add ability to generate synthetic data here?
-        if isinstance(path_input, str):
-            try:
-                path_dict = literal_eval(path_input)
-            except (ValueError,SyntaxError):
-                if ifos is None:
-                    raise ValueError("must provide IFO list.")
-                path_dict = {}
-                for ifo in ifos:
-                    i = '' if not ifo else ifo[0]
-                    path_dict[ifo] = path_input.format(i=i, ifo=ifo)
-        else:
-            path_dict = path_input
-        path_dict = {k: os.path.abspath(v) for k,v in path_dict.items()}
+        path_dict = self._get_path_dict_from_pattern(path, ifos)
         if channel is not None:
-            if isinstance(channel, str):
-                try:
-                    channel_dict = literal_eval(channel)
-                except (ValueError,SyntaxError):
-                    if ifos is None:
-                        raise ValueError("must provide IFO list.")
-                    channel_dict = {}
-                    for ifo in ifos:
-                        i = '' if not ifo else ifo[0]
-                        channel_dict[ifo] = channel.format(i=i, ifo=ifo)
-            else:
-                channel_dict = channel
+            channel_dict = self._get_path_dict_from_pattern(channel, ifos)
         else:
             channel_dict = {k: None for k in path_dict.keys()}
+            
         tslide = kws.pop('slide', {}) or {}
         for ifo, path in path_dict.items():
             self.add_data(Data.read(path, ifo=ifo, channel=channel_dict[ifo], **kws))
@@ -863,7 +1012,8 @@ class Fit(object):
             new_d = Data(np.roll(d, int(dt / d.delta_t)), ifo=i, index=d.time)
             self.add_data(new_d)
         # record data provenance
-        self.update_info('data', path=path_dict, **kws)
+        settings['path'] = path_dict
+        self.update_info('data', **settings)
     
     def compute_acfs(self, shared=False, ifos=None, **kws):
         """Compute ACFs for all data sets in `Fit.data`.
@@ -881,6 +1031,11 @@ class Fit(object):
 
         extra kwargs are passed to ACF constructor
         """
+        # record all arguments
+        settings = {k: v for k,v in locals().items() if k != 'self'}
+        for k, v in settings.pop('kws').items():
+            settings[k] = v
+        
         ifos = self.ifos if ifos is None else ifos
         if len(ifos) == 0:
             raise ValueError("first add data")
@@ -897,9 +1052,9 @@ class Fit(object):
         for ifo in ifos:
             self.acfs[ifo] = acf if shared else self.data[ifo].get_acf(**kws)
         # record ACF computation options
-        self.update_info('acf', shared=shared, **kws)
+        self.update_info('acf', **settings)
 
-    def load_acfs(self, path_input, ifos=None, from_psd=False, **kws):
+    def load_acfs(self, path, ifos=None, from_psd=False, **kws):
         """Load autocovariances from disk. Can read in a PSD, instead of an
         ACF, if using the `from_psd` argument.
 
@@ -909,7 +1064,7 @@ class Fit(object):
 
         Arguments
         ---------
-        path_input : dict, str
+        path : dict, str
             dictionary of ACF paths indexed by interferometer keys, or path
             string replacement pattern, e.g.,
             ``'path/to/acf_{i}_{ifo}.dat'`` where `i` and `ifo` will be
@@ -923,26 +1078,20 @@ class Fit(object):
         from_psd : bool
             read in a PSD and convert to ACF.
         """
-        if isinstance(path_input, str):
-            try:
-                path_dict = literal_eval(path_input)
-            except (ValueError,SyntaxError):
-                if ifos is None:
-                    ifos = self.ifos 
-                path_dict = {}
-                for ifo in ifos:
-                    i = '' if not ifo else ifo[0]
-                    path_dict[ifo] = path_input.format(i=i, ifo=ifo)
-        else:
-            path_dict = path_input
-        path_dict = {k: os.path.abspath(v) for k,v in path_dict.items()}
+        # record all arguments
+        settings = {k: v for k,v in locals().items() if k != 'self'}
+        for k, v in settings.pop('kws').items():
+            settings[k] = v
+            
+        path_dict = self._get_path_dict_from_pattern(path, ifos)
         for ifo, p in path_dict.items():
             if from_psd:
                 self.acfs[ifo] = PowerSpectrum.read(p, **kws).to_acf()
             else:
                 self.acfs[ifo] = AutoCovariance.read(p, **kws)
         # record ACF computation options
-        self.update_info('acf', path=path_dict, from_psd=from_psd, **kws)
+        settings['path'] = path_dict
+        self.update_info('acf', **settings)
 
     def set_tone_sequence(self, nmode, p=1, s=-2, l=2, m=2):
         """Set template modes to be a sequence of overtones with a given
@@ -993,8 +1142,12 @@ class Fit(object):
             # otherwise, assume it is a mode index list
             self.modes = qnms.construct_mode_list(modes)
 
-    def set_target(self, t0, ra=None, dec=None, psi=None, delays=None,
-                   antenna_patterns=None, duration=None, n_analyze=None):
+    def set_target(self, t0 : float | dict, ra : float | None = None,
+                   dec : float | None = None, psi : float | None = None,
+                   duration : float | None = None,
+                   reference_ifo : str | None = None,
+                   antenna_patterns: dict | None = None,
+                   n_analyze : int | None = None):
         """ Establish truncation target, stored to `self.target`.
 
         Provide a targetted analysis start time `t0` to serve as beginning of
@@ -1010,18 +1163,15 @@ class Fit(object):
 
         The source sky location and orientation can be specified by the `ra`,
         `dec`, and `psi` arguments. These are use to both determine the
-        truncation time at different detectors, as well as to compute the 
+        truncation time at different detectors, as well as to compute the
         corresponding antenna patterns. Specifying a sky location is only
         required if the model can handle data from multiple detectors.
 
-        Alternatively, antenna patterns and geocenter-delays can be specified
-        directly through the `antenna_patterns` and `delays` arguments.
-
-        For all models, the argument `duration` specifies the length of the 
-        analysis segment in the unit of time used to index the data (e.g., s).
-        Based on the sampling rate, this argument is used to compute the number
-        of samples to be included in the segment, beginning from the first
-        sample identified from `t0`.
+        The argument `duration` specifies the length of the analysis segment in
+        the unit of time used to index the data (e.g., s). Based on the sampling
+        rate, this argument is used to compute the number of samples to be
+        included in the segment, beginning from the first sample identified from
+        `t0`.
 
         Alternatively, the `n_analyze` argument can be specified directly. If
         neither `duration` nor `n_analyze` are provided, the duration will be
@@ -1034,8 +1184,10 @@ class Fit(object):
 
         Arguments
         ---------
-        t0 : float
-            target time (at geocenter for a detector network).
+        t0 : float, dict
+            target time (at geocenter for a detector network, if no
+            `reference_ifo` is specified), or a dictionary of start
+            times.
         ra : float
             source right ascension (rad).
         dec : float
@@ -1045,54 +1197,83 @@ class Fit(object):
         duration : float
             analysis segment length in seconds, or time unit indexing data
             (overrides `n_analyze`).
-        n_analyze : int
-            number of data points to include in analysis segment.
-        delays : dict
-            dictionary with delays from geocenter for each detector, as would
-            be computed by `lal.TimeDelayFromEarthCenter` (optional).
         antenna_patterns : dict
             dictionary with tuples for plus and cross antenna patterns for
             each detector `{ifo: (Fp, Fc)}` (optional)
+        reference_ifo : str
+            if specified, use this detector as reference for delays and
+            antenna patterns, otherwise assume t0 defined at geocenter.
         """
-        if not self.data:
-            raise ValueError("must add data before setting target.")
-        tgps = lal.LIGOTimeGPS(t0)
-        gmst = lal.GreenwichMeanSiderealTime(tgps)
-        delays = delays or {}
-        antenna_patterns = antenna_patterns or {}
-        for ifo, data in self.data.items():
-            if ifo is None:
-                dt_ifo = 0
-                self.antenna_patterns[ifo] = (1, 1)
-            else:
-                det = data.detector
-                dt_ifo = delays.get(ifo,
-                    lal.TimeDelayFromEarthCenter(det.location, ra, dec, tgps))
-                self.antenna_patterns[ifo] = antenna_patterns.get(ifo,
-                    lal.ComputeDetAMResponse(det.response, ra, dec, psi, gmst))
-            self.start_times[ifo] = t0 + dt_ifo
-        self.target = Target(t0, ra, dec, psi)
-        # also specify analysis duration if requested
-        if duration:
-            self._duration = duration
-        elif n_analyze:
-            self._n_analyze = int(n_analyze)
-        # make sure that start times are encompassed by data
-        for i, t0_i in self.start_times.items():
-            if t0_i < self.data[i].time[0] or t0_i > self.data[i].time[-1]:
-                raise ValueError("{} start time not in data".format(i))
-
-    def update_target(self, **kws):
-        """Modify analysis target. See also :meth:`Fit.set_target`.
-        """
+        # turn float into LIGOTimeGPS object to ensure we get the right 
+        # number of digits when converting to string
+        t0 = lal.LIGOTimeGPS(t0) if isinstance(t0, float) else t0
+        
+        # record all arguments for provenance
+        settings = {k: v for k,v in locals().items() if k != 'self'}
+        
         if self.result is not None:
-            # TODO: fail?
-            logging.warn("updating target of Fit with preexisting results!")
-        target = self.target._asdict()
-        target.update({k: getattr(self,k) for k in
-                       ['duration', 'n_analyze', 'antenna_patterns']})
-        target.update(kws)
-        self.set_target(**target)
+            raise ValueError("cannot set target with preexisting results")
+        
+        if n_analyze:
+            if duration:
+                logging.warning("ignoring duration in favor of n_analyze")
+                duration = None
+            else:
+                pass
+            self._n_analyze = int(n_analyze)
+        elif not duration:
+            logging.warning("no duration or n_analyze specified")
+            
+        if antenna_patterns is None:
+            self.target = Target.from_sky(t0, ra, dec, psi, duration,
+                                          reference_ifo)
+            self._antenna_patterns = None
+            self._start_times = None
+        else:
+            if not hasattr(antenna_patterns, 'keys'):
+                # assume antenna_patterns is (Fp, Fc); will check below
+                antenna_patterns = {None: antenna_patterns}
+            else:
+                pass
+            # antenna patterns have been explicitly provided, validate their
+            # structure and store for later
+            self._antenna_patterns = {}
+            for i in antenna_patterns.keys():
+                ap = antenna_patterns[i]
+                if len(ap) != 2:
+                    raise ValueError("antenna patterns must be (Fp, Fc)")
+                self._antenna_patterns[i] = (float(ap[0]), float(ap[1]))
+
+            if not hasattr(t0, 'keys'):
+                # assume t0 is a single time, will check below
+                logging.warning("setting same start time for all detectors")
+                t0 = {i: float(t0) for i in self._antenna_patterns.keys()}
+            else:
+                pass
+            # construct start-time dictionary based on antenna patterns    
+            self._start_times = {}
+            for i in self._antenna_patterns.keys():
+                if i in t0:
+                    self._start_times[i] = float(t0[i])
+                else:
+                    raise ValueError("missing start time for {}".format(i))
+            # check that there were no extra start times
+            extra_times = set(self._start_times.keys()) -\
+                          set(self._antenna_patterns.keys())
+            if extra_times:
+                raise ValueError("detectors without antenna patterns: "
+                                 "{extra_times}")
+            else:
+                pass
+            self.target = Target(None, None, None, None, duration)
+                
+        # make sure that start times are encompassed by data (if data exist)
+        for i, data in self.data.items():
+            t0_i = self.start_times[i] 
+            if t0_i < data.time[0] or t0_i > data.time[-1]:
+                raise ValueError("{} start time not in data".format(i))
+        # record state
+        self.update_info('target', **settings)
 
     @property
     def duration(self) -> float:
@@ -1103,7 +1284,7 @@ class Fit(object):
         (:attr:`n_analyze`) and :math:`\Delta t` is the time
         sample spacing.
         """
-        if self._n_analyze and not self._duration:
+        if self._n_analyze and not self.target.duration:
             if self.data:
                 return self._n_analyze*self.data[self.ifos[0]].delta_t
             else:
@@ -1111,14 +1292,22 @@ class Fit(object):
                                 "(n_analyze = {})".format(self._n_analyze))
                 return None
         else:
-            return self._duration
+            return self.target.duration
 
+    @property
+    def has_sky(self) -> bool:
+        """Whether a sky location has been set with :meth:`Fit.set_target`.
+        """
+        return self.target.t0 is not None
+    
     @property
     def has_target(self) -> bool:
         """Whether an analysis target has been set with
         :meth:`Fit.set_target`.
         """
-        return self.target.t0 is not None
+        has_internal_state = (self._antenna_patterns is not None) and \
+                             (self._start_times is not None)
+        return self.has_sky or has_internal_state
 
     @property
     def start_indices(self) -> dict:
@@ -1141,14 +1330,14 @@ class Fit(object):
     def n_analyze(self) -> int:
         """Number of data points included in analysis for each detector.
         """
-        if self._duration and not self._n_analyze:
+        if self.duration and not self._n_analyze:
             # set n_analyze based on specified duration in seconds
             if self.data:
                 dt = self.data[self.ifos[0]].delta_t
-                return int(round(self._duration/dt))
+                return int(round(self.duration/dt))
             else:
                 logging.warning("add data to compute n_analyze "
-                                "(duration = {})".format(self._duration))
+                                "(duration = {})".format(self.duration))
                 return None
         elif self.data and self.has_target:
             # set n_analyze to fit shortest data set
