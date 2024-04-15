@@ -8,6 +8,8 @@ import arviz as az
 import scipy.linalg as sl
 from arviz.data.base import dict_to_dataset
 import logging
+from . import qnms
+import pandas as pd
 
 _WHITENED_LOGLIKE_KEY = 'whitened_pointwise_loglike'
 
@@ -21,6 +23,8 @@ class Result(az.InferenceData):
             super().__init__(args[0].attrs, **{k: getattr(args[0], k) for k in args[0]._groups})
         else:
             super().__init__(*args, **kwargs)
+        self._stacked_samples = None
+        self._whitened_templates = None
             
     @classmethod
     def from_netcdf(cls, *args, **kwargs):
@@ -109,10 +113,13 @@ class Result(az.InferenceData):
 
           result.posterior.h_det.stack(sample=('chain', 'draw'))
         """
-        # get reconstructions from posterior, shaped as (chain, draw, ifo, time)
-        # and stack into (ifo, time, sample)
-        hs = self.posterior.h_det.stack(samples=('chain', 'draw'))
-        return  self.whiten(hs)
+        if self._whitened_templates is None:
+
+            # get reconstructions from posterior, shaped as (chain, draw, ifo, time)
+            # and stack into (ifo, time, sample)
+            hs = self.posterior.h_det.stack(samples=('chain', 'draw'))
+            self._whitened_templates = self.whiten(hs)
+        return self._whitened_templates
 
     def compute_posterior_snrs(self, optimal=True, network=True) -> np.ndarray:
         """Efficiently computes signal-to-noise ratios from posterior samples,
@@ -240,3 +247,112 @@ class Result(az.InferenceData):
         mess = ess.min()
         mess_arr = np.array([mess[k].values[()] for k in mess.keys()])
         return np.min(mess_arr)
+    
+    @property
+    def stacked_samples(self):
+        """Stacked samples for all parameters in the result.
+        """
+        if self._stacked_samples is None:
+            dims = ('chain', 'draw')
+            self._stacked_samples = self.posterior.stack(sample=dims)
+        return self._stacked_samples
+    
+    _PARAMETER_KEY_MAP = {
+        'm': '$M / M_\\odot$',
+        'chi': '$\\chi$',
+        'f': '$f_{{{}}} / \\mathrm{{Hz}}$',
+        'g': '$\\gamma_{{{}}} / \\mathrm{{Hz}}$',
+        'a': '$A_{{{}}}$',
+        'phi': '$\\phi_{{{}}}$',
+        'theta': '$\\theta_{{{}}}$',
+        'ellip': '$\\epsilon_{{{}}}$',
+    }
+    
+    _STRAIN_KEY_MAP = {
+        'h_det': '$h(t) [\\mathrm{{{ifo}}}]$',
+        'h_det_mode': '$h_{{{mode}}}(t) [\\mathrm{{{ifo}}}]$',
+    }
+    
+    def get_parameter_key_map(self, modes=True, **kws):
+        key_map = {}
+        for key, key_latex in self._PARAMETER_KEY_MAP.items():
+            if key in self.posterior:
+                x = self.posterior[key]
+                if modes and 'mode' in x.dims:
+                    for mode in x.mode.values:
+                        label = qnms.ModeIndex.construct(mode).to_label(**kws)
+                        mode_key = f'{key}_{label}'
+                        key_map[mode_key] = key_latex.format(label)
+                elif 'mode' in x.dims:
+                    key_map[key] = key_latex.replace('_{{{}}}', '')
+                else:
+                    key_map[key] = key_latex
+        return key_map
+    
+    def get_strain_key_map(self, ifos=True, modes=True, **kws):
+        strain_map = {}
+        for k, v in self._STRAIN_KEY_MAP.items():
+            if k in self.posterior:
+                x = self.posterior[k]
+                if ifos:
+                    for ifo in x.ifo.values:
+                        k_ifo = f'{k}_{ifo}'
+                        if modes and 'mode' in x.dims:
+                            for m in x.mode.values:
+                                label = qnms.ModeIndex.construct(m).to_label(**kws)
+                                mode_k = f'{k_ifo}_{label}'
+                                strain_map[mode_k] = v.format(mode=label, ifo=ifo)
+                        elif 'mode' in x.dims:
+                            strain_map[k_ifo] = v.replace('_{{{mode}}}','').format(ifo=ifo)
+                        else:
+                            strain_map[k_ifo] = v.format(ifo=ifo)
+                elif modes and 'mode' in x.dims:
+                    for m in x.mode.values:
+                        label = qnms.ModeIndex.construct(m).to_label(**kws)
+                        mode_k = f'{k}_{label}'
+                        strain_map[mode_k] = v.replace(' [\\mathrm{{{ifo}}}]', '').format(mode=label)
+                else:
+                    strain_map[k] = v.replace('_{{{mode}}}', '').replace(' [\\mathrm{{{ifo}}}]', '')
+        return strain_map
+    
+    def get_full_key_map(self, **kws):
+        key_map = self.get_parameter_key_map(**kws)
+        strain_map = self.get_strain_key_map(**kws)
+        key_map.update(strain_map)
+        return key_map
+    
+    def get_parameter_dataframe(self, latex_keys=False, **kws):
+        samples = self.stacked_samples
+        df = pd.DataFrame()
+        for key, key_latex in self._PARAMETER_KEY_MAP.items():
+            if key in samples:
+                x = samples[key]
+                if 'mode' in x.dims:
+                    for mode in x.mode.values:
+                        label = qnms.ModeIndex.construct(mode).to_label(**kws)
+                        if latex_keys:
+                            key_df = key_latex.format(label)
+                        else:
+                            key_df = f'{key}_{label}'
+                        df[key_df] = x.sel(mode=mode).values
+                else:
+                    key_df = key_latex if latex_keys else key
+                    df[key_df] = x.values
+        return df
+    
+    def get_mode_parameter_dataframe(self, latex_keys=False, **kws):
+        samples = self.stacked_samples
+        dfs = []
+        for mode in self.posterior.mode.values:
+            label = qnms.ModeIndex.construct(mode).to_label(**kws)
+            df = pd.DataFrame()
+            for key, key_latex in self.get_parameter_key_map(modes=False).items():
+                if key in samples:
+                    x = samples[key]
+                    if 'mode' in x.dims:
+                        key_df = key_latex.format(label) if latex_keys else key
+                        df[key_df] = x.sel(mode=mode).values
+            df['mode'] = label
+            dfs.append(df)
+        return pd.concat(dfs, ignore_index=True)
+        

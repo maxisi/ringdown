@@ -14,6 +14,7 @@ dependencies:
   - seaborn
   - python=3
   - jupyterlab
+  - ipywidgets
   - openblas
   - numpyro
   - jax

@@ -4,7 +4,10 @@ import numpy as np
 import lal
 from .core import *
 from ..utils import docstring_parameter
-from scipy.signal import tukey
+try:
+    from scipy.signal.windows import tukey
+except ImportError:
+    from scipy.signal import tukey
 import lal
 import lalsimulation as ls
 from dataclasses import dataclass, asdict, fields
@@ -186,7 +189,7 @@ class Parameters:
 
         Arguments
         ---------
-        \*\*kws
+        **kws
             parameter names and values
 
         Returns
@@ -231,7 +234,7 @@ class Parameters:
 
     @property
     def mass_ratio(self):
-        """Mass ratio :math:`q = m_2/m_1` for :math:`m_1 \geq m_2`.
+        """Mass ratio :math:`q = m_2/m_1` for :math:`m_1 \\geq m_2`.
         """
         return self.mass_2 / self.mass_1
 
@@ -611,14 +614,14 @@ class Coalescence(Signal):
         is defined as
 
         .. math::
-            H^2(t) \equiv \sum_{\ell m} H_{\ell m}^2(t)
+            H^2(t) \\equiv \\sum_{\\ell m} H_{\\ell m}^2(t)
 
-        where :math:`H_{\ell m}(t)` are the coefficients associated with the
-        spherical harmonic factors :math:`{}_{-2} Y_{\ell m}` in the strain,
+        where :math:`H_{\\ell m}(t)` are the coefficients associated with the
+        spherical harmonic factors :math:`{}_{-2} Y_{\\ell m}` in the strain,
         namely
 
         .. math::
-            h(t) = \sum_{\ell m} H_{\ell m}(t) {}_{-2} Y_{\ell m}
+            h(t) = \\sum_{\\ell m} H_{\\ell m}(t) {}_{-2} Y_{\\ell m}
 
         .. note::
             This currently only works with some time domain approximants (e.g.,
@@ -627,7 +630,7 @@ class Coalescence(Signal):
         Arguments
         ---------
         ell_max : int
-            maximum :math:`\ell` to include in the computation of the peak
+            maximum :math:`\\ell` to include in the computation of the peak
         force : bool
             redo the computation ignoring cached results
 

@@ -5,15 +5,13 @@ import qnm
 import lal
 from collections import namedtuple
 
-T_MSUN = lal.MSUN_SI * lal.G_SI / lal.C_SI**3
+T_MSUN = lal.GMSUN_SI / lal.C_SI**3
 
 ModeIndexBase = namedtuple('ModeIndex', ['p', 's', 'l', 'm', 'n'])
 
 class ModeIndex(ModeIndexBase):
     @classmethod
-    def from_bytestring(cls, s):
-        s = s.decode('utf-8')
-
+    def from_string(cls, s):
         if ',' in s:
             p, s, l, m, n = map(int, s.split(','))
             return cls(p, s, l, m, n)
@@ -21,19 +19,30 @@ class ModeIndex(ModeIndexBase):
             # Try to parse old-style lmn strings:
             p,l,m,n = map(int, s)
             return cls(p, -2, l, m, n)
+    
+    @classmethod
+    def from_bytestring(cls, s):
+        return cls.from_string(s.decode('utf-8'))
+    
+    @classmethod
+    def construct(cls, s):
+        if isinstance(s, bytes):
+            return cls.from_bytestring(s)
+        elif isinstance(s, str):
+            return cls.from_string(s)
+        else:
+            return cls(*s)
 
     def to_bytestring(self):
         s = f'{self.p},{self.s},{self.l},{self.m},{self.n}'
         return bytes(s, 'utf-8')
     
-    def to_latex(self, include_prograde=False, include_spinweight=False):
+    def to_label(self, include_prograde=True, include_spinweight=False):
         s = f'{self.l}{self.m}{self.n}'
-
         if include_spinweight:
-            s = f'{self.s}' + s
+            s = f'{self.s}{s}'
         if include_prograde:
-            s = f'{self.p}' + s
-
+            s = f'{self.p}{s}'
         return s
 
 def construct_mode_list(modes):

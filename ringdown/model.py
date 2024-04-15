@@ -12,43 +12,6 @@ from arviz.data.base import dict_to_dataset
 import logging
 import warnings
 
-def rd(ts, f, gamma, Apx, Apy, Acx, Acy, Fp, Fc):
-    """Generate a ringdown waveform as it appears in a detector.
-    
-    Arguments
-    ---------
-    
-    ts : array_like
-        The times at which the ringdown waveform should be evaluated.  
-    f : real
-        The frequency.
-    gamma : real
-        The damping rate.
-    Apx : real
-        The amplitude of the "plus" cosine-like quadrature.
-    Apy : real
-        The amplitude of the "plus" sine-like quadrature.
-    Acx : real
-        The amplitude of the "cross" cosine-like quadrature.
-    Acy : real
-        The amplitude of the "cross" sine-like quadrature.
-    Fp : real
-        The coefficient of the "plus" polarization in the detector.
-    Fc : real
-        The coefficient of the "cross" term in the detector.
-
-    Returns
-    -------
-
-    Array of the ringdown waveform in the detector.
-    """
-    ct = jnp.cos(2*np.pi*f*ts)
-    st = jnp.sin(2*np.pi*f*ts)
-    decay = jnp.exp(-gamma*ts)
-    p = decay*(Apx*ct + Apy*st)
-    c = decay*(Acx*ct + Acy*st)
-    return Fp*p + Fc*c
-
 def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales):
     ts = jnp.array(ts)
     nifo, nt = ts.shape

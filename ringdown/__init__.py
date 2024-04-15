@@ -2,6 +2,7 @@ __all__ = []
 
 from .data import *
 from .fit import *
+from .result import *
 from .model import *
 from .kde_contour import *
 from .waveforms import *
