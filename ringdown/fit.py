@@ -11,6 +11,7 @@ import configparser
 import copy as cp
 from .data import *
 from . import utils
+from .result import Result
 import lal
 import logging
 from .model import make_model, get_arviz
@@ -630,9 +631,9 @@ class Fit(object):
                                 "no guarantee of fit correspondence!")
                 try:
                     if result.endswith('.nc'):
-                        fit.result = az.from_netcdf(result)
+                        fit.result = Result(az.from_netcdf(result))
                     elif result.endswith('.json'):
-                        fit.result = az.from_json(result)
+                        fit.result = Result(az.from_json(result))
                     else:
                         logging.error(f"unknown result format: {result}")
                 except Exception as e:

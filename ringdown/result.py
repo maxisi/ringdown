@@ -152,6 +152,8 @@ class Result(az.InferenceData):
             if "strain" in self.observed_data:
                 # strain values stored in "old" PyStan structure
                 ds = self.observed_data.strain
+            elif "strain" in self.constant_data:
+                ds = self.constant_data.strain
             else:
                 # strain values stored in "new" PyMC structure
                 ds = np.array([d.values for d in self.observed_data.values()])
