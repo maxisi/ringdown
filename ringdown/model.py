@@ -452,7 +452,9 @@ MODEL_DIMENSIONS['h_det_mode'] = ['ifo', 'mode', 'time_index']
 
 def get_arviz(sampler,
               modes : None | list = None,
-              ifos : None | list = None):
+              ifos : None | list = None,
+              epoch : None | list = None,
+              attrs : dict | None = None):
     """Convert a numpyro sampler to an arviz dataset.
     
     Arguments
@@ -497,22 +499,30 @@ def get_arviz(sampler,
         ifos = np.arange(n_ifo, dtype=int)
     elif len(ifos) != n_ifo:
         raise ValueError(f'expected {n_ifo} ifos, got {len(ifos)}')
+    # get epochs
+    if epoch is None:
+        epoch = np.zeros(n_ifo)
+    elif len(epoch) != n_ifo:
+        raise ValueError(f'expected {n_ifo} epochs, got {len(epoch)}')
     # get times from model arguments
     n_analyze = len(sampler._args[0][0])
     time_index = np.arange(n_analyze, dtype=int)
-    coords = {'ifo': ifos, 'mode': modes, 'time_index': time_index, 'time_index_1': time_index}
+    coords = {'ifo': ifos, 'mode': modes, 'time_index': time_index,
+              'time_index_1': time_index}
     # get constant_data
     in_dims = {
         'time': ['ifo', 'time_index'],
         'strain': ['ifo', 'time_index'],
         'cholesky_factor': ['ifo', 'time_index', 'time_index_1'],
         'fp': ['ifo'],
-        'fc': ['ifo']
+        'fc': ['ifo'],
+        'epoch': ['ifo']
     }
     in_data = {k: np.array(v) for k,v in zip(in_dims.keys(), sampler._args)}
+    in_data['epoch'] = np.array(epoch)
     dims.update(in_dims)
 
     result = az.from_numpyro(sampler, dims=dims, coords=coords, 
                              constant_data=in_data)
-
+    result.attrs.update(attrs)
     return Result(result)

@@ -1,7 +1,7 @@
 """Module defining the core :class:`Fit` class.
 """
 
-__all__ = ['Target', 'Fit']
+__all__ = ['Fit']
 
 import numpy as np
 import arviz as az
@@ -12,6 +12,7 @@ import copy as cp
 from .data import *
 from . import utils
 from .result import Result
+from .target import construct_target
 import lal
 import logging
 from .model import make_model, get_arviz
@@ -39,201 +40,6 @@ MODEL_ARGS = inspect.signature(make_model).parameters.keys()
 
 DEF_RUN_KWS = dict(dense_mass=True, num_warmup=1000, num_samples=1000,
                        num_chains=4)
-
-@dataclass
-class Target(object):
-    time_geocenter : float | None = None
-    ra : float | None = None
-    dec : float | None = None
-    psi : float | None = None
-    start_times : dict | None = None
-    antenna_patterns : dict | None = None
-    
-    def __post_init__(self):
-        # validate input: floats or None
-        for k, v in self.as_dict().items():
-            if v is not None and not isinstance(v, lal.LIGOTimeGPS):
-                if k == 'start_times':
-                    self.start_times = {i: float(v) for i,v in v.items()}
-                elif k == 'antenna_patterns':
-                    aps = {}
-                    for i, fpfc in v.items():
-                        if len(i) != 2:
-                            raise ValueError("antenna patterns must be (Fp, Fc)")
-                        aps[k] = (float(fpfc[0]), float(fpfc[1]))
-                    self.antenna_patterns = aps
-                else:
-                    setattr(self, k, float(v))
-        # make sure options are not contradictory                   
-        if self.has_values and self.has_sky:
-            raise ValueError("cannot have both sky location and values")
-        elif self.has_sky:
-            if any([x is None for x in [self.time_geocenter, self.ra, self.dec, self.psi]]):
-                raise ValueError("missing sky location parameters")
-            elif any([x is not None for x in [self.antenna_patterns, self.start_times]]):
-                raise ValueError("cannot have both sky location and values")
-        elif self.has_values:
-            if any([x is None for x in [self.antenna_patterns, self.start_times]]):
-                raise ValueError("missing values")
-    
-    def as_dict(self):
-        return asdict(self)
-    
-    @property
-    def t0(self):
-        """Alias for time_geocenter."""
-        if self.time_geocenter is None:
-            return None
-        else:
-            return float(self.time_geocenter)
-        
-    @property
-    def has_sky(self):
-        return self.ra is not None
-    
-    @property
-    def has_values(self):
-        return (self.antenna_patterns is not None) and\
-               (self.start_times is not None)
-    
-    @property
-    def is_set(self):
-        return self.has_sky or self.has_values
-    
-    def get_detector_time(self, ifo):
-        """Compute detector times based on sky location.
-        
-        Arguments
-        ---------
-        ifos : list
-            list of detector names.
-        
-        Returns
-        -------
-        times : dict
-            dictionary of detector times.
-        """
-        if self.start_times is not None:
-            if ifo in self.start_times:
-                t0 = self.start_times[ifo]
-            else:
-                raise ValueError(f"{ifo} missing from start times")
-        else:
-            det = lal.cached_detector_by_prefix[ifo]
-            tgps = lal.LIGOTimeGPS(self.time_geocenter)
-            dt = lal.TimeDelayFromEarthCenter(det.location, self.ra, 
-                                              self.dec, tgps)
-            t0 = self.time_geocenter + dt
-        return float(t0)
-    
-    def get_antenna_patterns(self, ifo):
-        """Compute antenna patterns based on sky location.
-        
-        Arguments
-        ---------
-        ifos : list
-            list of detector names.
-        
-        Returns
-        -------
-        antenna_patterns : dict
-            dictionary of antenna patterns.
-        """
-        if self.antenna_patterns is not None:
-            if ifo in self.antenna_patterns:
-                fpfc = self.antenna_patterns[ifo]
-            else:
-                raise ValueError(f"{ifo} missing from antenna patterns")
-        else:
-            det = lal.cached_detector_by_prefix[ifo]
-            tgps = lal.LIGOTimeGPS(self.time_geocenter)
-            gmst = lal.GreenwichMeanSiderealTime(tgps)
-            fpfc = lal.ComputeDetAMResponse(det.response, self.ra, self.dec,
-                                            self.psi, gmst)
-        return fpfc
-    
-    @classmethod
-    def from_sky(cls, t0 : float, ra : float, dec : float, psi : float,
-                 reference_ifo : str | None = None):
-        """Create a sky location from a reference time, either a specific
-        detector or geocenter.
-        
-        Arguments
-        ---------
-        t0 : float
-            detector time.
-        ra : float
-            source right ascension.
-        dec : float
-            source declination.
-        psi : float
-            source polarization angle.
-        reference_ifo : str, None
-            detector name, or `None` for geocenter (default `None`)
-        
-        Returns
-        -------
-        sky : Target
-            a target object.
-        """
-        if reference_ifo is None:
-            tgeo = t0
-        else:
-            det = lal.cached_detector_by_prefix[reference_ifo]
-            tgps = lal.LIGOTimeGPS(t0)
-            dt = lal.TimeDelayFromEarthCenter(det.location, ra, dec, tgps)
-            tgeo = t0 - dt
-        return cls(lal.LIGOTimeGPS(tgeo), ra, dec, psi)
-    
-    @classmethod
-    def from_values(cls, start_times, antenna_patterns):
-        if not hasattr(antenna_patterns, 'keys'):
-            # assume antenna_patterns is (Fp, Fc); will check below
-            antenna_patterns = {None: antenna_patterns}
-        else:
-            pass
-        # antenna patterns have been explicitly provided, validate their
-        # structure and store for later
-        _antenna_patterns = {}
-        for i in antenna_patterns.keys():
-            ap = antenna_patterns[i]
-            if len(ap) != 2:
-                raise ValueError("antenna patterns must be (Fp, Fc)")
-            _antenna_patterns[i] = (float(ap[0]), float(ap[1]))
-
-        if not hasattr(start_times, 'keys'):
-            # assume t0 is a single time, will check below
-            logging.warning("setting same start time for all detectors")
-            start_times = {i: float(start_times) 
-                          for i in _antenna_patterns.keys()}
-        else:
-            pass
-        # construct start-time dictionary based on antenna patterns    
-        _start_times = {}
-        for i in _antenna_patterns.keys():
-            if i in start_times:
-                _start_times[i] = float(start_times[i])
-            else:
-                raise ValueError(f"missing start time for {i}")
-        # check that there were no extra start times
-        extra_times = set(_start_times.keys()) -\
-                        set(_antenna_patterns.keys())
-        if extra_times:
-            raise ValueError("detectors without antenna patterns: "
-                             f"{extra_times}")
-        else:
-            pass
-        return cls(antenna_patterns=_antenna_patterns, start_times=_start_times)
-    
-    @classmethod
-    def construct(cls, t0 : float | dict, ra : float | None = None,
-                   dec : float | None = None, psi : float | None = None,
-                   reference_ifo : str | None = None,
-                   antenna_patterns: dict | None = None):
-        if antenna_patterns is None:
-            return Target.from_sky(t0, ra, dec, psi, reference_ifo)
-        else:
-            return Target.from_values(t0, antenna_patterns)
 
 class Fit(object):
     """ A ringdown fit. Contains all the information required to setup and run
@@ -295,7 +101,7 @@ class Fit(object):
         self.data = {}
         self.injections = {}
         self.acfs = {}
-        self.target = Target()
+        self.target = None
         self.result = None
         self.prior = None
         self._n_analyze = None
@@ -318,10 +124,16 @@ class Fit(object):
         return cp.deepcopy(self)
     
     @property
+    def has_target(self) -> bool:
+        """Whether an analysis target has been set with
+        :meth:`Fit.set_target`.
+        """
+        return self.target is not None
+    
+    @property
     def start_times(self):
         if self.has_target:
-            start_times = {i: self.target.get_detector_time(i) 
-                               for i in self.ifos}
+            start_times = self.target.get_detector_times_dict(self.ifos)
         else:
             start_times = {}
         return start_times
@@ -329,8 +141,7 @@ class Fit(object):
     @property
     def antenna_patterns(self):
         if self.has_target:
-            aps = {i: self.target.get_antenna_patterns(i) 
-                   for i in self.ifos}
+            aps = self.target.get_antenna_patterns_dict(self.ifos)
         else:
             aps = {}
         return aps
@@ -355,15 +166,7 @@ class Fit(object):
         """ Target truncation time (defined at geocenter if model accepts
         multiple detectors).
         """
-        return self.target.t0
-
-    @property
-    def sky(self) -> tuple:
-        """ Tuple of source right ascension, declination and polarization angle
-        (all in radians). This can be set using
-        :meth:`Fit.set_target`.
-        """
-        return (self.target.ra, self.target.dec, self.target.psi)
+        return self.target.t0 if self.has_target else None
 
     @property
     def analysis_data(self) -> dict:
@@ -773,9 +576,9 @@ class Fit(object):
         # if no sky location given, use provided APs or default to target
         if not all([k in kws for k in ['ra', 'dec']]):
             kws['antenna_patterns'] = kws.pop('antenna_patterns', None) or \
-                                      self.target.antenna_patterns
+                                      self.antenna_patterns
         for k in ['ra', 'dec', 'psi']:
-            kws[k] = kws.get(k, getattr(self.target.sky_location, k))
+            kws[k] = kws.get(k, getattr(self.target.sky, k, None))
 
         kws['times'] = {ifo: d.time.values for ifo,d in self.data.items()}
         kws['t0_default'] = self.t0
@@ -925,6 +728,8 @@ class Fit(object):
 
         # get run input and run
         run_input = self.run_input
+        start_times  = self.start_times
+        epoch = [start_times[i] for i in self.ifos]
 
         run_count = 1
         with warnings.catch_warnings():
@@ -940,8 +745,8 @@ class Fit(object):
 
                 # turn sampler into Result object and store
                 # (recall that Result is a wrapper for arviz.InferenceData)
-                result = get_arviz(sampler, ifos=self.ifos, modes=self.modes)
-                result.attrs.update(self.attrs)
+                result = get_arviz(sampler, ifos=self.ifos, modes=self.modes, 
+                                   epoch=epoch, attrs=self.attrs)
                 if prior:
                     self.prior = result
                 else:
@@ -1269,7 +1074,7 @@ class Fit(object):
         else:
             self._duration = float(duration)
             
-        self.target = Target.construct(t0, ra, dec, psi, reference_ifo,
+        self.target = construct_target(t0, ra, dec, psi, reference_ifo,
                                        antenna_patterns)
                 
         # make sure that start times are encompassed by data (if data exist)
@@ -1298,19 +1103,6 @@ class Fit(object):
                 return None
         else:
             return self._duration
-
-    @property
-    def has_sky(self) -> bool:
-        """Whether a sky location has been set with :meth:`Fit.set_target`.
-        """
-        return self.target.has_sky
-    
-    @property
-    def has_target(self) -> bool:
-        """Whether an analysis target has been set with
-        :meth:`Fit.set_target`.
-        """
-        return self.target.is_set
 
     @property
     def start_indices(self) -> dict:

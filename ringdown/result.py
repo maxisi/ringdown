@@ -9,6 +9,7 @@ import scipy.linalg as sl
 from arviz.data.base import dict_to_dataset
 import logging
 from . import qnms
+from .target import construct_target
 import pandas as pd
 import json
 import configparser
@@ -25,9 +26,9 @@ class Result(az.InferenceData):
             super().__init__(args[0].attrs, **{k: getattr(args[0], k) for k in args[0]._groups})
         else:
             super().__init__(*args, **kwargs)
-        self._stacked_samples = None
         self._whitened_templates = None
-        self._settings = None
+        self._config_dict = None
+        self._target = None
         
     @classmethod
     def from_netcdf(cls, *args, **kwargs):
@@ -44,29 +45,52 @@ class Result(az.InferenceData):
         return cls(data)
         
     @property
-    def settings(self):
-        if self._settings is None:
+    def config(self):
+        if self._config_dict is None:
             if 'config' in self.attrs:
                 config_string = self.attrs['config']
-                self._settings = json.loads(config_string)
+                self._config_dict = json.loads(config_string)
             else:
-                self._settings = {}
-        return self._settings
+                self._config_dict = {}
+        return self._config_dict
     
     @property
-    def config(self):
+    def _config_object(self):
         config = configparser.ConfigParser()
         # Populate the ConfigParser with data from the dictionary
-        for section, settings in self.settings.items():
+        for section, settings in self.config.items():
             config.add_section(section)
             for key, value in settings.items():
                 config.set(section, key, value)
         return config
     
+    @property
+    def target(self):
+        if self._target is None:
+            if 'target' in self.config:
+                self._target = construct_target(**self.config['target'])
+        return self._target
+    
+    @property
+    def epoch(self):
+        if 'epoch' in self.constant_data:
+            return self.constant_data.epoch
+        elif 'target' in self.config:
+            ifos = self.posterior.ifo.values.astype(str)
+            epochs = list(self.target.get_detector_times_dict(ifos).values())
+            shape = self.constant_data.fp.shape
+            return np.array(epochs).reshape(shape)
+        else:
+            return np.zeros_like(self.constant_data.fp)
+        
+    @property
+    def sample_times(self):
+        return self.constant_data.time + self.epoch
+    
     def get_fit(self, **kwargs):
-        if self.settings:
+        if self.config:
             from .fit import Fit
-            return Fit.from_config(self.config, result=self, **kwargs)
+            return Fit.from_config(self._config_object, result=self, **kwargs)
 
     def draw_sample(self, map=False, prior=False, rng=None, seed=None):
         """Draw a sample from the posterior.
@@ -91,7 +115,7 @@ class Result(az.InferenceData):
         pars : xarray.core.dataset.DataVariables
             object containing drawn parameters (can be treated as dict)
         """
-        samples = self.posterior.stack(sample=('chain', 'draw'))
+        samples = self.stacked_samples
         if map:
             # select maximum probability sample
             logp = self.sample_stats.lp.stack(sample=('chain', 'draw'))
@@ -280,10 +304,7 @@ class Result(az.InferenceData):
     def stacked_samples(self):
         """Stacked samples for all parameters in the result.
         """
-        if self._stacked_samples is None:
-            dims = ('chain', 'draw')
-            self._stacked_samples = self.posterior.stack(sample=dims)
-        return self._stacked_samples
+        return self.posterior.stack(sample=dims)
     
     _PARAMETER_KEY_MAP = {
         'm': '$M / M_\\odot$',
