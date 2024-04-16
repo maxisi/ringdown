@@ -13,6 +13,9 @@ from . import fit
 from . import model
 from . import waveforms
 
+from importlib.metadata import version
+__version__ = version("ringdown")
+
 # ############################################################################
 # rcParams
 

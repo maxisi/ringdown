@@ -625,8 +625,9 @@ class Fit(object):
             fit.inject(**inj_kws)
         
         if result:
-            # attempt to load result from disk
-            if os.path.exists(result):
+            if isinstance(result, az.InferenceData):
+                fit.result = Result(result)
+            elif isinstance(result, str) and os.path.exists(result):
                 logging.warning("loading result from disk with "
                                 "no guarantee of fit correspondence!")
                 try:
@@ -939,6 +940,7 @@ class Fit(object):
                 # turn sampler into Result object and store
                 # (recall that Result is a wrapper for arviz.InferenceData)
                 result = get_arviz(sampler, ifos=self.ifos, modes=self.modes)
+                result.attrs.update(self.attrs)
                 if prior:
                     self.prior = result
                 else:
@@ -970,6 +972,20 @@ class Fit(object):
             self.result._generate_whitened_residuals() 
         self.update_info('run', **settings)
     run.__doc__ = run.__doc__.format(DEF_RUN_KWS)
+    
+    @property
+    def settings(self):
+        config = self.to_config()
+        return {section: dict(config[section]) for section in config.sections()}
+    
+    def to_json(self, indent=4, **kws):
+        return json.dumps(self.settings, indent=indent, **kws)
+    
+    @property
+    def attrs(self):
+        # TODO: record version number
+        from . import __version__
+        return dict(config=self.to_json(), rindgown_version=__version__)
 
     def add_data(self, data, time=None, ifo=None, acf=None):
         """Add data to fit.

@@ -10,6 +10,8 @@ from arviz.data.base import dict_to_dataset
 import logging
 from . import qnms
 import pandas as pd
+import json
+import configparser
 
 _WHITENED_LOGLIKE_KEY = 'whitened_pointwise_loglike'
 
@@ -25,7 +27,8 @@ class Result(az.InferenceData):
             super().__init__(*args, **kwargs)
         self._stacked_samples = None
         self._whitened_templates = None
-            
+        self._settings = None
+        
     @classmethod
     def from_netcdf(cls, *args, **kwargs):
         # Load the data using the base class method
@@ -39,6 +42,31 @@ class Result(az.InferenceData):
         data = super().from_zarr(*args, **kwargs)
         # Create an instance of the subclass with the loaded data
         return cls(data)
+        
+    @property
+    def settings(self):
+        if self._settings is None:
+            if 'config' in self.attrs:
+                config_string = self.attrs['config']
+                self._settings = json.loads(config_string)
+            else:
+                self._settings = {}
+        return self._settings
+    
+    @property
+    def config(self):
+        config = configparser.ConfigParser()
+        # Populate the ConfigParser with data from the dictionary
+        for section, settings in self.settings.items():
+            config.add_section(section)
+            for key, value in settings.items():
+                config.set(section, key, value)
+        return config
+    
+    def get_fit(self, **kwargs):
+        if self.settings:
+            from .fit import Fit
+            return Fit.from_config(self.config, result=self, **kwargs)
 
     def draw_sample(self, map=False, prior=False, rng=None, seed=None):
         """Draw a sample from the posterior.
