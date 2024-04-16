@@ -863,6 +863,7 @@ class Fit(object):
         settings = {k: v for k,v in locals().items() if k != 'self'}
         for k, v in settings.pop('kwargs').items():
             settings[k] = v
+        self.update_info('run', **settings)
         
         ess_run = -1.0 # ess after sampling finishes, to be set by loop below
         if min_ess is None:
@@ -970,7 +971,6 @@ class Fit(object):
                     kwargs.update(kws)
         if not prior and store_residuals:
             self.result._generate_whitened_residuals() 
-        self.update_info('run', **settings)
     run.__doc__ = run.__doc__.format(DEF_RUN_KWS)
     
     @property
