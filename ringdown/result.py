@@ -308,7 +308,7 @@ class Result(az.InferenceData):
                 x = self.posterior[key]
                 if modes and 'mode' in x.dims:
                     for mode in x.mode.values:
-                        label = qnms.ModeIndex.construct(mode).to_label(**kws)
+                        label = qnms.get_mode_label(mode, **kws)
                         mode_key = f'{key}_{label}'
                         key_map[mode_key] = key_latex.format(label)
                 elif 'mode' in x.dims:
@@ -327,7 +327,7 @@ class Result(az.InferenceData):
                         k_ifo = f'{k}_{ifo}'
                         if modes and 'mode' in x.dims:
                             for m in x.mode.values:
-                                label = qnms.ModeIndex.construct(m).to_label(**kws)
+                                label = qnms.get_mode_label(m, **kws)
                                 mode_k = f'{k_ifo}_{label}'
                                 strain_map[mode_k] = v.format(mode=label, ifo=ifo)
                         elif 'mode' in x.dims:
@@ -336,7 +336,7 @@ class Result(az.InferenceData):
                             strain_map[k_ifo] = v.format(ifo=ifo)
                 elif modes and 'mode' in x.dims:
                     for m in x.mode.values:
-                        label = qnms.ModeIndex.construct(m).to_label(**kws)
+                        label = qnms.get_mode_label(m, **kws)
                         mode_k = f'{k}_{label}'
                         strain_map[mode_k] = v.replace(' [\\mathrm{{{ifo}}}]', '').format(mode=label)
                 else:
@@ -357,7 +357,7 @@ class Result(az.InferenceData):
                 x = samples[key]
                 if 'mode' in x.dims:
                     for mode in x.mode.values:
-                        label = qnms.ModeIndex.construct(mode).to_label(**kws)
+                        label = qnms.get_mode_label(mode, **kws)
                         if latex_keys:
                             key_df = key_latex.format(label)
                         else:
@@ -368,11 +368,12 @@ class Result(az.InferenceData):
                     df[key_df] = x.values
         return df
     
-    def get_mode_parameter_dataframe(self, latex_keys=False, **kws):
+    def get_mode_parameter_dataframe(self, latex_keys=False,
+                                     ignore_index=True, **kws):
         samples = self.stacked_samples
         dfs = []
         for mode in self.posterior.mode.values:
-            label = qnms.ModeIndex.construct(mode).to_label(**kws)
+            label = qnms.get_mode_label(mode, **kws)
             df = pd.DataFrame()
             for key, key_latex in self.get_parameter_key_map(modes=False).items():
                 if key in samples:
@@ -382,5 +383,15 @@ class Result(az.InferenceData):
                         df[key_df] = x.sel(mode=mode).values
             df['mode'] = label
             dfs.append(df)
-        return pd.concat(dfs, ignore_index=True)
+        return pd.concat(dfs, ignore_index=ignore_index)
         
+    def get_strain_quantile(self, q, ifo=None, mode=None):
+        if mode is None:
+            key = 'h_det'
+        else:
+            mode = qnms.get_mode_bytestring(mode)
+            key = 'h_det_mode'
+        sel = {k: v for k, v in dict(ifo=ifo, mode=mode).items()
+               if v is not None}
+        x = self.posterior[key].sel(**sel)
+        return x.quantile(q, dim=('chain', 'draw'))

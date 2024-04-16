@@ -9,6 +9,24 @@ T_MSUN = lal.GMSUN_SI / lal.C_SI**3
 
 ModeIndexBase = namedtuple('ModeIndex', ['p', 's', 'l', 'm', 'n'])
 
+def get_mode_label(mode, **kws):
+    try:
+        return str(int(mode))
+    except Exception:
+        try:
+            return ModeIndex.construct(mode).to_label(**kws)
+        except Exception:
+            return str(mode)
+        
+def get_mode_bytestring(mode):
+    try:
+        return int(mode)
+    except Exception:
+        try:
+            return ModeIndex.construct(mode).to_bytestring()
+        except Exception:
+            return bytes(mode, 'utf-8')
+
 class ModeIndex(ModeIndexBase):
     @classmethod
     def from_string(cls, s):
