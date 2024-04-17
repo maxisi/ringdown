@@ -516,7 +516,7 @@ class PowerSpectrum(FrequencySeries):
         if isinstance(func, str):
             import lalsimulation as lalsim
             func = getattr(lalsim, func)
-        f_ref = freq[argmin(abs(freq - flow))]
+        f_ref = freq[np.argmin(abs(freq - flow))]
         p_ref = func(f_ref)
         def get_psd_bin(f):
             if f > flow:
