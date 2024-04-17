@@ -304,7 +304,7 @@ class Result(az.InferenceData):
     def stacked_samples(self):
         """Stacked samples for all parameters in the result.
         """
-        return self.posterior.stack(sample=dims)
+        return self.posterior.stack(sample=('chain', 'draw'))
     
     _PARAMETER_KEY_MAP = {
         'm': '$M / M_\\odot$',
