@@ -4,6 +4,7 @@
 import numpy as np
 from ast import literal_eval
 import os
+from configparser import ConfigParser
 
 def form_opt(x):
     """Utility to format options in config."""
@@ -62,3 +63,14 @@ def string_to_tuple(s):
                 result.append(int(s[i]))  # Append as a positive integer
         i += 1
     return tuple(result)
+
+def load_config(config_input):
+    if isinstance(config_input, str):
+        if os.path.exists(config_input):
+            config = ConfigParser()
+            config.read(config_input)
+        else:
+            raise FileNotFoundError(config_input)
+    elif isinstance(config_input, ConfigParser):
+        config = config_input
+    return config

@@ -3,12 +3,13 @@
 
 __all__ = ['construct_target']
 
-from ast import literal_eval
-from .data import *
+import numpy as np
 import lal
 import logging
 from dataclasses import dataclass, asdict
 from abc import ABC, abstractmethod
+from .utils import load_config, try_parse
+from .qnms import T_MSUN
 
 class Target(ABC):
     def as_dict(self) -> dict:
@@ -236,3 +237,161 @@ def construct_target(t0 : float | dict, ra : float | None = None,
         return SkyTarget.construct(t0, ra, dec, psi, reference_ifo)
     else:
         return DetectorTarget.construct(t0, antenna_patterns)
+    
+class TargetCollection(object):
+    def __init__(self, targets : list, index=None, info=None):
+        for target in targets:
+            if not isinstance(target, Target):
+                raise ValueError("targets must be instances of Target")
+        self.targets = targets
+        self.info = info or {}
+        self._reference_time = None
+        self._reference_mass = None
+        self._index = None
+        
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.targets})"
+    
+    def __getitem__(self, i):
+        return self.targets[i]
+    
+    def __len__(self):
+        return len(self.targets)
+    
+    def get(self, key):
+        if key.lower() == 'delta-t0':
+            return np.array(self.get('t0')) - self.reference_time
+        elif key.lower() == 'delta-m':
+            return np.array(self.get('delta-t0')) / self.step_time
+        return [getattr(t, key) for t in self.targets]
+    
+    def get_detector_times(self, ifo):
+        return [t.get_detector_time(ifo=ifo) for t in self.targets]
+    
+    def get_antenna_patterns(self, ifo):
+        return [t.get_antenna_patterns(ifo=ifo) for t in self.targets]
+    
+    def update_info(self, section: str, **kws) -> None:
+        """Update fit information stored in :attr:`TargetCollection.info`
+        """
+        self.info[section] = self.info.get(section, {})
+        self.info[section].update(**kws)
+    
+    @property
+    def index(self):
+        if self._index is None:
+            self._index = [t.t0 for t in self.targets]
+            if any([t is None for t in self._index]):
+                self._index = None
+        return self._index
+    
+    @property
+    def reference_time(self):
+        if self._reference_time is None:
+            self._reference_time = self.info.get('t0-ref', self.info.get('pipe', {}).get('t0-ref', 0.))
+        return self._reference_time
+    
+    @property
+    def reference_mass(self):
+        if self._reference_mass is None:
+            self._reference_mass = self.info.get('m-ref', self.info.get('pipe', {}).get('m-ref', None))
+        return self._reference_mass
+    
+    @property
+    def _step(self):
+        return self.info.get('t0-step', self.info.get('pipe', {}).get('t0-step', None))
+    
+    @property
+    def step_time(self):
+        mref = self.reference_mass
+        if mref:
+            tstep = self.step_mass * T_MSUN
+        else:
+            tstep= self._step
+        return tstep
+    
+    @property
+    def step_mass(self):
+        mref = self.reference_mass
+        if mref:
+            mstep = self._step *  mref
+        else:
+            mstep = None
+        return mstep
+    
+    @classmethod
+    def from_config(cls, config_input, t0_sect='pipe', sky_sect='target'):
+        """Identify target analysis times. There will be three possibilities:
+            1- listing the times explicitly
+            2- listing time differences with respect to a reference time
+            3- providing start, stop, step instructions to construct start times
+               (potentially relative to a reference time)
+        Time steps/differences can be specified in seconds or M, if a reference mass
+        is provided (in solar masses).
+        """
+        config = load_config(config_input)
+
+        # Define valid options to specify the start times
+        T0_KEYS = {
+            'ref': 't0-ref',
+            'list': 't0-list',
+            'delta': 't0-delta-list',
+            'step': 't0-step',
+            'start': 't0-start',
+            'stop': 't0-stop'
+        }
+        start_stop_step = [T0_KEYS[k] for k in ['start', 'stop', 'step']]
+
+        # First make sure that only compatible t0 options were provided
+        incompatible_sets = [['ref', 'list'], ['delta', 'list']]
+        incompatible_sets += [[k, 'delta'] for k in ['start', 'stop', 'step']]
+        for bad_set in incompatible_sets:
+            opt_names = [T0_KEYS[k] for k in bad_set]
+            if all([k in config[t0_sect] for k in opt_names]):
+                raise ValueError("incompatible T0 options: {}".format(opt_names))
+
+        # Look for a reference mass, to be used when stepping in time
+        m_ref = config.getfloat(t0_sect, 'M-ref', fallback=None)
+        if m_ref:
+            # reference time translating from solar masses
+            tm_ref = m_ref * T_MSUN
+            logging.info("Reference mass: {} Msun ({} s)".format(m_ref, tm_ref))
+        else:
+            # no reference mass provided, so will default to seconds
+            tm_ref = 1
+
+        # Look for reference time to be used to construct start times
+        t0ref = config.getfloat(t0_sect, T0_KEYS['ref'], fallback=0)
+
+        # Now we can safely interpret the options assuming one of three cases
+        if T0_KEYS['list'] in config[t0_sect]:
+            t0s = np.array(try_parse(config.get(t0_sect, T0_KEYS['list'])))
+        elif T0_KEYS['delta'] in config[t0_sect]:
+            dt0s = np.array(try_parse(config.get(t0_sect, T0_KEYS['delta'])))
+            t0s = dt0s*tm_ref + t0ref
+        elif any([k in config[t0_sect] for k in start_stop_step]):
+            if not all([k in config[t0_sect] for k in start_stop_step]):
+                missing = [k for k in start_stop_step if k not in config[t0_sect]]
+                raise ValueError("missing start/stop/step options: {}".format(missing))
+            # add a safety check here, in case the user mistakenly requests stepping
+            # based on a GPS time and provides a reference GPS time
+            start, stop, step  = [config.getfloat(t0_sect, k) for k in start_stop_step]
+            if start > 500 and t0ref > 1E8:
+                logging.warning("high reference time and stepping start---did you "
+                                "accidentally provide GPS times twice?")
+            t0s = np.arange(start, stop, step)*tm_ref + t0ref
+        else:
+            raise ValueError("no timing instructions in [{}] section; valid options "
+                            "are: {}".format(t0_sect, list(T0_KEYS.values())))
+            
+        # get sky location arguments if provided
+        sky_dict = {k.lower(): try_parse(v) for k,v in config[sky_sect].items()}
+        
+        targets = [construct_target(t0, **sky_dict) for t0 in t0s]
+        info = {
+            t0_sect : {k.lower(): try_parse(v) for k,v in config[t0_sect].items()},
+            sky_sect : sky_dict
+        }
+        
+        return cls(targets, info=info)
+        

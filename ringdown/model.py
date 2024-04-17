@@ -8,7 +8,6 @@ import numpyro.distributions as dist
 from . import qnms
 from .result import Result
 import arviz as az
-from arviz.data.base import dict_to_dataset
 import logging
 import warnings
 

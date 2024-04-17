@@ -125,14 +125,15 @@ class Result(az.InferenceData):
             object containing drawn parameters (can be treated as dict)
         """
         samples = self.stacked_samples
-        if isinstance(idx, int):
-            i = idx
-        elif isinstance(idx, dict):
-            i = tuple(list(idx.values()))
-            sample = samples.isel(**idx)
-        elif len(idx) == 2:
-            i = tuple(idx)
-            sample = self.posterior.isel(chain=idx[0], draw=idx[1])
+        if idx is not None:
+            if isinstance(idx, int):
+                i = idx
+            elif isinstance(idx, dict):
+                i = tuple(list(idx.values()))
+                sample = samples.isel(**idx)
+            elif len(idx) == 2:
+                i = tuple(idx)
+                sample = self.posterior.isel(chain=idx[0], draw=idx[1])
         elif map:
             # select maximum probability sample
             if 'lp' in self.sample_stats:
@@ -439,11 +440,11 @@ class Result(az.InferenceData):
         hdict = {}
         for i in hq.ifo.values.astype(str):
             time = self.sample_times.sel(ifo=i).values
-            hdict[i] = data.Data(hq.sel(ifo=i).values, index=time)
+            hdict[i] = data.Data(hq.sel(ifo=i).values, index=time, ifo=i)
         h = hdict if ifo is None else hdict[ifo]
         return h
     
-    def get_strain_sample(self, 
+    def draw_strain_sample(self, 
                           idx : int | None= None,
                           map : bool = False,
                           ifo : str | None = None,
@@ -475,9 +476,12 @@ class Result(az.InferenceData):
         sel = {k: v for k, v in dict(ifo=ifo, mode=mode).items()
                if v is not None}
         h = x[key].sel(**sel)
+        info = {k: v.values() for k, v in x.items()}
+        info['idx'] = idx
         hdict = {}
         for i in h.ifo.values.astype(str):
             time = self.sample_times.sel(ifo=i).values
-            hdict[i] = data.Data(h.sel(ifo=i).values, index=time)
+            hdict[i] = data.Data(h.sel(ifo=i).values, ifo=i, index=time,
+                                 info=info)
         hdata = hdict if ifo is None else hdict[ifo]
         return hdata

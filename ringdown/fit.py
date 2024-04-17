@@ -112,6 +112,9 @@ class Fit(object):
         # assume rest of kwargs are to be passed to make_model
         self._model_settings = {}
         self.update_model(**kws)
+        
+    def __repr__(self):
+        return f"Fit({self.modes}, ifos={self.ifos})"
     
     def copy(self):
         """Produce a deep copy of this `Fit` object.
@@ -280,14 +283,7 @@ class Fit(object):
         fit : Fit
             Ringdown :class:`Fit` object.
         """
-        # determine whether to read config from disk
-        if isinstance(config_input, configparser.ConfigParser):
-            config = config_input
-        else:
-            if not os.path.exists(config_input):
-                raise FileNotFoundError(config_input)
-            config = configparser.ConfigParser()
-            config.read(config_input)
+        config = utils.load_config(config_input)
                     
         # parse model options
         model_opts = {k: utils.try_parse(v) for k,v in config['model'].items()}
