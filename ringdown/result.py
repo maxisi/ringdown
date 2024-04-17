@@ -9,6 +9,7 @@ import scipy.linalg as sl
 from arviz.data.base import dict_to_dataset
 import logging
 from . import qnms
+from . import data
 from .target import construct_target
 import pandas as pd
 import json
@@ -92,7 +93,8 @@ class Result(az.InferenceData):
             from .fit import Fit
             return Fit.from_config(self._config_object, result=self, **kwargs)
 
-    def draw_sample(self, map=False, prior=False, rng=None, seed=None):
+    def draw_sample(self, map : bool = False, rng : np.random.Generator = None,
+                    seed : int = None) -> tuple[int, dict]:
         """Draw a sample from the posterior.
 
         Arguments
@@ -100,9 +102,7 @@ class Result(az.InferenceData):
         map : bool
            return maximum-probability sample; otherwise, returns random draw
            (def., `False`) 
-        prior : bool
-            draw from prior instead of posterior samples
-        rng : numpy.random._generator.Generator
+        rng : numpy.random.Generator
             random number generator (optional)
         seed : int
             seed to initialize new random number generator (optional)
@@ -118,22 +118,26 @@ class Result(az.InferenceData):
         samples = self.stacked_samples
         if map:
             # select maximum probability sample
-            logp = self.sample_stats.lp.stack(sample=('chain', 'draw'))
-            i = np.argmax(logp.values)
+            if 'lp' in self.sample_stats:
+                logp = self.sample_stats.lp
+            else:
+                logp = sum([v for k,v in self.log_likelihood.items()
+                            if k.startswith('logl_')])
+            i = np.argmax(logp.stack(sample=('chain', 'draw')).values)
         else:
             # pick random sample
             rng = rng or np.random.default_rng(seed)
             i = rng.integers(len(samples['sample']))
         sample = samples.isel(sample=i)
         pars = sample.data_vars
-        return i, pars 
+        return i, pars
         
     @property
     def ifos(self):
         return self.posterior.ifo
     
     @property
-    def cholesky_factors(self):
+    def cholesky_factors(self) -> np.ndarray :
         if 'L' in self.constant_data:
             return self.constant_data.L
         else:
@@ -173,7 +177,8 @@ class Result(az.InferenceData):
             self._whitened_templates = self.whiten(hs)
         return self._whitened_templates
 
-    def compute_posterior_snrs(self, optimal=True, network=True) -> np.ndarray:
+    def compute_posterior_snrs(self, optimal : bool = True, 
+                               network : bool = True) -> np.ndarray:
         """Efficiently computes signal-to-noise ratios from posterior samples,
         reproducing the computation internally carried out by the sampler.
 
@@ -254,7 +259,7 @@ class Result(az.InferenceData):
             self._generate_whitened_residuals()
         return az.loo(self, var_name=_WHITENED_LOGLIKE_KEY)
     
-    def _generate_whitened_residuals(self):
+    def _generate_whitened_residuals(self) -> None:
         """Adduct the whitened residuals to the result.
         """
         residuals = {}
@@ -291,7 +296,7 @@ class Result(az.InferenceData):
                     )))
             
     @property
-    def ess(self):
+    def ess(self) -> float:
         """Minimum effective sample size for all parameters in the result.
         """
         # check effective number of samples and rerun if necessary
@@ -322,7 +327,7 @@ class Result(az.InferenceData):
         'h_det_mode': '$h_{{{mode}}}(t) [\\mathrm{{{ifo}}}]$',
     }
     
-    def get_parameter_key_map(self, modes=True, **kws):
+    def get_parameter_key_map(self, modes : bool = True, **kws) -> dict:
         key_map = {}
         for key, key_latex in self._PARAMETER_KEY_MAP.items():
             if key in self.posterior:
@@ -338,7 +343,8 @@ class Result(az.InferenceData):
                     key_map[key] = key_latex
         return key_map
     
-    def get_strain_key_map(self, ifos=True, modes=True, **kws):
+    def get_strain_key_map(self, ifos : bool = True, modes : bool = True,
+                            **kws) -> dict :
         strain_map = {}
         for k, v in self._STRAIN_KEY_MAP.items():
             if k in self.posterior:
@@ -370,7 +376,8 @@ class Result(az.InferenceData):
         key_map.update(strain_map)
         return key_map
     
-    def get_parameter_dataframe(self, latex_keys=False, **kws):
+    def get_parameter_dataframe(self, latex_keys : bool = False,
+                                 **kws) -> pd.DataFrame :
         samples = self.stacked_samples
         df = pd.DataFrame()
         for key, key_latex in self._PARAMETER_KEY_MAP.items():
@@ -389,8 +396,9 @@ class Result(az.InferenceData):
                     df[key_df] = x.values
         return df
     
-    def get_mode_parameter_dataframe(self, latex_keys=False,
-                                     ignore_index=True, **kws):
+    def get_mode_parameter_dataframe(self, latex_keys : bool = False,
+                                     ignore_index : bool = True,
+                                     **kws) -> pd.DataFrame :
         samples = self.stacked_samples
         dfs = []
         for mode in self.posterior.mode.values:
@@ -406,13 +414,86 @@ class Result(az.InferenceData):
             dfs.append(df)
         return pd.concat(dfs, ignore_index=ignore_index)
         
-    def get_strain_quantile(self, q, ifo=None, mode=None):
+    def get_strain_quantile(self, q : float, ifo : str = None,
+                            mode : str | tuple | qnms.ModeIndex | bytes = None)\
+                             -> dict[data.Data] | data.Data :
+        """Get the quantile of the strain reconstruction.
+        
+        Arguments
+        ---------
+        q : float
+            quantile to compute
+        ifo : str
+            detector to extract (optional)
+        mode : str, tuple, ModeIndex, or bytes
+            mode to extract (optional)
+
+        Returns
+        -------
+        h : dict[data.Data] | data.Data
+            dictionary of strain reconstructions, with keys corresponding to
+            detector names, or a single data object if ``ifo`` is not provided
+        """
         if mode is None:
             key = 'h_det'
         else:
-            mode = qnms.get_mode_bytestring(mode)
+            mode = qnms.get_mode_coordinate(mode)
             key = 'h_det_mode'
         sel = {k: v for k, v in dict(ifo=ifo, mode=mode).items()
                if v is not None}
         x = self.posterior[key].sel(**sel)
-        return x.quantile(q, dim=('chain', 'draw'))
+        hq = x.quantile(q, dim=('chain', 'draw'))
+        hdict = {}
+        for i in hq.ifo.values.astype(str):
+            time = self.sample_times.sel(ifo=i).values
+            hdict[i] = data.Data(hq.sel(ifo=i).values, index=time)
+        h = hdict if ifo is None else hdict[ifo]
+        return h
+    
+    def get_strain_sample(self, 
+                          idx : int | None= None,
+                          map : bool = False,
+                          ifo : str | None = None,
+                          mode : str | tuple | qnms.ModeIndex | bytes | None = None,
+                          rng : int | np.random.Generator | None = None,
+                          seed : int | None = None) \
+                          -> dict[data.Data] | data.Data:
+        """Get a sample of the strain reconstruction.
+        
+        Arguments
+        ---------
+        ifo : str
+            detector to extract
+        mode : str, tuple, ModeIndex, or bytes
+            mode to extract (optional)
+
+        Returns
+        -------
+        h : dict[data.Data] | data.Data
+            dictionary of strain reconstructions, with keys corresponding to
+            detector names, or a single data object if ``ifo`` is not provided
+        """
+        if mode is None:
+            key = 'h_det'
+        else:
+            mode = qnms.get_mode_coordinate(mode)
+            key = 'h_det_mode'
+        if idx == None:
+            idx, x = self.draw_sample(map=map, rng=rng, seed=seed)
+        elif isinstance(idx, int):
+            x = self.stacked_samples.isel(sample=idx)
+        elif isinstance(idx, dict):
+            x = self.posterior.isel(**idx)
+        elif len(idx) == 2:
+            x = self.posterior.isel(chain=idx[0], draw=idx[1])
+        else:
+            raise ValueError(f"Invalid index: {idx}")
+        sel = {k: v for k, v in dict(ifo=ifo, mode=mode).items()
+               if v is not None}
+        h = x[key].sel(**sel)
+        hdict = {}
+        for i in h.ifo.values.astype(str):
+            time = self.sample_times.sel(ifo=i).values
+            hdict[i] = data.Data(h.sel(ifo=i).values, index=time)
+        hdata = hdict if ifo is None else hdict[ifo]
+        return hdata

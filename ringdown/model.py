@@ -483,14 +483,7 @@ def get_arviz(sampler,
     # get coordinates
     # assume that all fits will have an 'f' parameter
     n_mode = samples['f'].shape[1]
-    if modes is None:
-        modes = np.arange(n_mode, dtype=int)
-    elif isinstance(modes, int):
-        modes = np.arange(modes, dtype=int)
-    elif all([isinstance(m, qnms.ModeIndex) for m in modes]):
-        modes = [m.to_bytestring() for m in modes]
-    else:
-        logging.warning('unrecognize mode list format')
+    modes = qnms.construct_mode_coordinates(modes or n_mode)
     if len(modes) != n_mode:
         raise ValueError(f'expected {n_mode} modes, got {len(modes)}')
     # get ifo from shape of Fc, assuming it's last argument provided to model

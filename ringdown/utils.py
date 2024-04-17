@@ -5,7 +5,6 @@ import numpy as np
 from ast import literal_eval
 import os
 
-
 def form_opt(x):
     """Utility to format options in config."""
     return np.array2string(np.array(x), separator=', ')
@@ -51,3 +50,15 @@ def docstring_parameter(*args, **kwargs):
             obj.__doc__ = obj.__doc__.format(*args, **kwargs)
         return obj
     return dec
+
+def string_to_tuple(s):
+    result = []
+    i = 0
+    while i < len(s):
+        if s[i].isdigit():  # Check if character is a digit
+            if i > 0 and s[i-1] == '-':  # Check if the previous character was a hyphen
+                result.append(-int(s[i]))  # Append as a negative integer
+            else:
+                result.append(int(s[i]))  # Append as a positive integer
+        i += 1
+    return tuple(result)
