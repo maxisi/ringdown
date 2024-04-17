@@ -77,12 +77,14 @@ class ModeIndex(ModeIndexBase):
             idxs = utils.string_to_tuple(string)
             if len(idxs) == 3:
                 logging.warning("Assuming prograde and spin weight -2 "
-                                f"for mode index: {string}")
+                                f"for mode index: {string}; use tuple mode "
+                                "indexing (p,s,l,m,n) to suppress this warning.")
                 l, m, n = idxs
                 p, s = 1, -2
             elif len(idxs) == 4:
                 logging.warning("Assuming spin weight -2 for mode index: "
-                                f"{string}")
+                                f"{string}; use tuple mode indexing (p,s,l,m,n)"
+                                " to suppress this warning.")
                 p, l, m, n = idxs
                 s = -2
             elif len(idxs) == 5:
@@ -110,11 +112,11 @@ class ModeIndex(ModeIndexBase):
         s = f'{self.p},{self.s},{self.l},{self.m},{self.n}'
         return bytes(s, 'utf-8')
     
-    def to_label(self, include_prograde=True, include_spinweight=False):
+    def to_label(self, label_prograde=True, include_spinweight=False):
         s = f'{self.l}{self.m}{self.n}'
         if include_spinweight:
             s = f'{self.s}{s}'
-        if include_prograde:
+        if label_prograde:
             s = f'{self.p}{s}'
         return s
 
@@ -192,3 +194,79 @@ def get_ftau(M, chi, n, l=2, m=2):
     gamma = abs(np.imag(omega)) / (T_MSUN*M)
     return f, 1./gamma
 
+
+class ParameterLabel(object):
+    
+    _PARAMETER_KEY_MAP = {
+        'm': '$M / M_\\odot$',
+        'chi': '$\\chi$',
+        'f': '$f_{{{mode}}} / \\mathrm{{Hz}}$',
+        'g': '$\\gamma_{{{mode}}} / \\mathrm{{Hz}}$',
+        'a': '$A_{{{mode}}}$',
+        'phi': '$\\phi_{{{mode}}}$',
+        'theta': '$\\theta_{{{mode}}}$',
+        'ellip': '$\\epsilon_{{{mode}}}$',
+        'h_det': '$h(t) [\\mathrm{{{ifo}}}]$',
+        'h_det_mode': '$h_{{{mode}}}(t) [\\mathrm{{{ifo}}}]$',
+    }
+    
+    def __init__(self, parameter):
+        self.parameter = parameter.lower()
+        if self.parameter not in self._PARAMETER_KEY_MAP:
+            raise ValueError(f"Parameter {parameter} not recognized.")
+        
+    @property
+    def is_mode_specific(self):
+        l = self._PARAMETER_KEY_MAP[self.parameter]
+        return '{{{mode}}}' in l
+    
+    @property
+    def is_strain(self):
+        return self.parameter.startswith('h_det')
+        
+    def get_latex(self, mode=None, ifo=None, **kws):
+        label = self._PARAMETER_KEY_MAP[self.parameter]
+        subst = {}
+        if mode is not None:
+            mode_index = get_mode_label(mode, **kws)
+            subst['mode'] = mode_index
+        elif self.is_mode_specific:
+            label = label.replace('_{{{mode}}}', '')
+        if ifo is not None:
+            subst['ifo'] = ifo
+        else:
+            label = label.replace(' [\\mathrm{{{ifo}}}]', '')
+        return label.format(**subst)
+    
+    def get_key(self, mode=None, ifo=None, **kws):
+        key =  self.parameter
+        if mode is not None:
+            mode_index = get_mode_label(mode, **kws)
+            if key == 'h_det_mode':
+                key = key.replace('mode', mode_index)
+            elif self.is_mode_specific:
+                key = f'{key}_{mode_index}'
+        if ifo is not None:
+            key = key.replace('det', ifo)
+        return key
+    
+    def get_label(self, latex=False, **kws):
+        if latex:
+            return self.get_latex(**kws)
+        else:
+            return self.get_key(**kws)
+    
+def get_parameter_label_map(pars=None, modes=None, ifos=None, **kws):
+    label_dict = {}
+    pars = pars or ParameterLabel._PARAMETER_KEY_MAP.keys()
+    if modes is None:
+        modes = [None]
+    if ifos is None:
+        ifos = [None]
+    for k in pars:
+        p = ParameterLabel(k)
+        for i in ifos:
+            for m in modes:
+                label_dict[p.get_key(mode=m, ifo=i, **kws)] = \
+                    p.get_latex(mode=m, ifo=i, **kws)
+    return label_dict

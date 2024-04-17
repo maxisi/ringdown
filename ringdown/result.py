@@ -93,12 +93,21 @@ class Result(az.InferenceData):
             from .fit import Fit
             return Fit.from_config(self._config_object, result=self, **kwargs)
 
-    def draw_sample(self, map : bool = False, rng : np.random.Generator = None,
+    def draw_sample(self,
+                    idx : int | tuple[int,int] | dict = None,
+                    map : bool = False,
+                    rng : np.random.Generator = None,
                     seed : int = None) -> tuple[int, dict]:
         """Draw a sample from the posterior.
 
         Arguments
         ---------
+        idx : int, dict, or tuple
+            index of sample to draw; if an integer, it is the index of the
+            sample in the stacked samples; if a tuple, it is the (chain, draw)
+            index of the sample in the posterior; if a dictionary, it is the
+            index of the sample with keys corresponding to the dimensions of the
+            posterior (chains, draws); (def., `None`)
         map : bool
            return maximum-probability sample; otherwise, returns random draw
            (def., `False`) 
@@ -116,7 +125,15 @@ class Result(az.InferenceData):
             object containing drawn parameters (can be treated as dict)
         """
         samples = self.stacked_samples
-        if map:
+        if isinstance(idx, int):
+            i = idx
+        elif isinstance(idx, dict):
+            i = tuple(list(idx.values()))
+            sample = samples.isel(**idx)
+        elif len(idx) == 2:
+            i = tuple(idx)
+            sample = self.posterior.isel(chain=idx[0], draw=idx[1])
+        elif map:
             # select maximum probability sample
             if 'lp' in self.sample_stats:
                 logp = self.sample_stats.lp
@@ -124,17 +141,25 @@ class Result(az.InferenceData):
                 logp = sum([v for k,v in self.log_likelihood.items()
                             if k.startswith('logl_')])
             i = np.argmax(logp.stack(sample=('chain', 'draw')).values)
+            sample = samples.isel(sample=i)
         else:
             # pick random sample
             rng = rng or np.random.default_rng(seed)
             i = rng.integers(len(samples['sample']))
-        sample = samples.isel(sample=i)
+            sample = samples.isel(sample=i)
         pars = sample.data_vars
         return i, pars
         
     @property
     def ifos(self):
         return self.posterior.ifo
+    
+    @property
+    def modes(self):
+        if 'mode' in self.posterior:
+            return self.posterior.mode
+        else:
+            return None
     
     @property
     def cholesky_factors(self) -> np.ndarray :
@@ -311,64 +336,30 @@ class Result(az.InferenceData):
         """
         return self.posterior.stack(sample=('chain', 'draw'))
     
-    _PARAMETER_KEY_MAP = {
-        'm': '$M / M_\\odot$',
-        'chi': '$\\chi$',
-        'f': '$f_{{{}}} / \\mathrm{{Hz}}$',
-        'g': '$\\gamma_{{{}}} / \\mathrm{{Hz}}$',
-        'a': '$A_{{{}}}$',
-        'phi': '$\\phi_{{{}}}$',
-        'theta': '$\\theta_{{{}}}$',
-        'ellip': '$\\epsilon_{{{}}}$',
-    }
+    _df_parameters = ['m', 'chi', 'f', 'g', 'a', 'phi', 'theta', 'ellip']
     
-    _STRAIN_KEY_MAP = {
-        'h_det': '$h(t) [\\mathrm{{{ifo}}}]$',
-        'h_det_mode': '$h_{{{mode}}}(t) [\\mathrm{{{ifo}}}]$',
-    }
+    def set_dataframe_parameters(self, parameters : list[str]) -> None:
+        pars = []
+        for par in parameters:
+            p = par.lower()
+            if p in self.posterior:
+                pars.append(p)
+            else:
+                raise ValueError(f"Parameter {par} not found in posterior.")
+        self._df_parameters = pars
     
     def get_parameter_key_map(self, modes : bool = True, **kws) -> dict:
-        key_map = {}
-        for key, key_latex in self._PARAMETER_KEY_MAP.items():
-            if key in self.posterior:
-                x = self.posterior[key]
-                if modes and 'mode' in x.dims:
-                    for mode in x.mode.values:
-                        label = qnms.get_mode_label(mode, **kws)
-                        mode_key = f'{key}_{label}'
-                        key_map[mode_key] = key_latex.format(label)
-                elif 'mode' in x.dims:
-                    key_map[key] = key_latex.replace('_{{{}}}', '')
-                else:
-                    key_map[key] = key_latex
-        return key_map
+        plist = [p for p in self._df_parameters if p in self.posterior]
+        mlist = self.modes.values if modes else None
+        return qnms.get_parameter_label_map(plist, mlist, **kws)
     
-    def get_strain_key_map(self, ifos : bool = True, modes : bool = True,
-                            **kws) -> dict :
-        strain_map = {}
-        for k, v in self._STRAIN_KEY_MAP.items():
-            if k in self.posterior:
-                x = self.posterior[k]
-                if ifos:
-                    for ifo in x.ifo.values:
-                        k_ifo = f'{k}_{ifo}'
-                        if modes and 'mode' in x.dims:
-                            for m in x.mode.values:
-                                label = qnms.get_mode_label(m, **kws)
-                                mode_k = f'{k_ifo}_{label}'
-                                strain_map[mode_k] = v.format(mode=label, ifo=ifo)
-                        elif 'mode' in x.dims:
-                            strain_map[k_ifo] = v.replace('_{{{mode}}}','').format(ifo=ifo)
-                        else:
-                            strain_map[k_ifo] = v.format(ifo=ifo)
-                elif modes and 'mode' in x.dims:
-                    for m in x.mode.values:
-                        label = qnms.get_mode_label(m, **kws)
-                        mode_k = f'{k}_{label}'
-                        strain_map[mode_k] = v.replace(' [\\mathrm{{{ifo}}}]', '').format(mode=label)
-                else:
-                    strain_map[k] = v.replace('_{{{mode}}}', '').replace(' [\\mathrm{{{ifo}}}]', '')
-        return strain_map
+    def get_strain_key_map(self, modes : bool = True, **kws) -> dict :
+        plist = ['h_det']
+        if modes:
+            plist.append('h_det_mode')
+        ilist = self.ifos.values
+        mlist = self.modes.values if modes else None
+        return qnms.get_parameter_label_map(plist, ilist, mlist, **kws)
     
     def get_full_key_map(self, **kws):
         key_map = self.get_parameter_key_map(**kws)
@@ -376,43 +367,45 @@ class Result(az.InferenceData):
         key_map.update(strain_map)
         return key_map
     
-    def get_parameter_dataframe(self, latex_keys : bool = False,
+    def get_parameter_dataframe(self, latex : bool = False,
                                  **kws) -> pd.DataFrame :
         samples = self.stacked_samples
         df = pd.DataFrame()
-        for key, key_latex in self._PARAMETER_KEY_MAP.items():
-            if key in samples:
-                x = samples[key]
+        for par in self._df_parameters:
+            if par in samples:
+                x = samples[par]
+                p = qnms.ParameterLabel(par)
                 if 'mode' in x.dims:
                     for mode in x.mode.values:
-                        label = qnms.get_mode_label(mode, **kws)
-                        if latex_keys:
-                            key_df = key_latex.format(label)
-                        else:
-                            key_df = f'{key}_{label}'
+                        key_df = p.get_label(mode=mode, latex=latex, **kws)
                         df[key_df] = x.sel(mode=mode).values
                 else:
-                    key_df = key_latex if latex_keys else key
+                    key_df = p.get_label(latex=latex, **kws)
                     df[key_df] = x.values
         return df
     
-    def get_mode_parameter_dataframe(self, latex_keys : bool = False,
+    def get_mode_parameter_dataframe(self, latex : bool = False,
                                      ignore_index : bool = True,
                                      **kws) -> pd.DataFrame :
         samples = self.stacked_samples
         dfs = []
         for mode in self.posterior.mode.values:
-            label = qnms.get_mode_label(mode, **kws)
             df = pd.DataFrame()
-            for key, key_latex in self.get_parameter_key_map(modes=False).items():
-                if key in samples:
+            for key in self._df_parameters:
+                p = qnms.ParameterLabel(key)
+                if key in samples and 'mode' in samples[key].dims:
                     x = samples[key]
-                    if 'mode' in x.dims:
-                        key_df = key_latex.format(label) if latex_keys else key
-                        df[key_df] = x.sel(mode=mode).values
-            df['mode'] = label
+                    key_df = p.get_label(mode=None, latex=latex, **kws)
+                    df[key_df] = x.sel(mode=mode).values
+            df['mode'] = qnms.get_mode_label(mode, **kws)
             dfs.append(df)
         return pd.concat(dfs, ignore_index=ignore_index)
+    
+    def get_single_mode_dataframe(self,mode : str | tuple | qnms.ModeIndex | bytes,
+                                  **kws) -> pd.DataFrame:
+        mode = qnms.get_mode_coordinate(mode, **kws)
+        df = self.get_mode_parameter_dataframe(**kws)
+        return df[df['mode'] == qnms.get_mode_label(mode, **kws)]
         
     def get_strain_quantile(self, q : float, ifo : str = None,
                             mode : str | tuple | qnms.ModeIndex | bytes = None)\
@@ -478,16 +471,7 @@ class Result(az.InferenceData):
         else:
             mode = qnms.get_mode_coordinate(mode)
             key = 'h_det_mode'
-        if idx == None:
-            idx, x = self.draw_sample(map=map, rng=rng, seed=seed)
-        elif isinstance(idx, int):
-            x = self.stacked_samples.isel(sample=idx)
-        elif isinstance(idx, dict):
-            x = self.posterior.isel(**idx)
-        elif len(idx) == 2:
-            x = self.posterior.isel(chain=idx[0], draw=idx[1])
-        else:
-            raise ValueError(f"Invalid index: {idx}")
+        idx, x = self.draw_sample(idx=idx, map=map, rng=rng, seed=seed)
         sel = {k: v for k, v in dict(ifo=ifo, mode=mode).items()
                if v is not None}
         h = x[key].sel(**sel)
