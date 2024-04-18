@@ -5,6 +5,7 @@ import numpy as np
 from ast import literal_eval
 import os
 from configparser import ConfigParser
+import logging
 
 def form_opt(x):
     """Utility to format options in config."""
@@ -74,3 +75,92 @@ def load_config(config_input):
     elif isinstance(config_input, ConfigParser):
         config = config_input
     return config
+
+class MultiIndexCollection(object):
+    
+    def __init__(self, data=None, index=None, reference_mass=None,
+                 reference_time=None, info=None) -> None:
+        if data is None:
+            self.data = []
+        elif isinstance(data, dict):
+            if index is not None:
+                logging.warning("ignoring redundant index ")
+            self.data = []
+            index = []
+            for key, result in data.items():
+                self.data.append(result)
+                index.append(key if isinstance(key, tuple) else (key,))
+        else:
+            self.data = [r for r in data]
+        self._index = index
+        self._reference_mass = reference_mass
+        self._reference_time = reference_time
+        self.info = info or {}
+        
+    @property
+    def index(self):
+        if self._index is None:
+            self._index = [(i,) for i in range(len(self.data))]
+        return self._index
+    
+    def __getitem__(self, i):
+        return self.data[i]
+    
+    def __repr__(self):
+        return f"MultiIndexCollection({self.index})"
+    
+    def add(self, key, value):
+        # Update value if key already exists
+        if key in self.keys:
+            index = self.index.index(key)
+            self.data[index] = value
+        else:
+            self.index.append(key)
+            self.data.append(value)
+
+    def items(self):
+        return zip(self.index, self.data)
+
+    def __iter__(self):
+        # This allows iteration directly over the key-value pairs
+        return iter(self.items())
+    
+    def get(self, key):
+        return self.data[self.index[key]]
+    
+    def __len__(self):
+        return len(self.data)
+    
+    def keys(self):
+        return self.index
+    
+    def values(self):
+        return self.data
+    
+    @property
+    def _key_size(self):
+        if len(self) > 0:
+            return len(self.index[0])
+        else:
+            return 0
+        
+    def set_reference_mass(self, reference_mass):
+        if reference_mass is not None:
+            reference_mass = float(reference_mass)
+        self._reference_mass = reference_mass
+        
+    def set_reference_time(self, reference_time):
+        if not reference_time is None:
+            reference_time = float(reference_time)
+        self._reference_time = reference_time
+        
+    def reindex(self, new_index):
+        if len(new_index) != len(self):
+            raise ValueError("New index must have the same length "
+                             "as the collection.")
+        _new_index = []
+        for idx in new_index:
+            if not isinstance(idx, tuple):
+                idx = (idx,)
+            _new_index.append(idx)
+        self._index = _new_index

@@ -8,7 +8,8 @@ import lal
 import logging
 from dataclasses import dataclass, asdict
 from abc import ABC, abstractmethod
-from .utils import load_config, try_parse
+from . import utils
+from .utils import try_parse
 from .qnms import T_MSUN
 
 class Target(ABC):
@@ -238,31 +239,34 @@ def construct_target(t0 : float | dict, ra : float | None = None,
     else:
         return DetectorTarget.construct(t0, antenna_patterns)
     
-class TargetCollection(object):
-    def __init__(self, targets : list, index=None, info=None):
+class TargetCollection(utils.MultiIndexCollection):
+    def __init__(self, targets : list | None = None, index=None,
+                 reference_mass=None, reference_time=None, info=None):
+        if targets is None:
+            targets = []
+        if all([t is None for t in targets]):
+            targets = []
         for target in targets:
             if not isinstance(target, Target):
                 raise ValueError("targets must be instances of Target")
-        self.targets = targets
-        self.info = info or {}
-        self._reference_time = None
-        self._reference_mass = None
-        self._index = None
+        super().__init__(targets, index=index, reference_mass=reference_mass,
+                       reference_time=reference_time, info=info)
         
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.targets})"
     
-    def __getitem__(self, i):
-        return self.targets[i]
-    
-    def __len__(self):
-        return len(self.targets)
+    @property
+    def targets(self):
+        return self.data
     
     def get(self, key):
         if key.lower() == 'delta-t0':
             return np.array(self.get('t0')) - self.reference_time
         elif key.lower() == 'delta-m':
-            return np.array(self.get('delta-t0')) / self.step_time
+            if self.step_time:
+                return np.array(self.get('delta-t0')) / self.step_time
+            else:
+                return [None] * len(self)
         return [getattr(t, key) for t in self.targets]
     
     def get_detector_times(self, ifo):
@@ -276,6 +280,14 @@ class TargetCollection(object):
         """
         self.info[section] = self.info.get(section, {})
         self.info[section].update(**kws)
+    
+    @property
+    def t0(self):
+        return self.get('t0')
+    
+    @property
+    def t0m(self):
+        return self.get('delta-m')
     
     @property
     def index(self):
@@ -297,6 +309,16 @@ class TargetCollection(object):
             self._reference_mass = self.info.get('m-ref', self.info.get('pipe', {}).get('m-ref', None))
         return self._reference_mass
     
+    def set_reference_time(self, t0 : float | None):
+        if self._reference_time is not None:
+            logging.warning(f"overwriting reference time ({self._reference_time} )")
+        self._reference_time = float(t0)
+    
+    def set_reference_mass(self, mref : float | None):
+        if self._reference_mass is not None:
+            logging.warning(f"overwriting reference mass ({self._reference_mass} )")
+        self._reference_mass = float(mref)
+    
     @property
     def _step(self):
         return self.info.get('t0-step', self.info.get('pipe', {}).get('t0-step', None))
@@ -304,7 +326,7 @@ class TargetCollection(object):
     @property
     def step_time(self):
         mref = self.reference_mass
-        if mref:
+        if mref and self.step_mass:
             tstep = self.step_mass * T_MSUN
         else:
             tstep= self._step
@@ -313,7 +335,7 @@ class TargetCollection(object):
     @property
     def step_mass(self):
         mref = self.reference_mass
-        if mref:
+        if mref and self._step:
             mstep = self._step *  mref
         else:
             mstep = None
@@ -329,7 +351,7 @@ class TargetCollection(object):
         Time steps/differences can be specified in seconds or M, if a reference mass
         is provided (in solar masses).
         """
-        config = load_config(config_input)
+        config = utils.load_config(config_input)
 
         # Define valid options to specify the start times
         T0_KEYS = {

@@ -1,19 +1,21 @@
 """Module defining the core :class:`Result` class.
 """
 
-__all__ = ['Result']
+__all__ = ['Result', 'ResultCollection']
 
 import numpy as np
 import arviz as az
 import scipy.linalg as sl
 from arviz.data.base import dict_to_dataset
-import logging
 from . import qnms
 from . import data
-from .target import construct_target
+from .target import construct_target, TargetCollection
+from . import utils
 import pandas as pd
 import json
 import configparser
+from glob import glob
+from parse import parse
 
 _WHITENED_LOGLIKE_KEY = 'whitened_pointwise_loglike'
 
@@ -30,6 +32,11 @@ class Result(az.InferenceData):
         self._whitened_templates = None
         self._config_dict = None
         self._target = None
+        self._label_prograde = None
+        
+    def _label_prograde_auto(self):
+        
+        return self._label_prograde
         
     @classmethod
     def from_netcdf(cls, *args, **kwargs):
@@ -50,7 +57,10 @@ class Result(az.InferenceData):
         if self._config_dict is None:
             if 'config' in self.attrs:
                 config_string = self.attrs['config']
-                self._config_dict = json.loads(config_string)
+                raw_config_dict = json.loads(config_string)
+                self._config_dict = {kk: {k: utils.try_parse(v)
+                                          for k,v in vv.items()}
+                                     for kk,vv in raw_config_dict.items()}
             else:
                 self._config_dict = {}
         return self._config_dict
@@ -71,6 +81,10 @@ class Result(az.InferenceData):
             if 'target' in self.config:
                 self._target = construct_target(**self.config['target'])
         return self._target
+    
+    @property
+    def t0(self):
+        return getattr(self.target, 't0', None)
     
     @property
     def epoch(self):
@@ -152,11 +166,11 @@ class Result(az.InferenceData):
         return i, pars
         
     @property
-    def ifos(self):
+    def ifos(self) -> list :
         return self.posterior.ifo
     
     @property
-    def modes(self):
+    def modes(self) -> list | None :
         if 'mode' in self.posterior:
             return self.posterior.mode
         else:
@@ -169,7 +183,7 @@ class Result(az.InferenceData):
         else:
             return self.constant_data.cholesky_factor
         
-    def whiten(self, datas):
+    def whiten(self, datas) -> dict | np.ndarray :
         chols = self.cholesky_factors
         if isinstance(datas, dict):
             wds = {}    
@@ -402,7 +416,8 @@ class Result(az.InferenceData):
             dfs.append(df)
         return pd.concat(dfs, ignore_index=ignore_index)
     
-    def get_single_mode_dataframe(self,mode : str | tuple | qnms.ModeIndex | bytes,
+    def get_single_mode_dataframe(self,
+                                  mode : str | tuple | qnms.ModeIndex | bytes,
                                   **kws) -> pd.DataFrame:
         mode = qnms.get_mode_coordinate(mode, **kws)
         df = self.get_mode_parameter_dataframe(**kws)
@@ -476,7 +491,7 @@ class Result(az.InferenceData):
         sel = {k: v for k, v in dict(ifo=ifo, mode=mode).items()
                if v is not None}
         h = x[key].sel(**sel)
-        info = {k: v.values() for k, v in x.items()}
+        info = {k: v.values for k, v in x.items()}
         info['idx'] = idx
         hdict = {}
         for i in h.ifo.values.astype(str):
@@ -485,3 +500,73 @@ class Result(az.InferenceData):
                                  info=info)
         hdata = hdict if ifo is None else hdict[ifo]
         return hdata
+    
+class ResultCollection(utils.MultiIndexCollection):
+    
+    def __init__(self, results : list | None = None,
+                 index : list | None = None,
+                 reference_mass : float | None = None,
+                 reference_time : float | None = None) -> None:
+        r = [Result(r) for r in results]
+        super().__init__(r, index, reference_mass, reference_time)
+            
+    def __repr__(self):
+        return f"ResultCollection({self.index})"
+    
+    @property
+    def results(self):
+        return self.data
+    
+    @property
+    def targets(self):
+        return TargetCollection([r.target for r in self.results])
+    
+    def get_t0s(self, reference_mass : float | bool | None = None):
+        if reference_mass:
+            if reference_mass is None:
+                # reference mass is true, but no value specified so assume default
+                reference_mass = self._reference_mass     
+            targets = self.targets
+            targets.set_reference_mass(reference_mass)
+            t0s = targets.t0m
+        else:
+            t0s = [result.t0 for result in self.results]
+        return np.array(t0s)
+        
+    def reindex_by_t0(self, reference_mass : bool | float | None = None):
+        t0s = self.get_t0s(reference_mass)
+        if np.any(t0s is None):
+            raise ValueError("Cannot reindex by t0 if any t0 values are None.")
+        self.reindex(t0s)
+        
+    @classmethod
+    def from_netcdf(cls, path_input : str | list, index : list = None, **kws):
+        index = index or []
+        results = []
+        if isinstance(path_input, str):
+            paths = sorted(glob(path_input))
+            for path in paths:
+                pattern = parse(paths.replace('*', '{}')).fixed
+                idx = tuple([utils.try_parse(k) for k in pattern])
+                index.append(idx)
+        for path in paths:
+            results.append(Result.from_netcdf(path))
+        info = kws.get('info', {})
+        info['provenance'] = paths
+        return cls(results, index, **kws)
+    
+    def get_parameter_dataframe(self, latex : bool = False,
+                                index_label : str ='run',
+                                t0 : bool = False,
+                                reference_mass : bool | float | None = None,
+                                **kws) -> pd.DataFrame:
+        dfs = []
+        key_size = self._key_size
+        for i, result in self.items():
+            df = result.get_parameter_dataframe(latex=latex, **kws)
+            if key_size == 1:
+                df[index_label] = i[0]
+            else:
+                df[index_label] = [i] * len(df)
+            dfs.append(df)
+        return pd.concat(dfs, ignore_index=True)
