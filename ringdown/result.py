@@ -416,6 +416,7 @@ class Result(az.InferenceData):
         fmt = self.default_label_format.copy()
         fmt.update(kws)
         samples = self.stacked_samples
+        dfs = []
         for mode, m in zip(self.modes, self.posterior.mode.values):
             df = pd.DataFrame()
             for key in self._df_parameters:
