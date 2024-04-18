@@ -32,11 +32,20 @@ class Result(az.InferenceData):
         self._whitened_templates = None
         self._config_dict = None
         self._target = None
-        self._label_prograde = None
+        self._modes = None
+        # settings for formatting DataFrames
+        self._default_label_format = {}
         
-    def _label_prograde_auto(self):
-        
-        return self._label_prograde
+    @property
+    def default_label_format(self):
+        kws = dict(
+            label_prograde = any([not m.is_prograde for m in self.modes]),
+        )
+        kws.update(self._default_label_format)
+        return kws
+    
+    def update_default_label_format(self, **kws):
+        self._default_label_format.update(kws)
         
     @classmethod
     def from_netcdf(cls, *args, **kwargs):
@@ -171,10 +180,11 @@ class Result(az.InferenceData):
     
     @property
     def modes(self) -> list | None :
-        if 'mode' in self.posterior:
-            return self.posterior.mode
-        else:
-            return None
+        if self._modes is None:
+            m = self.posterior.mode.values \
+                if 'mode' in self.posterior else []
+            self._modes = qnms.construct_mode_list(m)
+        return self._modes
     
     @property
     def cholesky_factors(self) -> np.ndarray :
@@ -365,16 +375,14 @@ class Result(az.InferenceData):
     
     def get_parameter_key_map(self, modes : bool = True, **kws) -> dict:
         plist = [p for p in self._df_parameters if p in self.posterior]
-        mlist = self.modes.values if modes else None
-        return qnms.get_parameter_label_map(plist, mlist, **kws)
+        return qnms.get_parameter_label_map(plist, self.modes, **kws)
     
     def get_strain_key_map(self, modes : bool = True, **kws) -> dict :
         plist = ['h_det']
         if modes:
             plist.append('h_det_mode')
         ilist = self.ifos.values
-        mlist = self.modes.values if modes else None
-        return qnms.get_parameter_label_map(plist, ilist, mlist, **kws)
+        return qnms.get_parameter_label_map(plist, self.modes, ilist, **kws)
     
     def get_full_key_map(self, **kws):
         key_map = self.get_parameter_key_map(**kws)
@@ -382,8 +390,11 @@ class Result(az.InferenceData):
         key_map.update(strain_map)
         return key_map
     
-    def get_parameter_dataframe(self, latex : bool = False,
-                                 **kws) -> pd.DataFrame :
+    def get_parameter_dataframe(self, **kws) -> pd.DataFrame :
+        # set labeling options (e.g., whether to show p index)
+        fmt = self.default_label_format.copy()
+        fmt.update(kws)
+        # get samples
         samples = self.stacked_samples
         df = pd.DataFrame()
         for par in self._df_parameters:
@@ -392,34 +403,34 @@ class Result(az.InferenceData):
                 p = qnms.ParameterLabel(par)
                 if 'mode' in x.dims:
                     for mode in x.mode.values:
-                        key_df = p.get_label(mode=mode, latex=latex, **kws)
+                        key_df = p.get_label(mode=mode, **fmt)
                         df[key_df] = x.sel(mode=mode).values
                 else:
-                    key_df = p.get_label(latex=latex, **kws)
+                    key_df = p.get_label(**fmt)
                     df[key_df] = x.values
         return df
     
-    def get_mode_parameter_dataframe(self, latex : bool = False,
-                                     ignore_index : bool = True,
+    def get_mode_parameter_dataframe(self, ignore_index : bool = True,
                                      **kws) -> pd.DataFrame :
+        # set labeling options (e.g., whether to show p index)
+        fmt = self.default_label_format.copy()
+        fmt.update(kws)
         samples = self.stacked_samples
-        dfs = []
-        for mode in self.posterior.mode.values:
+        for mode, m in zip(self.modes, self.posterior.mode.values):
             df = pd.DataFrame()
             for key in self._df_parameters:
                 p = qnms.ParameterLabel(key)
                 if key in samples and 'mode' in samples[key].dims:
                     x = samples[key]
-                    key_df = p.get_label(mode=None, latex=latex, **kws)
-                    df[key_df] = x.sel(mode=mode).values
-            df['mode'] = qnms.get_mode_label(mode, **kws)
+                    key_df = p.get_label(mode=None, **fmt)
+                    df[key_df] = x.sel(mode=m).values
+            df['mode'] = mode.get_label(**fmt)
             dfs.append(df)
         return pd.concat(dfs, ignore_index=ignore_index)
     
     def get_single_mode_dataframe(self,
                                   mode : str | tuple | qnms.ModeIndex | bytes,
                                   **kws) -> pd.DataFrame:
-        mode = qnms.get_mode_coordinate(mode, **kws)
         df = self.get_mode_parameter_dataframe(**kws)
         return df[df['mode'] == qnms.get_mode_label(mode, **kws)]
         
@@ -460,13 +471,12 @@ class Result(az.InferenceData):
         return h
     
     def draw_strain_sample(self, 
-                          idx : int | None= None,
-                          map : bool = False,
-                          ifo : str | None = None,
-                          mode : str | tuple | qnms.ModeIndex | bytes | None = None,
-                          rng : int | np.random.Generator | None = None,
-                          seed : int | None = None) \
-                          -> dict[data.Data] | data.Data:
+            idx : int | None= None,
+            map : bool = False,
+            ifo : str | None = None,
+            mode : str | tuple | qnms.ModeIndex | bytes | None = None,
+            rng : int | np.random.Generator | None = None,
+            seed : int | None = None) -> dict[data.Data] | data.Data:
         """Get a sample of the strain reconstruction.
         
         Arguments
@@ -521,6 +531,10 @@ class ResultCollection(utils.MultiIndexCollection):
     def targets(self):
         return TargetCollection([r.target for r in self.results])
     
+    def update_default_label_format(self, **kws):
+        for result in self.results:
+            result.update_default_label_format(**kws)
+    
     def get_t0s(self, reference_mass : float | bool | None = None):
         if reference_mass:
             if reference_mass is None:
@@ -555,18 +569,26 @@ class ResultCollection(utils.MultiIndexCollection):
         info['provenance'] = paths
         return cls(results, index, **kws)
     
-    def get_parameter_dataframe(self, latex : bool = False,
-                                index_label : str ='run',
+    def get_parameter_dataframe(self, ndraw : int | None = None,
+                                index_label : str = 'run',
                                 t0 : bool = False,
                                 reference_mass : bool | float | None = None,
+                                draw_kws : dict | None = None,
                                 **kws) -> pd.DataFrame:
         dfs = []
         key_size = self._key_size
-        for i, result in self.items():
-            df = result.get_parameter_dataframe(latex=latex, **kws)
+        if t0:
+            t0s = self.get_t0s(reference_mass)
+        for i, (key, result) in enumerate(self.items()):
+            df = result.get_parameter_dataframe(**kws)
             if key_size == 1:
-                df[index_label] = i[0]
+                df[index_label] = key[0]
             else:
-                df[index_label] = [i] * len(df)
-            dfs.append(df)
+                df[index_label] = [key] * len(df)
+            if t0:
+                df['t0m' if reference_mass else 't0'] = t0s[i]
+            if ndraw is not None:
+                dfs.append(df.sample(ndraw, **(draw_kws or {})))
+            else:
+                dfs.append(df)
         return pd.concat(dfs, ignore_index=True)

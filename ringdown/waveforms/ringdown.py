@@ -1,7 +1,6 @@
 __all__ = ['Ringdown']
 
 import numpy as np
-import lal
 from .core import *
 from ..data import TimeSeries
 from .. import qnms
@@ -197,10 +196,7 @@ class Ringdown(Signal):
             return super().get_parameter(k, *args, **kwargs)
 
     def get_mode_parameters(self, mode):
-        try:
-            n = int(mode)
-        except (TypeError, ValueError):
-            n = self.modes.index(qnms.ModeIndex(*mode))
+        n = self.modes.index(mode)
         pars = {k: self.parameters[k][n] for k in self._MODE_PARS}
         return pars
 

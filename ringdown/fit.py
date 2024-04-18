@@ -23,7 +23,6 @@ from . import waveforms
 import inspect
 import jax
 import numpyro.infer
-from dataclasses import dataclass, asdict
 
 # TODO: support different samplers?
 KERNEL = numpyro.infer.NUTS
@@ -153,10 +152,7 @@ class Fit(object):
     def n_modes(self) -> int:
         """ Number of damped sinusoids to be included in template.
         """
-        if isinstance(self.modes, int):
-            return self.modes
-        else:
-            return len(self.modes)
+        return len(self.modes)
 
     @property
     def ifos(self) -> list:
@@ -465,10 +461,7 @@ class Fit(object):
         config = configparser.ConfigParser()
         # model options
         config['model'] = {}
-        if isinstance(self.modes, int):
-            config['model']['modes'] = str(self.n_modes)
-        else:
-            config['model']['modes'] = str([tuple(m) for m in self.modes])
+        config['model']['modes'] = str(self.modes)
         # prior options
         config['model'].update({k: utils.form_opt(v) for k,v 
                                 in self.model_settings.items()})
@@ -683,7 +676,8 @@ class Fit(object):
         filter = 'ignore' if suppress_warnings else 'default'
 
         # create model
-        model = make_model(self.modes, prior=prior, **self.model_settings)
+        model = make_model(self.modes.value, prior=prior,
+                           **self.model_settings)
 
         logging.info('running {} mode fit'.format(self.modes))
         logging.info('prior run: {}'.format(prior))
@@ -981,12 +975,7 @@ class Fit(object):
         modes : list
             list of tuples with quasinormal mode `(p, s, l, m, n)` numbers.
         """
-        try:
-            # if modes is integer, interpret as number of modes
-            self.modes = int(modes)
-        except Exception:
-            # otherwise, assume it is a mode index list
-            self.modes = qnms.construct_mode_list(modes)
+        self.modes = qnms.construct_mode_list(modes)
 
     def set_target(self, t0 : float | dict, ra : float | None = None,
                    dec : float | None = None, psi : float | None = None,
