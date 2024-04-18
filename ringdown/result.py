@@ -9,7 +9,7 @@ import scipy.linalg as sl
 from arviz.data.base import dict_to_dataset
 from . import qnms
 from . import data
-from .target import construct_target, TargetCollection
+from . import target
 from . import utils
 import pandas as pd
 import json
@@ -18,6 +18,8 @@ from glob import glob
 from parse import parse
 
 _WHITENED_LOGLIKE_KEY = 'whitened_pointwise_loglike'
+
+_DATAFRAME_PARAMETERS = ['m', 'chi', 'f', 'g', 'a', 'phi', 'theta', 'ellip']
 
 class Result(az.InferenceData):
 
@@ -35,34 +37,43 @@ class Result(az.InferenceData):
         self._modes = None
         # settings for formatting DataFrames
         self._default_label_format = {}
+        self._df_parameters = {}
+        for m in _DATAFRAME_PARAMETERS:
+            if m in getattr(self, 'posterior', {}):
+                self._df_parameters[m] = qnms.ParameterLabel(m)
         
     @property
-    def default_label_format(self):
+    def default_label_format(self) -> dict:
+        """Default formatting options for DataFrames.
+        """
         kws = dict(
             label_prograde = any([not m.is_prograde for m in self.modes]),
         )
         kws.update(self._default_label_format)
         return kws
     
-    def update_default_label_format(self, **kws):
+    def update_default_label_format(self, **kws) -> None:
+        """Update the default formatting options for DataFrames.
+        """
         self._default_label_format.update(kws)
         
     @classmethod
-    def from_netcdf(cls, *args, **kwargs):
-        # Load the data using the base class method
+    def from_netcdf(cls, *args, **kwargs) -> 'Result':
         data = super().from_netcdf(*args, **kwargs)
-        # Create an instance of the subclass with the loaded data
         return cls(data)
+    from_netcdf.__doc__ = az.InferenceData.from_netcdf.__doc__
     
     @classmethod
     def from_zarr(cls, *args, **kwargs):
-        # Load the data using the base class method
         data = super().from_zarr(*args, **kwargs)
-        # Create an instance of the subclass with the loaded data
         return cls(data)
+    from_zarr.__doc__ = az.InferenceData.from_zarr.__doc__
         
     @property
-    def config(self):
+    def config(self) -> dict[str, dict[str, str]]:
+        """Configuration dictionary for the result. Entries represent sections
+        of the configuration file.
+        """
         if self._config_dict is None:
             if 'config' in self.attrs:
                 config_string = self.attrs['config']
@@ -75,7 +86,8 @@ class Result(az.InferenceData):
         return self._config_dict
     
     @property
-    def _config_object(self):
+    def _config_object(self) -> configparser.ConfigParser :
+        """Confiuration file stored as ConfigParser object."""
         config = configparser.ConfigParser()
         # Populate the ConfigParser with data from the dictionary
         for section, settings in self.config.items():
@@ -85,18 +97,22 @@ class Result(az.InferenceData):
         return config
     
     @property
-    def target(self):
+    def target(self) -> target.Target | None :
+        """Target used in the analysis."""
         if self._target is None:
             if 'target' in self.config:
-                self._target = construct_target(**self.config['target'])
+                self._target = target.construct_target(**self.config['target'])
         return self._target
     
     @property
-    def t0(self):
+    def t0(self) -> float | None :
+        """Reference time for the analysis."""
         return getattr(self.target, 't0', None)
     
     @property
     def epoch(self):
+        """Epoch for detector times; corresponds to `fit.start_times`
+        """
         if 'epoch' in self.constant_data:
             return self.constant_data.epoch
         elif 'target' in self.config:
@@ -109,9 +125,13 @@ class Result(az.InferenceData):
         
     @property
     def sample_times(self):
-        return self.constant_data.time + self.epoch
+        """Sample times for the analysis; corresponds to
+        `fit.analysis_data[i].time`."""
+        shape = (self.posterior.sizes['ifo'], 1)
+        return self.constant_data.time + np.reshape(self.epoch, shape)
     
     def get_fit(self, **kwargs):
+        """Get a Fit object from the result."""
         if self.config:
             from .fit import Fit
             return Fit.from_config(self._config_object, result=self, **kwargs)
@@ -220,7 +240,6 @@ class Result(az.InferenceData):
           result.posterior.h_det.stack(sample=('chain', 'draw'))
         """
         if self._whitened_templates is None:
-
             # get reconstructions from posterior, shaped as (chain, draw, ifo, time)
             # and stack into (ifo, time, sample)
             hs = self.posterior.h_det.stack(samples=('chain', 'draw'))
@@ -282,7 +301,7 @@ class Result(az.InferenceData):
             return snrs
 
     @property
-    def waic(self):
+    def waic(self) -> az.ELPDData :
         """Returns the 'widely applicable information criterion' predictive
         accuracy metric for the fit.
         
@@ -294,7 +313,7 @@ class Result(az.InferenceData):
         return az.waic(self, var_name=_WHITENED_LOGLIKE_KEY)
     
     @property
-    def loo(self):
+    def loo(self) -> az.ELPDData :
         """Returns a leave-one-out estimate of the predictive accuracy of the
         model.
         
@@ -356,12 +375,10 @@ class Result(az.InferenceData):
         return np.min(mess_arr)
     
     @property
-    def stacked_samples(self):
+    def stacked_samples(self) -> 'xarray.core.dataset.Dataset' :
         """Stacked samples for all parameters in the result.
         """
         return self.posterior.stack(sample=('chain', 'draw'))
-    
-    _df_parameters = ['m', 'chi', 'f', 'g', 'a', 'phi', 'theta', 'ellip']
     
     def set_dataframe_parameters(self, parameters : list[str]) -> None:
         pars = []
@@ -371,24 +388,11 @@ class Result(az.InferenceData):
                 pars.append(p)
             else:
                 raise ValueError(f"Parameter {par} not found in posterior.")
-        self._df_parameters = pars
+        self._df_parameters.update({p : qnms.ParameterLabel(p) for p in pars})
     
     def get_parameter_key_map(self, modes : bool = True, **kws) -> dict:
-        plist = [p for p in self._df_parameters if p in self.posterior]
-        return qnms.get_parameter_label_map(plist, self.modes, **kws)
-    
-    def get_strain_key_map(self, modes : bool = True, **kws) -> dict :
-        plist = ['h_det']
-        if modes:
-            plist.append('h_det_mode')
-        ilist = self.ifos.values
-        return qnms.get_parameter_label_map(plist, self.modes, ilist, **kws)
-    
-    def get_full_key_map(self, **kws):
-        key_map = self.get_parameter_key_map(**kws)
-        strain_map = self.get_strain_key_map(**kws)
-        key_map.update(strain_map)
-        return key_map
+        return {p: self._df_parameters[p].get_label(**kws)
+                for p in self._df_parameters}
     
     def get_parameter_dataframe(self, nsamp : int | None = None,
                                 rng : int | np.random.Generator = None,
@@ -406,26 +410,25 @@ class Result(az.InferenceData):
         else:
             idxs = None
         df = pd.DataFrame(index=idxs if not ignore_index else None)
-        for par in self._df_parameters:
-            if par in samples:
-                x = samples[par]
-                p = qnms.ParameterLabel(par)
-                if 'mode' in x.dims:
-                    for mode in x.mode.values:
-                        key_df = p.get_label(mode=mode, **fmt)
-                        df[key_df] = x.sel(mode=mode).values
-                else:
-                    key_df = p.get_label(**fmt)
-                    df[key_df] = x.values
+        for p, par in self._df_parameters.items():
+            x = samples[p]
+            if 'mode' in x.dims:
+                for mode in x.mode.values:
+                    key_df = par.get_label(mode=mode, **fmt)
+                    df[key_df] = x.sel(mode=mode).values
+            else:
+                key_df = par.get_label(**fmt)
+                df[key_df] = x.values
         return df
     
     def get_mode_parameter_dataframe(self, nsamp : int | None = None,
-                                     ignore_index : bool = False,
-                                    rng : int | np.random.Generator | None = None,
-                                     **kws) -> pd.DataFrame :
+            ignore_index : bool = False,
+            rng : int | np.random.Generator | None = None,
+            **kws) -> pd.DataFrame :
         # set labeling options (e.g., whether to show p index)
         fmt = self.default_label_format.copy()
         fmt.update(kws)
+        # get samples
         samples = self.stacked_samples
         if nsamp is not None:
             rng = rng or np.random.default_rng(rng)
@@ -436,11 +439,10 @@ class Result(az.InferenceData):
         dfs = []
         for mode, m in zip(self.modes, self.posterior.mode.values):
             df = pd.DataFrame(index=idxs)
-            for key in self._df_parameters:
-                p = qnms.ParameterLabel(key)
-                if key in samples and 'mode' in samples[key].dims:
-                    x = samples[key]
-                    key_df = p.get_label(mode=None, **fmt)
+            for p, par in self._df_parameters.items():
+                if p in samples and 'mode' in samples[p].dims:
+                    x = samples[p]
+                    key_df = par.get_label(mode=None, **fmt)
                     df[key_df] = x.sel(mode=m).values
             df['mode'] = mode.get_label(**fmt)
             dfs.append(df)
@@ -547,7 +549,7 @@ class ResultCollection(utils.MultiIndexCollection):
     
     @property
     def targets(self):
-        return TargetCollection([r.target for r in self.results])
+        return target.TargetCollection([r.target for r in self.results])
     
     def update_default_label_format(self, **kws):
         for result in self.results:

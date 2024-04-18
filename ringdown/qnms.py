@@ -334,6 +334,12 @@ class ParameterLabel(object):
         if self.parameter not in self._PARAMETER_KEY_MAP:
             raise ValueError(f"Parameter {parameter} not recognized.")
         
+    def __str__(self):
+        return self.parameter
+    
+    def __repr__(self):
+        return(f"ParameterLabel('{self.parameter}')")
+        
     @property
     def is_mode_specific(self):
         l = self._PARAMETER_KEY_MAP[self.parameter]
