@@ -390,13 +390,22 @@ class Result(az.InferenceData):
         key_map.update(strain_map)
         return key_map
     
-    def get_parameter_dataframe(self, **kws) -> pd.DataFrame :
+    def get_parameter_dataframe(self, nsamp : int | None = None,
+                                rng : int | np.random.Generator = None,
+                                ignore_index=False,
+                                **kws) -> pd.DataFrame :
         # set labeling options (e.g., whether to show p index)
         fmt = self.default_label_format.copy()
         fmt.update(kws)
         # get samples
         samples = self.stacked_samples
-        df = pd.DataFrame()
+        if nsamp is not None:
+            rng = rng or np.random.default_rng(rng)
+            idxs = rng.choice(len(samples), nsamp, replace=False)
+            samples = samples.isel(sample=idxs)
+        else:
+            idxs = None
+        df = pd.DataFrame(index=idxs if not ignore_index else None)
         for par in self._df_parameters:
             if par in samples:
                 x = samples[par]
@@ -410,15 +419,23 @@ class Result(az.InferenceData):
                     df[key_df] = x.values
         return df
     
-    def get_mode_parameter_dataframe(self, ignore_index : bool = True,
+    def get_mode_parameter_dataframe(self, nsamp : int | None = None,
+                                     ignore_index : bool = False,
+                                    rng : int | np.random.Generator | None = None,
                                      **kws) -> pd.DataFrame :
         # set labeling options (e.g., whether to show p index)
         fmt = self.default_label_format.copy()
         fmt.update(kws)
         samples = self.stacked_samples
+        if nsamp is not None:
+            rng = rng or np.random.default_rng(rng)
+            idxs = rng.choice(len(samples), nsamp, replace=False)
+            samples = samples.isel(sample=idxs)
+        else:
+            idxs = None
         dfs = []
         for mode, m in zip(self.modes, self.posterior.mode.values):
-            df = pd.DataFrame()
+            df = pd.DataFrame(index=idxs)
             for key in self._df_parameters:
                 p = qnms.ParameterLabel(key)
                 if key in samples and 'mode' in samples[key].dims:
@@ -582,6 +599,30 @@ class ResultCollection(utils.MultiIndexCollection):
             t0s = self.get_t0s(reference_mass)
         for i, (key, result) in enumerate(self.items()):
             df = result.get_parameter_dataframe(**kws)
+            if key_size == 1:
+                df[index_label] = key[0]
+            else:
+                df[index_label] = [key] * len(df)
+            if t0:
+                df['t0m' if reference_mass else 't0'] = t0s[i]
+            if ndraw is not None:
+                dfs.append(df.sample(ndraw, **(draw_kws or {})))
+            else:
+                dfs.append(df)
+        return pd.concat(dfs, ignore_index=True)
+    
+    def get_mode_parameter_dataframe(self, ndraw : int | None = None,
+                                    index_label : str = 'run',
+                                    t0 : bool = False,
+                                    reference_mass : bool | float | None = None,
+                                    draw_kws : dict | None = None,
+                                    **kws) -> pd.DataFrame:
+        dfs = []
+        key_size = self._key_size
+        if t0:
+            t0s = self.get_t0s(reference_mass)
+        for i, (key, result) in enumerate(self.items()):
+            df = result.get_mode_parameter_dataframe(**kws)
             if key_size == 1:
                 df[index_label] = key[0]
             else:
