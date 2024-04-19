@@ -1,7 +1,7 @@
 __all__ = ['construct_mode_list', 'construct_mode_coordinates', 
            'ModeIndex', 'ModeIndexList', 'GenericIndex']
 
-from .. import utils
+from . import utils
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict

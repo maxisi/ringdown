@@ -3,7 +3,7 @@ __all__ = ['Ringdown']
 import numpy as np
 from .core import *
 from .. import qnms
-from ..utils import indexing
+from .. import indexing
 from inspect import getfullargspec
 import warnings
 

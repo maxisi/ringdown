@@ -9,9 +9,9 @@ import arviz as az
 import scipy.linalg as sl
 from arviz.data.base import dict_to_dataset
 from . import qnms
-from .utils import indexing
+from . import indexing
 from . import data
-from .utils import target
+from . import target
 from . import utils
 import pandas as pd
 import json

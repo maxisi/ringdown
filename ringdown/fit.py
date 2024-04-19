@@ -18,10 +18,10 @@ import lal
 import logging
 from .data import *
 from . import utils
-from .utils.target import construct_target
+from .target import construct_target
 from .result import Result
 from .model import make_model, get_arviz
-from .utils import indexing
+from . import indexing
 from . import waveforms
 
 # TODO: support different samplers?

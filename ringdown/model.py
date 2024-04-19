@@ -6,7 +6,7 @@ import jax.scipy as jsp
 import numpyro
 import numpyro.distributions as dist
 from . import qnms
-from .utils import indexing
+from . import indexing
 from .result import Result
 import arviz as az
 import warnings

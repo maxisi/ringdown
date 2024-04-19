@@ -3,7 +3,7 @@ __all__ = ['KerrMode', 'get_ftau']
 import numpy as np
 import qnm
 import lal
-from .utils import indexing
+from . import indexing
 
 T_MSUN = lal.GMSUN_SI / lal.C_SI**3
 
@@ -108,7 +108,7 @@ class ParameterLabel(object):
         label = self._PARAMETER_KEY_MAP[self.parameter]
         subst = {}
         if mode is not None:
-            mode_index = get_mode_label(mode, **kws)
+            mode_index = indexing.get_mode_label(mode, **kws)
             subst['mode'] = mode_index
         elif self.is_mode_specific:
             label = label.replace('_{{{mode}}}', '')
@@ -121,7 +121,7 @@ class ParameterLabel(object):
     def get_key(self, mode=None, ifo=None, **kws):
         key =  self.parameter
         if mode is not None:
-            mode_index = get_mode_label(mode, **kws)
+            mode_index = indexing.get_mode_label(mode, **kws)
             if key == 'h_det_mode':
                 key = key.replace('mode', mode_index)
             elif self.is_mode_specific:

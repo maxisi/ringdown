@@ -8,9 +8,9 @@ import lal
 import logging
 from dataclasses import dataclass, asdict
 from abc import ABC, abstractmethod
-from . import utils
-from .utils import try_parse
-from ..qnms import T_MSUN
+from .utils import utils
+from .utils.utils import try_parse
+from .qnms import T_MSUN
 
 # Define valid options to specify the start times
 T0_KEYS = {
@@ -331,7 +331,6 @@ class TargetCollection(utils.MultiIndexCollection):
         self._reference_time = float(t0)
     
     def set_reference_mass(self, mref : float | None):
-        print("HEEY")
         if self._reference_mass is not None:
             logging.warning(f"overwriting reference mass ({self._reference_mass} )")
         self._reference_mass = float(mref)
