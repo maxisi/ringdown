@@ -10,6 +10,8 @@ from .indexing import ModeIndexList
 from .result import Result
 import arviz as az
 import warnings
+from arviz.data.base import dict_to_dataset
+import logging
 
 def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales):
     ts = jnp.array(ts)
@@ -445,7 +447,7 @@ MODEL_VARIABLES_BY_MODE = ['a_scale', 'a', 'acx', 'acy', 'apx', 'apy',
                            'acx_unit', 'acy_unit', 'apx_unit', 'apy_unit',
                            'ellip', 'f', 'g', 'omega', 'phi', 'phi_l',
                            'phi_r', 'quality', 'tau', 'theta']
-MODEL_DIMENSIONS = {n: ['mode'] for n in MODEL_VARIABLES_BY_MODE}
+MODEL_DIMENSIONS = {k: ['mode'] for k in MODEL_VARIABLES_BY_MODE}
 MODEL_DIMENSIONS['h_det'] = ['ifo', 'time_index']
 MODEL_DIMENSIONS['h_det_mode'] = ['ifo', 'mode', 'time_index']
 
@@ -454,7 +456,8 @@ def get_arviz(sampler,
               ifos : list | None = None,
               injections : list | None = None,
               epoch : list | None = None,
-              attrs : dict | None = None):
+              attrs : dict | None = None, 
+              constant_data=True, observed_data=True):
     """Convert a numpyro sampler to an arviz dataset.
     
     Arguments
@@ -467,6 +470,13 @@ def get_arviz(sampler,
     ifos : None or array_like
         The ifos to include in the dataset.  If `None`, then all ifos are
         included.
+    injections : None or array_like
+        The injections to include in the dataset.  If `None`, then no injections
+        are included.
+    epoch : None or array_like
+        The epoch of each ifo.  If `None`, then all epochs are set to zero.
+    attrs : None or dict
+        Attributes to include in the arviz dataset.
 
     Returns
     -------
@@ -478,8 +488,9 @@ def get_arviz(sampler,
     # get dimensions
     dims = {k: v for k,v in MODEL_DIMENSIONS.items() if k in params_in_model}
     for x in params_in_model:
-        if x not in MODEL_DIMENSIONS:
+        if x not in MODEL_DIMENSIONS and len(samples[x].shape) > 1:
             warnings.warn(f'{x} not in model dimensions; please report issue')
+    
     # get coordinates
     # assume that all fits will have an 'f' parameter
     n_mode = samples['f'].shape[1]
@@ -502,24 +513,43 @@ def get_arviz(sampler,
     time_index = np.arange(n_analyze, dtype=int)
     coords = {'ifo': ifos, 'mode': modes, 'time_index': time_index,
               'time_index_1': time_index}
-    # get constant_data
-    in_dims = {
-        'time': ['ifo', 'time_index'],
-        'strain': ['ifo', 'time_index'],
-        'cholesky_factor': ['ifo', 'time_index', 'time_index_1'],
-        'fp': ['ifo'],
-        'fc': ['ifo'],
-        'epoch': ['ifo']
-    }
-    in_data = {k: np.array(v) for k,v in zip(in_dims.keys(), sampler._args)}
-    in_data['epoch'] = np.array(epoch)
-     # get injections, if provided
-    if injections is not None:
-        in_data['injection'] = np.array(injections)
-        in_dims['injection'] = ['ifo', 'time_index']
-    dims.update(in_dims)
+    if constant_data:
+        # get constant_data
+        in_dims = {
+            'time': ['ifo', 'time_index'],
+            'strain': ['ifo', 'time_index'],
+            'cholesky_factor': ['ifo', 'time_index', 'time_index_1'],
+            'fp': ['ifo'],
+            'fc': ['ifo'],
+            'epoch': ['ifo']
+        }
+        in_data = {k: np.array(v) for k,v in zip(in_dims.keys(), sampler._args)}
+        in_data['epoch'] = np.array(epoch)
+        # get injections, if provided
+        if injections is not None:
+            in_data['injection'] = np.array(injections)
+            in_dims['injection'] = ['ifo', 'time_index']
+        dims.update(in_dims)
+        obs_data = {'strain': in_data.pop('strain')}
+    else:
+        in_data = None
 
     result = az.from_numpyro(sampler, dims=dims, coords=coords, 
                              constant_data=in_data)
-    result.attrs.update(attrs)
+    result.attrs.update(attrs or {})
+    
+    if observed_data:
+        # add observed data
+        if hasattr(result, 'observed_data'):
+            result.observed_data['strain'] = (in_dims['strain'], obs_data['strain'] )
+            logging.info("added strain to observed data")
+        else:
+            # We assume that observed_data isn't created yet.
+            result.add_groups(dict(
+                observed_data=dict_to_dataset(
+                    obs_data,
+                    coords=self.posterior.coords,
+                    dims={'strain': in_dims['strain']},
+            )))
+            logging.info("created observed data in arviz dataset")
     return Result(result)

@@ -14,13 +14,14 @@ import warnings
 import inspect
 import jax
 import numpyro.infer
+import jaxlib.xla_extension
 import lal
 import logging
 from .data import *
 from . import utils
 from .target import Target
 from .result import Result
-from .model import make_model, get_arviz
+from .model import make_model, get_arviz, MODEL_DIMENSIONS
 from . import indexing
 from . import waveforms
 
@@ -36,9 +37,10 @@ for k in SAMPLER_ARGS:
         logging.warning(f"overlapping keys in {KERNEL} and {SAMPLER}: {k}")
 
 MODEL_ARGS = inspect.signature(make_model).parameters.keys()
+RUNTIME_MODEL_ARGS = ['modes', 'prior', 'predictive', 'store_h_det', 'store_h_det_mode']
 
 DEF_RUN_KWS = dict(dense_mass=True, num_warmup=1000, num_samples=1000,
-                       num_chains=4)
+                    num_chains=4)
 
 class Fit(object):
     """ A ringdown fit. Contains all the information required to setup and run
@@ -221,7 +223,7 @@ class Fit(object):
         """Valid prior parameters for the selected model. These can be set
         through :meth:`Fit.update_model`.
         """
-        return list(MODEL_ARGS)
+        return [k for k in list(MODEL_ARGS) if k not in RUNTIME_MODEL_ARGS]
 
     def update_model(self, **kws):
         """Set or modify prior options or other model settings.  For example,
@@ -229,7 +231,7 @@ class Fit(object):
         `1e-21`.
 
         Valid arguments for the selected model can be found in
-        :attr:`Fit.valid_model_options`.
+        :attr:`Fit.valid_model_settings`.
         """
         if self.result is not None:
             logging.warning("updating prior of Fit with preexisting results!")
@@ -648,8 +650,16 @@ class Fit(object):
             hdict = {}
         return hdict
     
-    def run(self, prior=False, suppress_warnings=True, store_residuals=False,
-            min_ess=None, prng=None, **kwargs):
+    def run(self,
+            prior : bool = False,
+            predictive : bool = False,
+            store_h_det : bool = False,
+            store_h_det_mode : bool = False,
+            store_residuals : bool = False,
+            suppress_warnings : bool = True, 
+            min_ess : int | None = None,
+            prng : jaxlib.xla_extension.ArrayImpl | int | None = None,
+            **kwargs):
         """Fit model.
 
         Additional keyword arguments not listed below are passed to the sampler,
@@ -703,9 +713,10 @@ class Fit(object):
         filter = 'ignore' if suppress_warnings else 'default'
 
         # create model
-        model = make_model(self.modes.value, prior=prior,
+        model = make_model(self.modes.value, prior=prior, predictive=False,
+                           store_h_det=False, store_h_det_mode=False,
                            **self.model_settings)
-
+        
         logging.info('running {} mode fit'.format(self.modes))
         logging.info('prior run: {}'.format(prior))
         logging.info('model settings: {}'.format(self._model_settings))
@@ -769,10 +780,6 @@ class Fit(object):
                 result = get_arviz(sampler, ifos=self.ifos, modes=self.modes, 
                                    injections=inj, epoch=epoch, 
                                    attrs=self.attrs)
-                if prior:
-                    self.prior = result
-                else:
-                    self.result = result
 
                 # check effective number of samples and rerun if necessary
                 ess_run = result.ess
@@ -796,15 +803,40 @@ class Fit(object):
                     )
 
                     kwargs.update(kws)
-        if not prior and store_residuals:
-            self.result._generate_whitened_residuals() 
+                
+        if predictive or store_h_det or store_h_det_mode:
+            logging.info("obtaining predictive distribution")
+            predictive = numpyro.infer.Predictive(model, sampler.get_samples())
+            pred = predictive(prng, *run_input, predictive=predictive, 
+                              store_h_det=store_h_det,
+                              store_h_det_mode=store_h_det_mode)
+            
+            # adduct posterior predictive to result
+            chain_draw = ['chain', 'draw']
+            shape = [result.posterior.sizes[k] for k in chain_draw]
+            for k, v in pred.items():
+                if k not in result.posterior and k not in result.observed_data:
+                    # replace first dimension (samples) with chain and draw
+                    s = tuple(shape + list(v.shape[1:]))
+                    v = np.reshape(v, s)
+                    # get dimension names
+                    d = tuple(chain_draw + list(MODEL_DIMENSIONS.get(k, ())))
+                    result.posterior[k] = (d, v)
+                    logging.info(f"added {k} to posterior")
+
+        if prior:
+            self.prior = result
+        else:
+            if store_residuals:
+                result._generate_whitened_residuals()
+            self.result = result
     run.__doc__ = run.__doc__.format(DEF_RUN_KWS)
-    
+
     @property
     def settings(self):
         config = self.to_config()
         return {section: dict(config[section]) for section in config.sections()}
-    
+
     def to_json(self, indent=4, **kws):
         return json.dumps(self.settings, indent=indent, **kws)
     
@@ -812,7 +844,7 @@ class Fit(object):
     def attrs(self):
         # TODO: record version number
         from . import __version__
-        return dict(config=self.to_json(), rindgown_version=__version__)
+        return dict(config=self.to_json(), ringdown_version=__version__)
 
     def add_data(self, data, time=None, ifo=None, acf=None):
         """Add data to fit.
@@ -954,7 +986,9 @@ class Fit(object):
         settings = {k: v for k,v in locals().items() if k != 'self'}
         for k, v in settings.pop('kws').items():
             settings[k] = v
-            
+        
+        if isinstance(path, str) and ifos is None:
+            ifos = self.ifos
         path_dict = utils.get_path_dict_from_pattern(path, ifos)
         for ifo, p in path_dict.items():
             if from_psd:
@@ -1090,7 +1124,7 @@ class Fit(object):
             logging.warning("no duration or n_analyze specified")
         else:
             self._duration = float(duration)
-            
+        
         self.target = Target.construct(t0, ra, dec, psi, reference_ifo,
                                        antenna_patterns)
                 

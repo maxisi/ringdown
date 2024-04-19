@@ -67,7 +67,8 @@ class Target(ABC):
     def get_antenna_patterns_dict(self, ifos):
         return {ifo: self.get_antenna_patterns(ifo) for ifo in ifos}
     
-    def construct(self, t0 : float | dict, ra : float | None = None, 
+    @staticmethod
+    def construct(t0 : float | dict, ra : float | None = None, 
                   dec : float | None = None, psi : float | None = None,
                   reference_ifo : str | None = None,
                   antenna_patterns: dict | None = None, **kws):

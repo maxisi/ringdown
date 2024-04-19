@@ -104,7 +104,7 @@ class Result(az.InferenceData):
         for section, settings in self.config.items():
             config.add_section(section)
             for key, value in settings.items():
-                config.set(section, key, value)
+                config.set(section, key, utils.form_opt(value))
         return config
     
     @property
@@ -298,13 +298,9 @@ class Result(az.InferenceData):
         else:
             # get analysis data, shaped as (ifo, time)
             if "strain" in self.observed_data:
-                # strain values stored in "old" PyStan structure
                 ds = self.observed_data.strain
             elif "strain" in self.constant_data:
                 ds = self.constant_data.strain
-            else:
-                # strain values stored in "new" PyMC structure
-                ds = np.array([d.values for d in self.observed_data.values()])
             # whiten it with the Cholesky factors, so shape will remain (ifo, time)
             wds = self.whiten(ds)
             # take inner product between whitened template and data, and normalize
@@ -368,9 +364,9 @@ class Result(az.InferenceData):
         self.posterior['whitened_residual'] = \
             self.posterior.whitened_residual.transpose(*keys)
         lnlike = -self.posterior.whitened_residual**2/2
-        try:
+        if hasattr(self, 'log_likelihood'):
             self.log_likelihood[_WHITENED_LOGLIKE_KEY] = lnlike    
-        except AttributeError:
+        else:
             # We assume that log-likelihood isn't created yet.
             self.add_groups(dict(
                 log_likelihood=dict_to_dataset(
