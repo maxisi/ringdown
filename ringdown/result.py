@@ -3,6 +3,7 @@
 
 __all__ = ['Result', 'ResultCollection']
 
+import os
 import numpy as np
 import arviz as az
 import scipy.linalg as sl
@@ -16,14 +17,17 @@ import json
 import configparser
 from glob import glob
 from parse import parse
+import logging
 
 _WHITENED_LOGLIKE_KEY = 'whitened_pointwise_loglike'
 
 _DATAFRAME_PARAMETERS = ['m', 'chi', 'f', 'g', 'a', 'phi', 'theta', 'ellip']
 
 class Result(az.InferenceData):
+    """Result from a ringdown fit."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, config=None, **kwargs):
+        # get config file input if provided
         if len(args) == 1 and isinstance(args[0], az.InferenceData):
             # modeled after from_netcdf
             # https://python.arviz.org/en/stable/_modules/arviz/data/inference_data.html#
@@ -32,7 +36,6 @@ class Result(az.InferenceData):
         else:
             super().__init__(*args, **kwargs)
         self._whitened_templates = None
-        self._config_dict = None
         self._target = None
         self._modes = None
         # settings for formatting DataFrames
@@ -41,6 +44,13 @@ class Result(az.InferenceData):
         for m in _DATAFRAME_PARAMETERS:
             if m in getattr(self, 'posterior', {}):
                 self._df_parameters[m] = qnms.ParameterLabel(m)
+            elif m.upper() in getattr(self, 'posterior', {}):
+                self._df_parameters[m.upper()] = qnms.ParameterLabel(m)
+        # try to load config
+        if config is not None:
+            self._config_dict = utils.load_config_dict(config)
+        else:
+            self._config_dict = None
         
     @property
     def default_label_format(self) -> dict:
@@ -58,9 +68,9 @@ class Result(az.InferenceData):
         self._default_label_format.update(kws)
         
     @classmethod
-    def from_netcdf(cls, *args, **kwargs) -> 'Result':
+    def from_netcdf(cls, *args, config=None, **kwargs) -> 'Result':
         data = super().from_netcdf(*args, **kwargs)
-        return cls(data)
+        return cls(data, config=config)
     from_netcdf.__doc__ = az.InferenceData.from_netcdf.__doc__
     
     @classmethod
@@ -87,7 +97,7 @@ class Result(az.InferenceData):
     
     @property
     def _config_object(self) -> configparser.ConfigParser :
-        """Confiuration file stored as ConfigParser object."""
+        """Configuration file stored as ConfigParser object."""
         config = configparser.ConfigParser()
         # Populate the ConfigParser with data from the dictionary
         for section, settings in self.config.items():
@@ -532,30 +542,93 @@ class Result(az.InferenceData):
         return hdata
     
 class ResultCollection(utils.MultiIndexCollection):
+    """Collection of results from ringdown fits."""
     
     def __init__(self, results : list | None = None,
                  index : list | None = None,
                  reference_mass : float | None = None,
                  reference_time : float | None = None) -> None:
-        r = [Result(r) for r in results]
-        super().__init__(r, index, reference_mass, reference_time)
+        _results = []
+        for r in results:
+            if isinstance(r, Result):
+                _results.append(r)
+            else:
+                _results.append(Result(r))
+        super().__init__(_results, index, reference_mass, reference_time)
+        self._targets = None
             
     def __repr__(self):
         return f"ResultCollection({self.index})"
     
     @property
-    def results(self):
+    def results(self) -> list[Result]:
+        """List of results in the collection.
+        """
         return self.data
     
     @property
-    def targets(self):
-        return target.TargetCollection([r.target for r in self.results])
+    def targets(self) -> target.TargetCollection:
+        """Targets associated with the results in the collection.
+        """
+        if self._targets is None:
+            self._targets = target.TargetCollection([r.target 
+                                                     for r in self.results])
+        elif len(self._targets) != len(self.results):
+            logging.warning("Number of targets does not match results."
+                            "Recomputing targets")
+            self._targets = target.TargetCollection([r.target 
+                                                     for r in self.results])
+        return self._targets
     
-    def update_default_label_format(self, **kws):
+    @property
+    def reference_mass(self) -> float | None :
+        """Reference mass in solar masses used for time-step labeling.
+        """
+        if self.targets.reference_mass is None:
+            if self._reference_mass is None:
+                logging.info("No reference mass specified; trying to infer "
+                            "from result configurations.")
+                m0 = None
+                for r in self.results:
+                    m0 = r.config.get('pipe', {}).get(target.MREF_KEY)
+                    break
+                self._reference_mass = m0
+            self.targets.set_reference_mass(self._reference_mass)
+        return self.targets.reference_mass
+    
+    @property
+    def reference_time(self) -> float | None :
+        """Reference time used for time-step labeling.
+        """
+        if self.targets.reference_time is None:
+            if self._reference_time is None:
+                logging.info("No reference time specified; trying to infer "
+                            "from result configurations.")
+                t0 = None
+                for r in self.results:
+                    t0 = r.config.get('pipe', {}).get(target.TREF_KEY)
+                    break
+                self._reference_time = t0
+            self.targets.set_reference_time(self._reference_time)
+        return self.targets.reference_time
+    
+    def set_reference_mass(self, reference_mass : float | None) -> None:
+        """Set the reference mass for the collection."""
+        self._reference_mass = reference_mass
+        
+    def set_reference_time(self, reference_time : float | None) -> None:
+        """Set the reference time for the collection."""
+        self._reference_time = reference_time
+    
+    def update_default_label_format(self, **kws) -> None:
+        """Update the default formatting options for DataFrames."""
         for result in self.results:
             result.update_default_label_format(**kws)
     
-    def get_t0s(self, reference_mass : float | bool | None = None):
+    def get_t0s(self, 
+                reference_mass : float | bool | None = None) -> np.ndarray:
+        """Get analysis start times for the collection.
+        """
         if reference_mass:
             if reference_mass is None:
                 # reference mass is true, but no value specified so assume default
@@ -567,24 +640,64 @@ class ResultCollection(utils.MultiIndexCollection):
             t0s = [result.t0 for result in self.results]
         return np.array(t0s)
         
-    def reindex_by_t0(self, reference_mass : bool | float | None = None):
+    def reindex_by_t0(self,
+                      reference_mass : bool | float | None = None) -> None :
+        """Reindex the collection by the analysis start time.
+        """
         t0s = self.get_t0s(reference_mass)
         if np.any(t0s is None):
             raise ValueError("Cannot reindex by t0 if any t0 values are None.")
         self.reindex(t0s)
         
     @classmethod
-    def from_netcdf(cls, path_input : str | list, index : list = None, **kws):
+    def from_netcdf(cls, path_input : str | list, index : list = None,
+                    config : str | list | None = None,
+                    progress : bool = False, **kws):
+        """Load a collection of results from NetCDF files.
+        
+        Arguments
+        ---------
+        path_input : str or list
+            template path to NetCDF file or list of paths; if a string, expected
+            to be a template like `path/to/many/files/*.nc` or 
+            `path/to/many/files/{}.nc` where `{}` or `*` is replaced by the index,
+            or used to glob for files.
+        index : list
+            list of indices for the results; if not provided, will be inferred
+            from the paths of found files.
+        config : str or list
+            template path to configuration file or list of paths; if a string,
+            expected to be a template like `path/to/many/files/*.ini` or 
+            `path/to/many/files/{}.ini` where `{}` or `*` is replaced by the index,
+            or used to glob for files.
+        progress : bool
+            show progress bar (def., `False`)
+        **kws : dict
+            additional keyword arguments to pass to the constructor, like
+            reference_mass or reference_time
+        """
         index = index or []
-        results = []
+        cpaths = []
         if isinstance(path_input, str):
             paths = sorted(glob(path_input))
             for path in paths:
-                pattern = parse(paths.replace('*', '{}')).fixed
+                pattern = parse(path_input.replace('*', '{}'), path).fixed
                 idx = tuple([utils.try_parse(k) for k in pattern])
                 index.append(idx)
-        for path in paths:
-            results.append(Result.from_netcdf(path))
+                if isinstance(config, str):
+                    cpath = config.replace('*', '{}').format(*pattern)
+                    if os.path.exists(cpath):
+                        cpaths.append(cpath)
+        if config is not None:
+            if len(cpaths) != len(paths):
+                raise ValueError("Number of configuration files does not match "
+                                 "number of result files.")
+        else:
+            cpaths = [None]*len(cpaths)
+        results = []
+        custom_tqdm = utils.get_tqdm(progress)
+        for path, cpath in custom_tqdm(zip(paths, cpaths), total=len(paths)):
+            results.append(Result.from_netcdf(path, config=cpath))
         info = kws.get('info', {})
         info['provenance'] = paths
         return cls(results, index, **kws)
@@ -594,12 +707,43 @@ class ResultCollection(utils.MultiIndexCollection):
                                 t0 : bool = False,
                                 reference_mass : bool | float | None = None,
                                 draw_kws : dict | None = None,
+                                progress : bool = False,
                                 **kws) -> pd.DataFrame:
+        """Get a combined DataFrame of parameter samples for all results in
+        the collection, with a new index column identifying provenance of each
+        sample.
+        
+        Arguments
+        ---------
+        ndraw : int
+            number of samples to draw from each result (optional)
+        index_label : str
+            name of provenance column (def., 'run')
+        t0 : bool
+            include reference time in DataFrame (def., `False`)
+        reference_mass : bool or float
+            mass in solar masses used to label time steps if including t0; if
+            provided 't0m' will be used instead of 't0' (optional) so that the
+            time is unit of mass rather than seconds.
+        draw_kws : dict
+            keyword arguments to pass to the `sample` method when drawing random
+            samples from each result (optional)
+        progress : bool
+            show progress bar (def., `False`)
+        **kws : dict
+            additional keyword arguments to pass to the `get_parameter_dataframe`
+            method of each result
+        """
         dfs = []
         key_size = self._key_size
+        # get t0 values if requested
         if t0:
             t0s = self.get_t0s(reference_mass)
-        for i, (key, result) in enumerate(self.items()):
+        # iterate over results and get DataFrames for each
+        # figure out wheter to print a progress bar
+        custom_tqdm = utils.get_tqdm(progress)
+        n = len(self)
+        for i, (key, result) in custom_tqdm(enumerate(self.items()), total=n):
             df = result.get_parameter_dataframe(**kws)
             if key_size == 1:
                 df[index_label] = key[0]
@@ -611,6 +755,7 @@ class ResultCollection(utils.MultiIndexCollection):
                 dfs.append(df.sample(ndraw, **(draw_kws or {})))
             else:
                 dfs.append(df)
+        # return combined DataFrame
         return pd.concat(dfs, ignore_index=True)
     
     def get_mode_parameter_dataframe(self, ndraw : int | None = None,
@@ -619,6 +764,31 @@ class ResultCollection(utils.MultiIndexCollection):
                                     reference_mass : bool | float | None = None,
                                     draw_kws : dict | None = None,
                                     **kws) -> pd.DataFrame:
+        """Get a combined parameter DataFrame of mode parameter samples for all
+        results in the collection, with a new index column identifying
+        provenance of each sample. One column per parameter, with a
+        mode-indexing column.
+        
+        Arguments
+        ---------
+        ndraw : int
+            number of samples to draw from each result (optional)
+        index_label : str
+            name of provenance column (def., 'run')
+        t0 : bool
+            include reference time in DataFrame (def., `False`)
+        reference_mass : bool or float
+            mass in solar masses used to label time steps if including t0; if
+            provided 't0m' will be used instead of 't0' (optional) so that the
+            time is unit of mass rather than seconds.
+        draw_kws : dict
+            keyword arguments to pass to the `sample` method when drawing random
+            samples from each result (optional)
+        **kws : dict
+            additional keyword arguments to pass to the
+            `get_mode_parameter_dataframe`
+            method of each result
+        """
         dfs = []
         key_size = self._key_size
         if t0:

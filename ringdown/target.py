@@ -1,7 +1,7 @@
 """Module defining the core :class:`Target` class.
 """
 
-__all__ = ['construct_target']
+__all__ = ['construct_target', 'Target', 'TargetCollection']
 
 import numpy as np
 import lal
@@ -11,6 +11,19 @@ from abc import ABC, abstractmethod
 from . import utils
 from .utils import try_parse
 from .qnms import T_MSUN
+
+# Define valid options to specify the start times
+T0_KEYS = {
+    'ref': 't0-ref',
+    'list': 't0-list',
+    'delta': 't0-delta-list',
+    'step': 't0-step',
+    'start': 't0-start',
+    'stop': 't0-stop'
+}
+START_STOP_STEP = [T0_KEYS[k] for k in ['start', 'stop', 'step']]
+MREF_KEY = 'm-ref'
+TREF_KEY = T0_KEYS['ref']
 
 class Target(ABC):
     def as_dict(self) -> dict:
@@ -250,7 +263,7 @@ class TargetCollection(utils.MultiIndexCollection):
             if not isinstance(target, Target):
                 raise ValueError("targets must be instances of Target")
         super().__init__(targets, index=index, reference_mass=reference_mass,
-                       reference_time=reference_time, info=info)
+                         reference_time=reference_time, info=info)
         
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.targets})"
@@ -261,7 +274,8 @@ class TargetCollection(utils.MultiIndexCollection):
     
     def get(self, key):
         if key.lower() == 'delta-t0':
-            return np.array(self.get('t0')) - self.reference_time
+            t0 = 0 if self.reference_time is None else self.reference_time
+            return np.array(self.get('t0')) - t0
         elif key.lower() == 'delta-m':
             if self.step_time:
                 return np.array(self.get('delta-t0')) / self.step_time
@@ -300,13 +314,15 @@ class TargetCollection(utils.MultiIndexCollection):
     @property
     def reference_time(self):
         if self._reference_time is None:
-            self._reference_time = self.info.get('t0-ref', self.info.get('pipe', {}).get('t0-ref', 0.))
+            self._reference_time = self.info.get(TREF_KEY, 
+                self.info.get('pipe', {}).get(TREF_KEY, None))
         return self._reference_time
     
     @property
     def reference_mass(self):
         if self._reference_mass is None:
-            self._reference_mass = self.info.get('m-ref', self.info.get('pipe', {}).get('m-ref', None))
+            self._reference_mass = self.info.get(MREF_KEY, 
+                self.info.get('pipe', {}).get(MREF_KEY, None))
         return self._reference_mass
     
     def set_reference_time(self, t0 : float | None):
@@ -315,6 +331,7 @@ class TargetCollection(utils.MultiIndexCollection):
         self._reference_time = float(t0)
     
     def set_reference_mass(self, mref : float | None):
+        print("HEEY")
         if self._reference_mass is not None:
             logging.warning(f"overwriting reference mass ({self._reference_mass} )")
         self._reference_mass = float(mref)
@@ -353,17 +370,6 @@ class TargetCollection(utils.MultiIndexCollection):
         """
         config = utils.load_config(config_input)
 
-        # Define valid options to specify the start times
-        T0_KEYS = {
-            'ref': 't0-ref',
-            'list': 't0-list',
-            'delta': 't0-delta-list',
-            'step': 't0-step',
-            'start': 't0-start',
-            'stop': 't0-stop'
-        }
-        start_stop_step = [T0_KEYS[k] for k in ['start', 'stop', 'step']]
-
         # First make sure that only compatible t0 options were provided
         incompatible_sets = [['ref', 'list'], ['delta', 'list']]
         incompatible_sets += [[k, 'delta'] for k in ['start', 'stop', 'step']]
@@ -373,7 +379,7 @@ class TargetCollection(utils.MultiIndexCollection):
                 raise ValueError("incompatible T0 options: {}".format(opt_names))
 
         # Look for a reference mass, to be used when stepping in time
-        m_ref = config.getfloat(t0_sect, 'M-ref', fallback=None)
+        m_ref = config.getfloat(t0_sect, MREF_KEY, fallback=None)
         if m_ref:
             # reference time translating from solar masses
             tm_ref = m_ref * T_MSUN
@@ -391,13 +397,13 @@ class TargetCollection(utils.MultiIndexCollection):
         elif T0_KEYS['delta'] in config[t0_sect]:
             dt0s = np.array(try_parse(config.get(t0_sect, T0_KEYS['delta'])))
             t0s = dt0s*tm_ref + t0ref
-        elif any([k in config[t0_sect] for k in start_stop_step]):
-            if not all([k in config[t0_sect] for k in start_stop_step]):
-                missing = [k for k in start_stop_step if k not in config[t0_sect]]
+        elif any([k in config[t0_sect] for k in START_STOP_STEP]):
+            if not all([k in config[t0_sect] for k in START_STOP_STEP]):
+                missing = [k for k in START_STOP_STEP if k not in config[t0_sect]]
                 raise ValueError("missing start/stop/step options: {}".format(missing))
             # add a safety check here, in case the user mistakenly requests stepping
             # based on a GPS time and provides a reference GPS time
-            start, stop, step  = [config.getfloat(t0_sect, k) for k in start_stop_step]
+            start, stop, step  = [config.getfloat(t0_sect, k) for k in START_STOP_STEP]
             if start > 500 and t0ref > 1E8:
                 logging.warning("high reference time and stepping start---did you "
                                 "accidentally provide GPS times twice?")

@@ -6,6 +6,21 @@ from ast import literal_eval
 import os
 from configparser import ConfigParser
 import logging
+import sys
+
+def get_tqdm(progress : bool = True):
+    """Return the appropriate tqdm based on the execution environment."""
+    if not progress:
+        def custom_tqdm(args, **kwargs):
+            return args
+        return custom_tqdm
+    if 'ipykernel' in sys.modules:
+        # Running in Jupyter Notebook/Lab
+        from tqdm.notebook import tqdm
+    else:
+        # Running in a terminal or other non-notebook environment
+        from tqdm import tqdm
+    return tqdm
 
 def form_opt(x):
     """Utility to format options in config."""
@@ -76,6 +91,15 @@ def load_config(config_input):
         config = config_input
     return config
 
+def load_config_dict(config_input):
+    config = load_config(config_input)
+    config_dict = {}
+    for section in config.sections():
+        config_dict[section] = {}
+        for key, value in config[section].items():
+            config_dict[section][key] = try_parse(value)
+    return config_dict
+
 class MultiIndexCollection(object):
     
     def __init__(self, data=None, index=None, reference_mass=None,
@@ -143,6 +167,14 @@ class MultiIndexCollection(object):
             return len(self.index[0])
         else:
             return 0
+        
+    @property
+    def reference_mass(self):
+        return self._reference_mass
+    
+    @property
+    def reference_time(self):
+        return self._reference_time
         
     def set_reference_mass(self, reference_mass):
         if reference_mass is not None:

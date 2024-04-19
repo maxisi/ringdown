@@ -44,10 +44,12 @@ def construct_mode_coordinates(modes : int | list) -> list:
     return idxs
 
 def construct_mode_index(*mode):
-    if len(mode) == 1 and isinstance(mode[0], int):
-        return GenericIndex(mode[0])
-    else:
-        return ModeIndex.construct(*mode)
+    if len(mode) == 1:
+        try:
+            return GenericIndex(int(mode[0]))
+        except (ValueError, TypeError):
+            pass
+    return ModeIndex.construct(*mode)
 
 def construct_mode_list(modes : str | None) -> list:
     return ModeIndexList(modes)
@@ -56,9 +58,10 @@ class ModeIndexList(object):
     def __init__(self, indices=None):
         if indices is None:
             self.indices = []
-        elif isinstance(indices, int):
+        try:
+            indices = int(indices)
             self.indices = [construct_mode_index(m) for m in range(indices)]
-        else:
+        except (ValueError, TypeError):
             if isinstance(indices, str):
                 # assume modes is a string like "(p0,s0,l0,m0,n0),(p1,s1,l1,m1,n1)"
                 indices = literal_eval(indices)
