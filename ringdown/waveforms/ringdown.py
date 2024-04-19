@@ -21,7 +21,7 @@ class Ringdown(Signal):
 
     @property
     def n_modes(self):
-        return len(self.get_parameter('A', []))
+        return len(self.get_parameter('f', []))
 
     @staticmethod
     def _theta_phi_from_phip_phim(phip, phim):
@@ -163,16 +163,16 @@ class Ringdown(Signal):
         if modes:
             if len(modes) > len(margs[cls._MODE_PARS[0]][0]):
                 raise ValueError("insufficient parameters provided")
-        signal[mpost] = sum(cls.complex_mode(t[mpost]-t0, *margs.values()),
-                            axis=1)
+        signal[mpost] = np.sum(cls.complex_mode(t[mpost]-t0, *margs.values()),
+                               axis=1)
 
         # add a damping to the amplitude near t0 for t < t0
         if two_sided:
             margs['omega'] = margs['omega']*np.exp(df_pre)
             margs['gamma'] = -margs['gamma']*np.exp(-dtau_pre)
             mpre = (time < t0) & (time > t0 - 0.5*signal_buffer)
-            signal[mpre] = sum(cls.complex_mode(t[mpre]-t0, *margs.values()),
-                               axis=1)
+            signal[mpre] = np.sum(cls.complex_mode(t[mpre]-t0, *margs.values()),
+                                  axis=1)
         return cls(signal, index=time, parameters=pars, modes=modes)
     
     def get_parameter(self, k, *args, **kwargs):

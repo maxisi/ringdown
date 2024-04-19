@@ -12,6 +12,13 @@ from ast import literal_eval
 
 T_MSUN = lal.GMSUN_SI / lal.C_SI**3
 
+def get_ftau(M, chi, n, l=2, m=2):
+    q22 = qnm.modes_cache(-2, l, m, n)
+    omega, _, _ = q22(a=chi)
+    f = np.real(omega)/(2*np.pi) / (T_MSUN*M)
+    gamma = abs(np.imag(omega)) / (T_MSUN*M)
+    return f, 1./gamma
+
 def get_mode_label(mode, **kws):
     return construct_mode_index(mode).get_label(**kws)
 
@@ -54,18 +61,38 @@ def construct_mode_index(*mode):
 def construct_mode_list(modes : str | None) -> list:
     return ModeIndexList(modes)
 
+def get_parameter_label_map(pars=None, modes=None, ifos=None, **kws):
+    label_dict = {}
+    pars = pars or ParameterLabel._PARAMETER_KEY_MAP.keys()
+    if modes is None:
+        modes = [None]
+    if ifos is None:
+        ifos = [None]
+    for k in pars:
+        p = ParameterLabel(k)
+        for i in ifos:
+            for m in modes:
+                label_dict[p.get_key(mode=m, ifo=i, **kws)] = \
+                    p.get_latex(mode=m, ifo=i, **kws)
+    return label_dict
+
 class ModeIndexList(object):
     def __init__(self, indices=None):
         if indices is None:
             self.indices = []
-        try:
-            indices = int(indices)
-            self.indices = [construct_mode_index(m) for m in range(indices)]
-        except (ValueError, TypeError):
-            if isinstance(indices, str):
-                # assume modes is a string like "(p0,s0,l0,m0,n0),(p1,s1,l1,m1,n1)"
-                indices = literal_eval(indices)
-            self.indices = [construct_mode_index(m) for m in indices]
+        elif isinstance(indices, ModeIndexList):
+            self.indices = indices.indices
+        else:
+            try:
+                indices = int(indices)
+                self.indices = [construct_mode_index(m) 
+                                for m in range(indices)]
+            except (ValueError, TypeError):
+                if isinstance(indices, str):
+                    # assume modes is a string like
+                    # "(p0,s0,l0,m0,n0),(p1,s1,l1,m1,n1)"
+                    indices = literal_eval(indices)
+                self.indices = [construct_mode_index(m) for m in indices]
     
     def __repr__(self):
         return f'ModeIndexList(indices={self.indices})'
@@ -165,7 +192,6 @@ class GenericIndex(ModeIndexBase):
     @classmethod
     def construct(cls, i):
         return cls(i)
-
 @dataclass
 class ModeIndex(ModeIndexBase):
     p : int
@@ -310,13 +336,6 @@ class KerrMode(object):
             
         return f, 1/g
 
-def get_ftau(M, chi, n, l=2, m=2):
-    q22 = qnm.modes_cache(-2, l, m, n)
-    omega, _, _ = q22(a=chi)
-    f = np.real(omega)/(2*np.pi) / (T_MSUN*M)
-    gamma = abs(np.imag(omega)) / (T_MSUN*M)
-    return f, 1./gamma
-
 class ParameterLabel(object):
     
     _PARAMETER_KEY_MAP = {
@@ -384,17 +403,3 @@ class ParameterLabel(object):
         else:
             return self.get_key(**kws)
     
-def get_parameter_label_map(pars=None, modes=None, ifos=None, **kws):
-    label_dict = {}
-    pars = pars or ParameterLabel._PARAMETER_KEY_MAP.keys()
-    if modes is None:
-        modes = [None]
-    if ifos is None:
-        ifos = [None]
-    for k in pars:
-        p = ParameterLabel(k)
-        for i in ifos:
-            for m in modes:
-                label_dict[p.get_key(mode=m, ifo=i, **kws)] = \
-                    p.get_latex(mode=m, ifo=i, **kws)
-    return label_dict

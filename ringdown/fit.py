@@ -587,11 +587,12 @@ class Fit(object):
             kws['signal_buffer'] = signal_buffer
 
         # if no sky location given, use provided APs or default to target
-        if not all([k in kws for k in ['ra', 'dec']]):
+        sky_keys = ['ra', 'dec', 'psi']
+        if not all([k in kws for k in sky_keys]):
             kws['antenna_patterns'] = kws.pop('antenna_patterns', None) or \
                                       self.antenna_patterns
-        for k in ['ra', 'dec', 'psi']:
-            kws[k] = kws.get(k, getattr(self.target.sky, k, None))
+        for k in sky_keys:
+            kws[k] = kws.get(k, getattr(self.target, k, None))
 
         kws['times'] = {ifo: d.time.values for ifo,d in self.data.items()}
         kws['t0_default'] = self.t0
@@ -636,8 +637,10 @@ class Fit(object):
         """
         if self.injections:
             if 'condition' in self.info:
-                hdict = {i: h.condition(t0=self.start_times[i],
-                                        **self.info['condition']) 
+                # inspect h.condition to get valid arguments
+                x = inspect.signature(Data.condition).parameters.keys()
+                c = {k: v for k,v in self.info['condition'].items() if k in x}
+                hdict = {i: h.condition(t0=self.start_times[i], **c) 
                         for i, h in self.injections.items()}
             else:
                 hdict = self.injections

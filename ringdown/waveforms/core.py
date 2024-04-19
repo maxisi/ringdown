@@ -4,6 +4,7 @@ import numpy as np
 import lal
 from ..data import Data, TimeSeries
 from inspect import getfullargspec
+import logging
 
 def _ishift(hp_t : np.array, hc_t : np.array):
     """Quadratic sub-sample interpolation to estimate the peak of a waveform.
@@ -72,6 +73,12 @@ class Signal(TimeSeries):
     def __init__(self, *args, parameters=None, **kwargs):
         super(Signal, self).__init__(*args, **kwargs)
         self.parameters = parameters or {}
+        # validata location of signal in time array
+        if self.t0 is not None:
+            tmin = self.time[0]
+            tmax = self.time[-1]
+            if self.t0 < tmin or self.t0 > tmax:
+                logging.warning("signal time not in time array!")
 
     @property
     def _constructor(self):
@@ -360,7 +367,7 @@ def get_detector_signals(times : dict | np.ndarray | None = None,
     # check if antenna patterns were provided
     if antenna_patterns is None:
         antenna_patterns = {}
-    sky_provided = all([k in p_kws for k in ['ra', 'dec']])
+    sky_provided = all([p_kws.get(k, False) for k in ['ra', 'dec']])
     if not antenna_patterns and not sky_provided:
         raise ValueError("must provide antenna patterns or sky location")
 

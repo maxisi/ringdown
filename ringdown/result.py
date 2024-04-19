@@ -138,7 +138,7 @@ class Result(az.InferenceData):
         """Sample times for the analysis; corresponds to
         `fit.analysis_data[i].time`."""
         shape = (self.posterior.sizes['ifo'], 1)
-        return self.constant_data.time + np.reshape(self.epoch, shape)
+        return self.constant_data.time + np.array(self.epoch).reshape(shape)
     
     def get_fit(self, **kwargs):
         """Get a Fit object from the result."""
@@ -229,10 +229,14 @@ class Result(az.InferenceData):
             wds = {}    
             for i, data in datas.items():
                 L = chols.sel(ifo=i)
-                wds[i] = sl.solve_triangular(L, data, lower=True)
+                wd = sl.solve_triangular(L, data, lower=True)
+                if isinstance(data, data.Data):
+                    wd = data.Data(wd, index=data.index, ifo=i, info=data.info)
+                wds[i] = wd
         else:
-            # whiten the reconstructions using the Cholesky factors, L, with shape
-            # (ifo, time, time). the resulting object will have shape (ifo, time, sample)
+            # whiten the reconstructions using the Cholesky factors, L, with
+            # shape (ifo, time, time). the resulting object will have shape
+            # (ifo, time, sample)
             wds = np.array([sl.solve_triangular(L, d, lower=True)
                             for L, d in zip(chols, datas)])
         return wds
@@ -385,7 +389,7 @@ class Result(az.InferenceData):
         return np.min(mess_arr)
     
     @property
-    def stacked_samples(self) -> 'xarray.core.dataset.Dataset' :
+    def stacked_samples(self):
         """Stacked samples for all parameters in the result.
         """
         return self.posterior.stack(sample=('chain', 'draw'))
@@ -488,8 +492,10 @@ class Result(az.InferenceData):
             key = 'h_det'
         else:
             mode = qnms.get_mode_coordinate(mode)
+            if mode not in self.posterior.mode:
+                raise ValueError("Mode requested not in result")
             key = 'h_det_mode'
-        sel = {k: v for k, v in dict(ifo=ifo, mode=mode).items()
+        sel = {k: v for k, v in dict(mode=mode).items()
                if v is not None}
         x = self.posterior[key].sel(**sel)
         hq = x.quantile(q, dim=('chain', 'draw'))
@@ -526,9 +532,11 @@ class Result(az.InferenceData):
             key = 'h_det'
         else:
             mode = qnms.get_mode_coordinate(mode)
+            if mode not in self.posterior.mode:
+                raise ValueError("Mode requested not in result")
             key = 'h_det_mode'
         idx, x = self.draw_sample(idx=idx, map=map, rng=rng, seed=seed)
-        sel = {k: v for k, v in dict(ifo=ifo, mode=mode).items()
+        sel = {k: v for k, v in dict(mode=mode).items()
                if v is not None}
         h = x[key].sel(**sel)
         info = {k: v.values for k, v in x.items()}
@@ -544,8 +552,8 @@ class Result(az.InferenceData):
     @property
     def injected_strain(self) -> dict[data.Data] | None:
         """Injections used in the analysis."""
-        if 'injections' in self.constant_data:
-            h = self.constant_data.injections
+        if 'injection' in self.constant_data:
+            h = self.constant_data.injection
             hdict = {}
             for i in h.ifo.values.astype(str):
                 time = self.sample_times.sel(ifo=i).values

@@ -1,7 +1,7 @@
 """Module defining the core :class:`Target` class.
 """
 
-__all__ = ['construct_target', 'Target', 'TargetCollection']
+__all__ = ['construct_target', 'SkyTarget', 'DetectorTarget', 'TargetCollection']
 
 import numpy as np
 import lal
@@ -24,6 +24,15 @@ T0_KEYS = {
 START_STOP_STEP = [T0_KEYS[k] for k in ['start', 'stop', 'step']]
 MREF_KEY = 'm-ref'
 TREF_KEY = T0_KEYS['ref']
+
+def construct_target(t0 : float | dict, ra : float | None = None,
+                    dec : float | None = None, psi : float | None = None,
+                    reference_ifo : str | None = None,
+                    antenna_patterns: dict | None = None, **kws):
+    if antenna_patterns is None:
+        return SkyTarget.construct(t0, ra, dec, psi, reference_ifo)
+    else:
+        return DetectorTarget.construct(t0, antenna_patterns)
 
 class Target(ABC):
     def as_dict(self) -> dict:
@@ -242,15 +251,6 @@ class DetectorTarget(Target):
         else:
             pass
         return cls(_detector_times, _antenna_patterns)
-    
-def construct_target(t0 : float | dict, ra : float | None = None,
-                    dec : float | None = None, psi : float | None = None,
-                    reference_ifo : str | None = None,
-                    antenna_patterns: dict | None = None, **kws):
-    if antenna_patterns is None:
-        return SkyTarget.construct(t0, ra, dec, psi, reference_ifo)
-    else:
-        return DetectorTarget.construct(t0, antenna_patterns)
     
 class TargetCollection(utils.MultiIndexCollection):
     def __init__(self, targets : list | None = None, index=None,
