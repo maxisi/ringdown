@@ -133,6 +133,12 @@ class Fit(object):
         return self.target is not None
     
     @property
+    def has_injections(self) -> bool:
+        """Whether injections have been added with :meth:`Fit.inject`.
+        """
+        return bool(self.injections)
+    
+    @property
     def start_times(self):
         if self.has_target:
             start_times = self.target.get_detector_times_dict(self.ifos)
@@ -178,6 +184,24 @@ class Fit(object):
         for i, d in self.data.items():
             data[i] = d.iloc[i0s[i]:i0s[i] + self.n_analyze]
         return data
+    
+    @property
+    def analysis_injections(self) -> dict:
+        """Slice of injection to be analyzed for each detector. Extracted from
+        :attr:`Fit.conditioned_injections` based on information in analysis
+        target :attr:`Fit.target`.
+        """
+        data = {}
+        i0s = self.start_indices
+        for i, d in self.conditioned_injections.items():
+            data[i] = d.iloc[i0s[i]:i0s[i] + self.n_analyze]
+        return data
+    
+    @property
+    def analysis_times(self) -> dict:
+        """Time arrays for analysis data.
+        """
+        return {i: d.time.values for i,d in self.analysis_data.items()}
 
     @property
     def raw_data(self) -> dict:
@@ -735,8 +759,13 @@ class Fit(object):
 
                 # turn sampler into Result object and store
                 # (recall that Result is a wrapper for arviz.InferenceData)
+                if self.has_injections:
+                    inj = [self.analysis_injections[i] for i in self.ifos]
+                else:
+                    inj = None
                 result = get_arviz(sampler, ifos=self.ifos, modes=self.modes, 
-                                   epoch=epoch, attrs=self.attrs)
+                                   injections=inj, epoch=epoch, 
+                                   attrs=self.attrs)
                 if prior:
                     self.prior = result
                 else:

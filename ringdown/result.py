@@ -541,6 +541,19 @@ class Result(az.InferenceData):
         hdata = hdict if ifo is None else hdict[ifo]
         return hdata
     
+    @property
+    def injected_strain(self) -> dict[data.Data] | None:
+        """Injections used in the analysis."""
+        if 'injections' in self.constant_data:
+            h = self.constant_data.injections
+            hdict = {}
+            for i in h.ifo.values.astype(str):
+                time = self.sample_times.sel(ifo=i).values
+                hdict[i] = data.Data(h.sel(ifo=i).values, ifo=i, index=time)
+            return hdict
+        else:
+            return None
+    
 class ResultCollection(utils.MultiIndexCollection):
     """Collection of results from ringdown fits."""
     

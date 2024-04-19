@@ -450,9 +450,10 @@ MODEL_DIMENSIONS['h_det'] = ['ifo', 'time_index']
 MODEL_DIMENSIONS['h_det_mode'] = ['ifo', 'mode', 'time_index']
 
 def get_arviz(sampler,
-              modes : None | list = None,
-              ifos : None | list = None,
-              epoch : None | list = None,
+              modes : list | None = None,
+              ifos : list | None = None,
+              injections : list | None = None,
+              epoch : list | None = None,
               attrs : dict | None = None):
     """Convert a numpyro sampler to an arviz dataset.
     
@@ -512,6 +513,10 @@ def get_arviz(sampler,
     }
     in_data = {k: np.array(v) for k,v in zip(in_dims.keys(), sampler._args)}
     in_data['epoch'] = np.array(epoch)
+     # get injections, if provided
+    if injections is not None:
+        in_data['injection'] = np.array(injections)
+        in_dims['injection'] = ['ifo', 'time_index']
     dims.update(in_dims)
 
     result = az.from_numpyro(sampler, dims=dims, coords=coords, 
