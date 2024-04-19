@@ -212,9 +212,9 @@ class Result(az.InferenceData):
     @property
     def modes(self) -> list | None :
         if self._modes is None:
-            m = self.posterior.mode.values \
-                if 'mode' in self.posterior else []
-            self._modes = indexing.construct_mode_list(m)
+            self._modes = indexing.ModeIndexList(self.posterior.mode.values
+                                                 if 'mode' in self.posterior
+                                                 else [])
         return self._modes
     
     @property

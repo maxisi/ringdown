@@ -6,7 +6,7 @@ import jax.scipy as jsp
 import numpyro
 import numpyro.distributions as dist
 from . import qnms
-from . import indexing
+from .indexing import ModeIndexList
 from .result import Result
 import arviz as az
 import warnings
@@ -462,8 +462,8 @@ def get_arviz(sampler,
     sampler : numpyro.MCMC
         The sampler to convert after running.
     modes : None or array_like
-        The modes to include in the dataset.  If `None`, then all modes are
-        included.
+        Coordinates of modes to include in the dataset; if `None`, then all
+        modes are included and indexed by integers.
     ifos : None or array_like
         The ifos to include in the dataset.  If `None`, then all ifos are
         included.
@@ -483,7 +483,7 @@ def get_arviz(sampler,
     # get coordinates
     # assume that all fits will have an 'f' parameter
     n_mode = samples['f'].shape[1]
-    modes = indexing.construct_mode_coordinates(modes or n_mode)
+    modes = ModeIndexList(modes or n_mode).get_coordinates()
     if len(modes) != n_mode:
         raise ValueError(f'expected {n_mode} modes, got {len(modes)}')
     # get ifo from shape of Fc, assuming it's last argument provided to model

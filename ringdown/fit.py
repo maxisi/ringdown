@@ -1000,14 +1000,14 @@ class Fit(object):
           - `m` is the magnetic quantum number;
           - `n` is the overtone number.
 
-        See :meth:`ringdown.indexing.construct_mode_list`.
+        See :class:`ringdown.indexing.ModeIndexList`.
 
         Arguments
         ---------
         modes : list
             list of tuples with quasinormal mode `(p, s, l, m, n)` numbers.
         """
-        self.modes = indexing.construct_mode_list(modes)
+        self.modes = indexing.ModeIndexList(modes)
 
     def set_target(self, t0 : float | dict, ra : float | None = None,
                    dec : float | None = None, psi : float | None = None,
