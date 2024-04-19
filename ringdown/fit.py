@@ -18,7 +18,7 @@ import lal
 import logging
 from .data import *
 from . import utils
-from .target import construct_target
+from .target import Target
 from .result import Result
 from .model import make_model, get_arviz
 from . import indexing
@@ -1091,7 +1091,7 @@ class Fit(object):
         else:
             self._duration = float(duration)
             
-        self.target = construct_target(t0, ra, dec, psi, reference_ifo,
+        self.target = Target.construct(t0, ra, dec, psi, reference_ifo,
                                        antenna_patterns)
                 
         # make sure that start times are encompassed by data (if data exist)

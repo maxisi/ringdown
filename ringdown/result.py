@@ -11,7 +11,7 @@ from arviz.data.base import dict_to_dataset
 from . import qnms
 from . import indexing
 from . import data
-from . import target
+from .target import Target, TargetCollection
 from . import utils
 import pandas as pd
 import json
@@ -108,11 +108,11 @@ class Result(az.InferenceData):
         return config
     
     @property
-    def target(self) -> target.Target | None :
+    def target(self) -> Target | None :
         """Target used in the analysis."""
         if self._target is None:
             if 'target' in self.config:
-                self._target = target.construct_target(**self.config['target'])
+                self._target = Target.construct(**self.config['target'])
         return self._target
     
     @property
@@ -589,17 +589,15 @@ class ResultCollection(utils.MultiIndexCollection):
         return self.data
     
     @property
-    def targets(self) -> target.TargetCollection:
+    def targets(self) -> TargetCollection:
         """Targets associated with the results in the collection.
         """
         if self._targets is None:
-            self._targets = target.TargetCollection([r.target 
-                                                     for r in self.results])
+            self._targets = TargetCollection([r.target for r in self.results])
         elif len(self._targets) != len(self.results):
             logging.warning("Number of targets does not match results."
                             "Recomputing targets")
-            self._targets = target.TargetCollection([r.target 
-                                                     for r in self.results])
+            self._targets = TargetCollection([r.target for r in self.results])
         return self._targets
     
     @property
@@ -612,7 +610,7 @@ class ResultCollection(utils.MultiIndexCollection):
                             "from result configurations.")
                 m0 = None
                 for r in self.results:
-                    m0 = r.config.get('pipe', {}).get(target.MREF_KEY)
+                    m0 = r.config.get('pipe', {}).get(self.targets._mref_key)
                     break
                 self._reference_mass = m0
             self.targets.set_reference_mass(self._reference_mass)
@@ -628,7 +626,7 @@ class ResultCollection(utils.MultiIndexCollection):
                             "from result configurations.")
                 t0 = None
                 for r in self.results:
-                    t0 = r.config.get('pipe', {}).get(target.TREF_KEY)
+                    t0 = r.config.get('pipe', {}).get(self.targets._tref_key)
                     break
                 self._reference_time = t0
             self.targets.set_reference_time(self._reference_time)

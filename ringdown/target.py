@@ -1,7 +1,7 @@
 """Module defining the core :class:`Target` class.
 """
 
-__all__ = ['construct_target', 'SkyTarget', 'DetectorTarget', 'TargetCollection']
+__all__ = ['Target', 'SkyTarget', 'DetectorTarget', 'TargetCollection']
 
 import numpy as np
 import lal
@@ -25,16 +25,13 @@ START_STOP_STEP = [T0_KEYS[k] for k in ['start', 'stop', 'step']]
 MREF_KEY = 'm-ref'
 TREF_KEY = T0_KEYS['ref']
 
-def construct_target(t0 : float | dict, ra : float | None = None,
-                    dec : float | None = None, psi : float | None = None,
-                    reference_ifo : str | None = None,
-                    antenna_patterns: dict | None = None, **kws):
-    if antenna_patterns is None:
-        return SkyTarget.construct(t0, ra, dec, psi, reference_ifo)
-    else:
-        return DetectorTarget.construct(t0, antenna_patterns)
 
 class Target(ABC):
+    """Abstract class to define a target for a ringdown analysis. A target can
+    be defined either by a sky location or by detector times and antenna patterns.
+    Use the `construct` method to create a target object from a dictionary or
+    keyword arguments.
+    """
     def as_dict(self) -> dict:
         return asdict(self)
     
@@ -70,8 +67,50 @@ class Target(ABC):
     def get_antenna_patterns_dict(self, ifos):
         return {ifo: self.get_antenna_patterns(ifo) for ifo in ifos}
     
+    def construct(self, t0 : float | dict, ra : float | None = None, 
+                  dec : float | None = None, psi : float | None = None,
+                  reference_ifo : str | None = None,
+                  antenna_patterns: dict | None = None, **kws):
+        """Create a target object from a dictionary or keyword arguments.
+        The source sky location and orientation can be specified by the `ra`,
+        `dec`, and `psi` arguments. These are use to both determine the
+        truncation time at different detectors, as well as to compute the
+        corresponding antenna patterns.
+        
+        Alternatively, analysis times and antenna patterns can be specified
+        directly for each detector. In this case, the `t0` argument should be a
+        dictionary with detector names as keys and start times as values.
+        
+        Cannot simultaneously provide both sky location and detector times.
+        
+        Arguments
+        ---------
+        t0 : float, dict
+            start time for the analysis, either a single time or a dictionary of
+            times for each detector.
+        ra : float, None
+            source right ascension.
+        dec : float, None
+            source declination.
+        psi : float, None
+            source polarization angle.
+        reference_ifo : str, None
+            detector name for time reference, or `None` for geocenter (default
+            `None`)
+        antenna_patterns : dict, None
+            dictionary of antenna patterns for each detector, or `None` to
+            compute from sky location.
+        """
+        if antenna_patterns is None:
+            return SkyTarget.construct(t0, ra, dec, psi, reference_ifo)
+        else:
+            return DetectorTarget.construct(t0, antenna_patterns)
+
+
 @dataclass
 class SkyTarget(Target):
+    """Sky location target for a ringdown analysis.
+    """
     geocenter_time : float | None = None
     ra : float | None = None
     dec : float | None = None
@@ -98,6 +137,7 @@ class SkyTarget(Target):
     
     @property
     def sky(self):
+        """Return sky location as a tuple (ra, dec, psi)."""
         return (self.ra, self.dec, self.psi)
     
     def get_detector_time(self, ifo):
@@ -172,9 +212,13 @@ class SkyTarget(Target):
             dt = lal.TimeDelayFromEarthCenter(det.location, ra, dec, tgps)
             tgeo = t0 - dt
         return cls(lal.LIGOTimeGPS(tgeo), ra, dec, psi)
-    
+
+
 @dataclass
 class DetectorTarget(Target):
+    """Target for a ringdown analysis defined from explicit detector times and
+    antenna patterns, rather than a sky location and a geocenter time.
+    """
     detector_times : dict | None = None
     antenna_patterns : dict | None = None
     
@@ -198,11 +242,13 @@ class DetectorTarget(Target):
                     raise ValueError(f"missing {k}")
     
     @property
-    def t0(self):  
+    def t0(self):
+        """Geocenter reference time is `None`"""
         return None
     
     @property
     def sky(self):
+        """Sky location is `(None, None, None)`"""
         return (None, None, None)
     
     def get_antenna_patterns(self, ifo):
@@ -251,8 +297,17 @@ class DetectorTarget(Target):
         else:
             pass
         return cls(_detector_times, _antenna_patterns)
-    
+
+
 class TargetCollection(utils.MultiIndexCollection):
+    """Collection of targets for a ringdown analysis. The collection can be
+    initialized with a list of `Target` objects, or by specifying the start
+    times and sky locations for each target. The collection can also store a
+    reference time to label start times, as well as a reference mass (in solar
+    masses) to label time steps in units of mass. The collection can be indexed
+    by start times, and can provide time differences with respect to the
+    reference time, or time steps in units of mass."""
+    
     def __init__(self, targets : list | None = None, index=None,
                  reference_mass=None, reference_time=None, info=None):
         if targets is None:
@@ -264,15 +319,19 @@ class TargetCollection(utils.MultiIndexCollection):
                 raise ValueError("targets must be instances of Target")
         super().__init__(targets, index=index, reference_mass=reference_mass,
                          reference_time=reference_time, info=info)
+        self._mref_key = MREF_KEY
+        self._tref_key = TREF_KEY
         
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.targets})"
     
     @property
     def targets(self):
+        """List of targets in the collection."""
         return self.data
     
     def get(self, key):
+        """Get attribute `key` for each target in the collection."""
         if key.lower() == 'delta-t0':
             t0 = 0 if self.reference_time is None else self.reference_time
             return np.array(self.get('t0')) - t0
@@ -284,9 +343,11 @@ class TargetCollection(utils.MultiIndexCollection):
         return [getattr(t, key) for t in self.targets]
     
     def get_detector_times(self, ifo):
+        """Get detector times for each target in the collection."""
         return [t.get_detector_time(ifo=ifo) for t in self.targets]
     
     def get_antenna_patterns(self, ifo):
+        """Get antenna patterns for each target in the collection."""
         return [t.get_antenna_patterns(ifo=ifo) for t in self.targets]
     
     def update_info(self, section: str, **kws) -> None:
@@ -297,14 +358,18 @@ class TargetCollection(utils.MultiIndexCollection):
     
     @property
     def t0(self):
+        """Start times for each target in the collection."""
         return self.get('t0')
     
     @property
     def t0m(self):
+        """Start times relative to the reference time in units of mass."""
         return self.get('delta-m')
     
     @property
     def index(self):
+        """Index for the collection; defaults to start times if none
+        provided."""
         if self._index is None:
             self._index = [t.t0 for t in self.targets]
             if any([t is None for t in self._index]):
@@ -313,24 +378,29 @@ class TargetCollection(utils.MultiIndexCollection):
     
     @property
     def reference_time(self):
+        """Reference time relative to which to compute time differences."""
         if self._reference_time is None:
-            self._reference_time = self.info.get(TREF_KEY, 
-                self.info.get('pipe', {}).get(TREF_KEY, None))
+            self._reference_time = self.info.get(self._tref_key, 
+                self.info.get('pipe', {}).get(self._tref_key, None))
         return self._reference_time
     
     @property
     def reference_mass(self):
+        """Reference mass in solar masses to use for time steps in units of
+        mass."""
         if self._reference_mass is None:
-            self._reference_mass = self.info.get(MREF_KEY, 
-                self.info.get('pipe', {}).get(MREF_KEY, None))
+            self._reference_mass = self.info.get(self._mref_key, 
+                self.info.get('pipe', {}).get(self._mref_key, None))
         return self._reference_mass
     
     def set_reference_time(self, t0 : float | None):
+        """Set the reference time for the collection."""
         if self._reference_time is not None:
             logging.warning(f"overwriting reference time ({self._reference_time} )")
         self._reference_time = float(t0)
     
     def set_reference_mass(self, mref : float | None):
+        """Set the reference mass for the collection."""
         if self._reference_mass is not None:
             logging.warning(f"overwriting reference mass ({self._reference_mass} )")
         self._reference_mass = float(mref)
@@ -341,6 +411,7 @@ class TargetCollection(utils.MultiIndexCollection):
     
     @property
     def step_time(self):
+        """Time step for the collection, in seconds."""
         mref = self.reference_mass
         if mref and self.step_mass:
             tstep = self.step_mass * T_MSUN
@@ -350,6 +421,7 @@ class TargetCollection(utils.MultiIndexCollection):
     
     @property
     def step_mass(self):
+        """Time step for the collection, in units of mass."""
         mref = self.reference_mass
         if mref and self._step:
             mstep = self._step *  mref
@@ -414,11 +486,10 @@ class TargetCollection(utils.MultiIndexCollection):
         # get sky location arguments if provided
         sky_dict = {k.lower(): try_parse(v) for k,v in config[sky_sect].items()}
         
-        targets = [construct_target(t0, **sky_dict) for t0 in t0s]
+        targets = [Target.construct(t0, **sky_dict) for t0 in t0s]
         info = {
             t0_sect : {k.lower(): try_parse(v) for k,v in config[t0_sect].items()},
             sky_sect : sky_dict
         }
         
         return cls(targets, info=info)
-        
