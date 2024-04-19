@@ -9,8 +9,9 @@ import arviz as az
 import scipy.linalg as sl
 from arviz.data.base import dict_to_dataset
 from . import qnms
+from .utils import indexing
 from . import data
-from . import target
+from .utils import target
 from . import utils
 import pandas as pd
 import json
@@ -213,7 +214,7 @@ class Result(az.InferenceData):
         if self._modes is None:
             m = self.posterior.mode.values \
                 if 'mode' in self.posterior else []
-            self._modes = qnms.construct_mode_list(m)
+            self._modes = indexing.construct_mode_list(m)
         return self._modes
     
     @property
@@ -463,13 +464,13 @@ class Result(az.InferenceData):
         return pd.concat(dfs, ignore_index=ignore_index)
     
     def get_single_mode_dataframe(self,
-                                  mode : str | tuple | qnms.ModeIndex | bytes,
+                                  mode : str | tuple | indexing.ModeIndex | bytes,
                                   **kws) -> pd.DataFrame:
         df = self.get_mode_parameter_dataframe(**kws)
-        return df[df['mode'] == qnms.get_mode_label(mode, **kws)]
+        return df[df['mode'] == indexing.get_mode_label(mode, **kws)]
         
     def get_strain_quantile(self, q : float, ifo : str = None,
-                            mode : str | tuple | qnms.ModeIndex | bytes = None)\
+                            mode : str | tuple | indexing.ModeIndex | bytes = None)\
                              -> dict[data.Data] | data.Data :
         """Get the quantile of the strain reconstruction.
         
@@ -491,7 +492,7 @@ class Result(az.InferenceData):
         if mode is None:
             key = 'h_det'
         else:
-            mode = qnms.get_mode_coordinate(mode)
+            mode = indexing.get_mode_coordinate(mode)
             if mode not in self.posterior.mode:
                 raise ValueError("Mode requested not in result")
             key = 'h_det_mode'
@@ -510,7 +511,7 @@ class Result(az.InferenceData):
             idx : int | None= None,
             map : bool = False,
             ifo : str | None = None,
-            mode : str | tuple | qnms.ModeIndex | bytes | None = None,
+            mode : str | tuple | indexing.ModeIndex | bytes | None = None,
             rng : int | np.random.Generator | None = None,
             seed : int | None = None) -> dict[data.Data] | data.Data:
         """Get a sample of the strain reconstruction.
@@ -531,7 +532,7 @@ class Result(az.InferenceData):
         if mode is None:
             key = 'h_det'
         else:
-            mode = qnms.get_mode_coordinate(mode)
+            mode = indexing.get_mode_coordinate(mode)
             if mode not in self.posterior.mode:
                 raise ValueError("Mode requested not in result")
             key = 'h_det_mode'

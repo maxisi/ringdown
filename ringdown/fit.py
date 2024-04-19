@@ -9,20 +9,20 @@ import json
 from ast import literal_eval
 import configparser
 import copy as cp
-from .data import *
-from . import utils
-from .result import Result
-from .target import construct_target
-import lal
-import logging
-from .model import make_model, get_arviz
 import os
-from . import qnms
 import warnings
-from . import waveforms
 import inspect
 import jax
 import numpyro.infer
+import lal
+import logging
+from .data import *
+from . import utils
+from .utils.target import construct_target
+from .result import Result
+from .model import make_model, get_arviz
+from .utils import indexing
+from . import waveforms
 
 # TODO: support different samplers?
 KERNEL = numpyro.infer.NUTS
@@ -1000,14 +1000,14 @@ class Fit(object):
           - `m` is the magnetic quantum number;
           - `n` is the overtone number.
 
-        See :meth:`ringdown.qnms.construct_mode_list`.
+        See :meth:`ringdown.indexing.construct_mode_list`.
 
         Arguments
         ---------
         modes : list
             list of tuples with quasinormal mode `(p, s, l, m, n)` numbers.
         """
-        self.modes = qnms.construct_mode_list(modes)
+        self.modes = indexing.construct_mode_list(modes)
 
     def set_target(self, t0 : float | dict, ra : float | None = None,
                    dec : float | None = None, psi : float | None = None,

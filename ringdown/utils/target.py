@@ -10,7 +10,7 @@ from dataclasses import dataclass, asdict
 from abc import ABC, abstractmethod
 from . import utils
 from .utils import try_parse
-from .qnms import T_MSUN
+from ..qnms import T_MSUN
 
 # Define valid options to specify the start times
 T0_KEYS = {

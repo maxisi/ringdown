@@ -6,9 +6,9 @@ import jax.scipy as jsp
 import numpyro
 import numpyro.distributions as dist
 from . import qnms
+from .utils import indexing
 from .result import Result
 import arviz as az
-import logging
 import warnings
 
 def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales):
@@ -483,7 +483,7 @@ def get_arviz(sampler,
     # get coordinates
     # assume that all fits will have an 'f' parameter
     n_mode = samples['f'].shape[1]
-    modes = qnms.construct_mode_coordinates(modes or n_mode)
+    modes = indexing.construct_mode_coordinates(modes or n_mode)
     if len(modes) != n_mode:
         raise ValueError(f'expected {n_mode} modes, got {len(modes)}')
     # get ifo from shape of Fc, assuming it's last argument provided to model

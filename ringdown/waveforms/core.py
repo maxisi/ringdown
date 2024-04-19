@@ -1,4 +1,4 @@
-__all__ = ['Signal', '_ishift', 'get_detector_signals', 'get_delay']
+__all__ = ['Signal', 'get_detector_signals', 'get_delay']
 
 import numpy as np
 import lal

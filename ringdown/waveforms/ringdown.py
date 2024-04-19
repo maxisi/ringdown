@@ -2,8 +2,8 @@ __all__ = ['Ringdown']
 
 import numpy as np
 from .core import *
-from ..data import TimeSeries
 from .. import qnms
+from ..utils import indexing
 from inspect import getfullargspec
 import warnings
 
@@ -13,7 +13,7 @@ class Ringdown(Signal):
 
     def __init__(self, *args, modes=None, **kwargs):
         super(Ringdown, self).__init__(*args, **kwargs)
-        self.modes = qnms.construct_mode_list(modes)
+        self.modes = indexing.construct_mode_list(modes)
 
     @property
     def _constructor(self):
