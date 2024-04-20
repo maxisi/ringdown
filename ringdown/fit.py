@@ -15,6 +15,7 @@ import inspect
 import jax
 import numpyro.infer
 import jaxlib.xla_extension
+import xarray as xr
 import lal
 import logging
 from .data import *
@@ -652,9 +653,9 @@ class Fit(object):
     
     def run(self,
             prior : bool = False,
-            predictive : bool = False,
+            predictive : bool = True,
             store_h_det : bool = False,
-            store_h_det_mode : bool = False,
+            store_h_det_mode : bool = True,
             store_residuals : bool = False,
             suppress_warnings : bool = True, 
             min_ess : int | None = None,
@@ -662,7 +663,7 @@ class Fit(object):
             **kwargs):
         """Fit model.
 
-        Additional keyword arguments not listed below are passed to the sampler,
+        Additional keyword arguments not listed below are passed to the sampler
         with the following defaults when sampling:
 
         {}
@@ -695,8 +696,7 @@ class Fit(object):
         self.update_info('run', **settings)
         
         ess_run = -1.0 # ess after sampling finishes, to be set by loop below
-        if min_ess is None:
-            min_ess = 0.0
+        min_ess = 0.0 if min_ess is None else min_ess
 
         if not self.acfs:
             logging.warning("computing ACFs with default settings")
@@ -758,6 +758,10 @@ class Fit(object):
         run_input = self.run_input
         start_times  = self.start_times
         epoch = [start_times[i] for i in self.ifos]
+        if self.has_injections:
+            inj = [self.analysis_injections[i] for i in self.ifos]
+        else:
+            inj = None
 
         run_count = 1
         with warnings.catch_warnings():
@@ -773,11 +777,7 @@ class Fit(object):
 
                 # turn sampler into Result object and store
                 # (recall that Result is a wrapper for arviz.InferenceData)
-                if self.has_injections:
-                    inj = [self.analysis_injections[i] for i in self.ifos]
-                else:
-                    inj = None
-                result = get_arviz(sampler, ifos=self.ifos, modes=self.modes, 
+                result = get_arviz(sampler, ifos=self.ifos, modes=self.modes,
                                    injections=inj, epoch=epoch, 
                                    attrs=self.attrs)
 
@@ -814,14 +814,19 @@ class Fit(object):
             # adduct posterior predictive to result
             chain_draw = ['chain', 'draw']
             shape = [result.posterior.sizes[k] for k in chain_draw]
+            coord = dict(ifo=self.ifos,
+                         mode=self.modes.get_coordinates(),
+                         time_index=np.arange(self.n_analyze, dtype=int))
             for k, v in pred.items():
                 if k not in result.posterior and k not in result.observed_data:
-                    # replace first dimension (samples) with chain and draw
-                    s = tuple(shape + list(v.shape[1:]))
-                    v = np.reshape(v, s)
                     # get dimension names
                     d = tuple(chain_draw + list(MODEL_DIMENSIONS.get(k, ())))
-                    result.posterior[k] = (d, v)
+                    # get coordinates
+                    c = {c: coord[c] for c in d if c not in chain_draw}
+                    # get data array replacing first dimension (samples) with
+                    # chain and draw
+                    v = np.reshape(v, tuple(shape + list(v.shape[1:])))
+                    result.posterior[k] = xr.DataArray(v, coords=c, dims=d)
                     logging.info(f"added {k} to posterior")
 
         if prior:
@@ -830,6 +835,7 @@ class Fit(object):
             if store_residuals:
                 result._generate_whitened_residuals()
             self.result = result
+        self._numpyro_sampler = sampler
     run.__doc__ = run.__doc__.format(DEF_RUN_KWS)
 
     @property
@@ -842,7 +848,6 @@ class Fit(object):
     
     @property
     def attrs(self):
-        # TODO: record version number
         from . import __version__
         return dict(config=self.to_json(), ringdown_version=__version__)
 

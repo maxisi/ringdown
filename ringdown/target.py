@@ -24,6 +24,7 @@ T0_KEYS = {
 START_STOP_STEP = [T0_KEYS[k] for k in ['start', 'stop', 'step']]
 MREF_KEY = 'm-ref'
 TREF_KEY = T0_KEYS['ref']
+PIPE_SEC = 'pipe'
 
 
 class Target(ABC):
@@ -382,7 +383,7 @@ class TargetCollection(utils.MultiIndexCollection):
         """Reference time relative to which to compute time differences."""
         if self._reference_time is None:
             self._reference_time = self.info.get(self._tref_key, 
-                self.info.get('pipe', {}).get(self._tref_key, None))
+                self.info.get(PIPE_SEC, {}).get(self._tref_key, None))
         return self._reference_time
     
     @property
@@ -391,7 +392,7 @@ class TargetCollection(utils.MultiIndexCollection):
         mass."""
         if self._reference_mass is None:
             self._reference_mass = self.info.get(self._mref_key, 
-                self.info.get('pipe', {}).get(self._mref_key, None))
+                self.info.get(PIPE_SEC, {}).get(self._mref_key, None))
         return self._reference_mass
     
     def set_reference_time(self, t0 : float | None):
@@ -408,7 +409,7 @@ class TargetCollection(utils.MultiIndexCollection):
     
     @property
     def _step(self):
-        return self.info.get('t0-step', self.info.get('pipe', {}).get('t0-step', None))
+        return self.info.get('t0-step', self.info.get(PIPE_SEC, {}).get('t0-step', None))
     
     @property
     def step_time(self):
@@ -431,7 +432,7 @@ class TargetCollection(utils.MultiIndexCollection):
         return mstep
     
     @classmethod
-    def from_config(cls, config_input, t0_sect='pipe', sky_sect='target'):
+    def from_config(cls, config_input, t0_sect=PIPE_SEC, sky_sect='target'):
         """Identify target analysis times. There will be three possibilities:
             1- listing the times explicitly
             2- listing time differences with respect to a reference time

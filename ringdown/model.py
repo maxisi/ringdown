@@ -12,6 +12,8 @@ import arviz as az
 import warnings
 from arviz.data.base import dict_to_dataset
 import logging
+import jaxlib.xla_extension
+import jax.random
 
 def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales):
     ts = jnp.array(ts)
@@ -457,7 +459,7 @@ def get_arviz(sampler,
               injections : list | None = None,
               epoch : list | None = None,
               attrs : dict | None = None, 
-              constant_data=True, observed_data=True):
+              store_data : bool = True):
     """Convert a numpyro sampler to an arviz dataset.
     
     Arguments
@@ -477,6 +479,9 @@ def get_arviz(sampler,
         The epoch of each ifo.  If `None`, then all epochs are set to zero.
     attrs : None or dict
         Attributes to include in the arviz dataset.
+    record_data : bool
+        Whether to record the observed data and auxiliary quantities in the
+        arviz dataset.
 
     Returns
     -------
@@ -513,7 +518,7 @@ def get_arviz(sampler,
     time_index = np.arange(n_analyze, dtype=int)
     coords = {'ifo': ifos, 'mode': modes, 'time_index': time_index,
               'time_index_1': time_index}
-    if constant_data:
+    if store_data:
         # get constant_data
         in_dims = {
             'time': ['ifo', 'time_index'],
@@ -523,7 +528,7 @@ def get_arviz(sampler,
             'fc': ['ifo'],
             'epoch': ['ifo']
         }
-        in_data = {k: np.array(v) for k,v in zip(in_dims.keys(), sampler._args)}
+        in_data = {k: np.array(v) for k,v in zip(in_dims.keys(),sampler._args)}
         in_data['epoch'] = np.array(epoch)
         # get injections, if provided
         if injections is not None:
@@ -538,18 +543,48 @@ def get_arviz(sampler,
                              constant_data=in_data)
     result.attrs.update(attrs or {})
     
-    if observed_data:
+    if store_data:
         # add observed data
         if hasattr(result, 'observed_data'):
-            result.observed_data['strain'] = (in_dims['strain'], obs_data['strain'] )
             logging.info("added strain to observed data")
+            result.observed_data['strain'] = (in_dims['strain'], 
+                                              obs_data['strain'])
         else:
+            logging.info("creating observed data in arviz dataset")
             # We assume that observed_data isn't created yet.
             result.add_groups(dict(
                 observed_data=dict_to_dataset(
                     obs_data,
-                    coords=self.posterior.coords,
+                    coords=result.posterior.coords,
                     dims={'strain': in_dims['strain']},
             )))
-            logging.info("created observed data in arviz dataset")
     return Result(result)
+
+def get_neff_from_numpyro(sampler):
+    """Get the effective sample size from a numpyro sampler.
+    
+    Arguments
+    ---------
+    sampler : numpyro.MCMC
+        The sampler to compute the effective sample size from.
+    
+    Returns
+    -------
+    neff : dict
+        The effective sample size for each parameter.
+    """
+    import io
+    import contextlib
+    import pandas as pd
+
+    # Create a string buffer to capture the output
+    buffer = io.StringIO()
+    # Redirect standard output to the buffer
+    with contextlib.redirect_stdout(buffer):
+        sampler.print_summary()
+    # Get the content from the buffer
+    output = buffer.getvalue()
+    
+    neff = pd.read_csv(io.StringIO(output), sep='\s+')['n_eff'].drop('Number')
+    
+    return neff

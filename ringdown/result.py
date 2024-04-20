@@ -27,13 +27,14 @@ _DATAFRAME_PARAMETERS = ['m', 'chi', 'f', 'g', 'a', 'phi', 'theta', 'ellip']
 class Result(az.InferenceData):
     """Result from a ringdown fit."""
 
-    def __init__(self, *args, config=None, **kwargs):
+    def __init__(self, *args, config=None, produce_h_det=True, **kwargs):
         # get config file input if provided
         if len(args) == 1 and isinstance(args[0], az.InferenceData):
             # modeled after from_netcdf
             # https://python.arviz.org/en/stable/_modules/arviz/data/inference_data.html#
             # az.InferenceData(fit.result.attrs, **{k: getattr(fit.result, k) for k in fit.result._groups})
-            super().__init__(args[0].attrs, **{k: getattr(args[0], k) for k in args[0]._groups})
+            super().__init__(args[0].attrs, **{k: getattr(args[0], k)
+                                               for k in args[0]._groups})
         else:
             super().__init__(*args, **kwargs)
         self._whitened_templates = None
@@ -52,6 +53,21 @@ class Result(az.InferenceData):
             self._config_dict = utils.load_config_dict(config)
         else:
             self._config_dict = None
+        # produce h_det (i.e., sum of all modes) if not already present
+        if produce_h_det:
+            self.h_det
+    
+    @property
+    def h_det(self):
+        """Alias for `posterior.h_det`, in case this is not already present,
+        it gets computed from individual modes."""
+        if 'h_det' in self.posterior:
+            return self.posterior.h_det
+        elif 'h_det_mode' in self.posterior:
+            self.posterior['h_det'] = self.posterior.h_det_mode.sum('mode')
+            return self.posterior.h_det
+        else:
+            return None
         
     @property
     def default_label_format(self) -> dict:
@@ -252,12 +268,12 @@ class Result(az.InferenceData):
         Corresponding unwhitened templates can be obtained from posterior by
         doing::
 
-          result.posterior.h_det.stack(sample=('chain', 'draw'))
+          result.h_det.stack(sample=('chain', 'draw'))
         """
         if self._whitened_templates is None:
             # get reconstructions from posterior, shaped as (chain, draw, ifo, time)
             # and stack into (ifo, time, sample)
-            hs = self.posterior.h_det.stack(samples=('chain', 'draw'))
+            hs = self.h_det.stack(samples=('chain', 'draw'))
             self._whitened_templates = self.whiten(hs)
         return self._whitened_templates
 
@@ -346,7 +362,7 @@ class Result(az.InferenceData):
         residuals_stacked = {}
         for ifo in self.ifos.values.astype(str):
             r = self.constant_data.strain.sel(ifo=ifo) -\
-                self.posterior.h_det.sel(ifo=ifo)
+                self.h_det.sel(ifo=ifo)
             residuals[ifo] = r.transpose('chain', 'draw', 'time_index')
             residuals_stacked[ifo] = residuals[ifo].stack(sample=['chain',
                                                                   'draw'])
@@ -487,6 +503,8 @@ class Result(az.InferenceData):
         """
         if mode is None:
             key = 'h_det'
+            # make sure h_det exists
+            self.h_det
         else:
             mode = indexing.get_mode_coordinate(mode)
             if mode not in self.posterior.mode:
@@ -527,6 +545,8 @@ class Result(az.InferenceData):
         """
         if mode is None:
             key = 'h_det'
+            # make sure h_det exists
+            self.h_det
         else:
             mode = indexing.get_mode_coordinate(mode)
             if mode not in self.posterior.mode:
