@@ -156,7 +156,7 @@ class Series(pd.Series):
                 logging.warning("specify `float_precision='round_trip'` or risk "
                                 "strange errors due to precission loss")
             if kind == 'csv':
-                cls_kws['header'] = kws.get('header', None)
+                read_kws['header'] = kws.get('header', None)
             # squeeze if needed (since sequeeze argument no longer accepted)
             d = read_func(path, **read_kws)
             if squeeze and not isinstance(d, pd.Series):
@@ -199,6 +199,8 @@ class Series(pd.Series):
             interp_func = interp1d(self.index, self.values, **kws)
             interp = interp_func(new_index)
         info = {a: getattr(self, a) for a in getattr(self, '_metadata', [])}
+        if '_name' in info:
+            info['name'] = info.pop('_name')
         return self._constructor(interp, index=new_index, **info)
     interpolate_to_index.__doc__ = interpolate_to_index.__doc__.format(_DEF_INTERP_KWS)
 
@@ -237,6 +239,19 @@ class TimeSeries(Series):
     def time(self) -> pd.Index:
         """Time stamps."""
         return self.index
+    
+    def to_frequency_series(self):
+        """Fourier transform time series to frequency series.
+
+        Returns
+        -------
+        freq_series : FrequencySeries
+            frequency series.
+        """
+        freq = np.fft.rfftfreq(len(self), self.delta_t)
+        data = np.fft.rfft(self) * self.delta_t
+        info = {a: getattr(self, a) for a in getattr(self, '_metadata', [])}
+        return FrequencySeries(data, index=freq, **info)
 
     def interpolate_to_index(self, time=None, t0=None, duration=None,
                              fsamp=None, **kws):
@@ -315,6 +330,21 @@ class FrequencySeries(Series):
     def freq(self) -> pd.Index:
         """Frequency stamps."""
         return self.index
+    
+    def to_time_series(self, epoch=0.):
+        """Inverse Fourier transform frequency series to time series.
+
+        Returns
+        -------
+        time_series : TimeSeries
+            time series.
+        """
+        data = np.fft.irfft(self) / self.delta_t
+        time = np.arange(len(data)) * self.delta_t + epoch
+        info = {a: getattr(self, a) for a in getattr(self, '_metadata', [])}
+        if '_name' in info:
+            info['name'] = info.pop('_name')
+        return TimeSeries(data, index=time, **info)
 
     def interpolate_to_index(self, freq=None, fmin=None, fmax=None,
                              delta_f=None, **kws):
@@ -346,6 +376,7 @@ class FrequencySeries(Series):
             N = (1 + (fmax-fmin)/delta_f) or len(self.freq)
             freq = np.linspace(fmin, fmax, int(N))
         return super(FrequencySeries, self).interpolate_to_index(freq, **kws)
+
 
 class Data(TimeSeries):
     """Container for time-domain strain data from a given GW detector.
@@ -493,7 +524,6 @@ class Data(TimeSeries):
 
         return Data(cond_data, index=cond_time, ifo=self.ifo)
 
-
     def get_acf(self, **kws):
         """Estimate ACF from data, see :meth:`AutoCovariance.from_data`.
         """
@@ -503,6 +533,51 @@ class Data(TimeSeries):
         """Estimate PSD from data, see :meth:`PowerSpectrum.from_data`.
         """
         return PowerSpectrum.from_data(self, **kws)
+    
+    @classmethod
+    def from_psd(cls, psd : PowerSpectrum,
+                 freq : np.ndarray | None = None,
+                 rng : int | np.random.Generator | None = None,
+                 epoch : float = 0.,
+                 **kws):
+        """Generate data from a given PSD.
+
+        Arguments
+        ---------
+        psd : PowerSpectrum
+            power spectral density.
+
+        Returns
+        -------
+        data : Data
+            time series data.
+        """
+        if isinstance(rng, int):
+            rng = np.random.default_rng(rng)
+        elif rng is None:
+            rng = np.random.default_rng()
+        
+        if freq is None:
+            freq = psd.freq
+        psd = psd.interpolate_to_index(freq)
+        if min(freq) > 0:
+            logging.warning("array does not include zero frequency "
+                            f"(flow = {min(freq)}")
+        
+        delta_f = freq[1] - freq[0]
+        assert np.isclose(delta_f, psd.delta_f), "frequency spacing must match PSD"
+        
+        # this is the variance of LIGO noise given the definition of the likelihood function
+        var = psd / (4.*delta_f)
+        noise_real = rng.normal(size=len(freq), loc=0, scale=np.sqrt(var))
+        noise_imag = rng.normal(size=len(freq), loc=0, scale=np.sqrt(var))
+        
+        noise_fd = FrequencySeries(noise_real + 1j*noise_imag, index=freq)
+        noise_td = noise_fd.to_time_series(epoch=epoch)
+        
+        ifo = kws.pop('ifo', getattr(psd, 'ifo', None))
+        return Data(noise_td, ifo=ifo, **kws)
+        
 
 
 class PowerSpectrum(FrequencySeries):
@@ -547,16 +622,19 @@ class PowerSpectrum(FrequencySeries):
             power specturm estimate.
         """
         fs = kws.pop('fs', 1/getattr(data, 'delta_t', 1))
-        kws['nperseg'] = kws.get('nperseg', fs)  # default to 1s segments
-        kws['average'] = kws.get('average', 'median') # default to median-averaged, not mean-averaged to handle outliers.
+        # default to 1s segments
+        kws['nperseg'] = kws.get('nperseg', fs)  
+        # default to median-averaged, not mean-averaged to handle outliers.
+        kws['average'] = kws.get('average', 'median') 
         freq, psd = sig.welch(data, fs=fs, **kws)
         p = cls(psd, index=freq)
         if flow is not None or fhigh is not None:
-            p.flatten(flow=flow, fhigh=fhigh, patch_level=patch_level, inplace=True)
+            p.flatten(flow=flow, fhigh=fhigh, patch_level=patch_level,
+                      inplace=True)
         return p
 
     @classmethod
-    def from_lalsimulation(cls, func, freq, flow=0, **kws):
+    def from_lalsimulation(cls, func, freq, flow=0, pad_value=None **kws):
         """Obtain :class:`PowerSpectrum` from LALSimulation function.
 
         Arguments
@@ -582,7 +660,7 @@ class PowerSpectrum(FrequencySeries):
             import lalsimulation as lalsim
             func = getattr(lalsim, func)
         f_ref = freq[np.argmin(abs(freq - flow))]
-        p_ref = func(f_ref)
+        p_ref = func(f_ref) if pad_value is None else pad_value
         def get_psd_bin(f):
             if f > flow:
                 return func(f)
@@ -652,6 +730,20 @@ class PowerSpectrum(FrequencySeries):
         """
         rho = 0.5*np.fft.irfft(self) / self.delta_t
         return AutoCovariance(rho, delta_t=self.delta_t)
+    
+    def draw_fd_noise(self):
+        """Draw noise from the PSD.
+
+        Returns
+        -------
+        noise : FrequencySeries
+            noise realization.
+        """
+        n = len(self)
+        std = np.sqrt(self / (4*self.delta_f))
+        noise_real = np.random.normal(size=n, loc=0, scale=std)
+        noise_imag = np.random.normal(size=n, loc=0, scale=std)
+        return FrequencySeries(noise_real + 1j*noise_imag, index=self.index)
 
 
 class AutoCovariance(TimeSeries):
