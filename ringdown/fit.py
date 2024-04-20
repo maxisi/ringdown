@@ -350,6 +350,16 @@ class Fit(object):
                 model_opts['dg_min'] = - model_opts.pop('dtau_max') * perturb_tau
             if 'dtau_min' in model_opts:
                 model_opts['dg_max'] = - model_opts.pop('dtau_min') * perturb_tau
+                
+        if 'order_fs' in model_opts:
+            warnings.warn("order_fs is deprecated, use `mode_ordering = 'f'` instead")
+            if bool(model_opts.pop('order_fs')):
+                model_opts['mode_ordering'] = 'f'
+            
+        if 'order_gammas' in model_opts:
+            warnings.warn("order_gammas is deprecated, use `mode_ordering = 'g'` instead")
+            if bool(model_opts.pop('order_gammas')):
+                model_opts['mode_ordering'] = 'g'
             
         # create fit object
         fit = cls(**model_opts)
