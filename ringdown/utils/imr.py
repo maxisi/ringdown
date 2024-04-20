@@ -1,3 +1,5 @@
+__all__ = ['IMRResult']
+
 import numpy as np
 import pandas as pd
 from .. import indexing
@@ -27,7 +29,7 @@ class IMRResult(pd.DataFrame):
 
     @property
     def _constructor(self):
-        return pd.DataFrame
+        return IMRResult
     
     @property
     def final_mass(self):
@@ -61,33 +63,56 @@ class IMRResult(pd.DataFrame):
             g_keys.append(g_key)
         return self[f_keys + g_keys]
     
-    def compute_remnant_parameters(self, f_ref=-1, model='NRSur7dq4Remnant',
-                                   nproc=None, suppress_warnings=True, 
-                                   force=False):
+    def get_remnant_parameters(self, f_ref : float = -1,
+                               model : str = 'NRSur7dq4Remnant',
+                               nproc : int | None = None,
+                               force : bool = False):
+        """Compute remnant parameters using the LALSuite nrfits module.
+        
+        Arguments
+        ---------
+        f_ref : float
+            Reference frequency for the remnant parameters in Hz; if -1, uses
+            earliest point in the waveform.
+        model : str
+            Name of the model to use for the remnant parameters; default is
+            'NRSur7dq4Remnant'.
+        nproc : int | None
+            Number of processes to use for parallel computation; if None, uses
+            serial computation.
+        force : bool
+            If True, forces recomputation of the remnant parameters if already
+            present in the DataFrame.
+            
+        Returns
+        -------
+        df : IMRResult
+            view of DataFrame columns with the remnant parameters: 'final_mass'
+            and 'final_spin'.
+        """
+            
         keys = ['final_mass', 'final_spin']
         if all([k in self.columns for k in keys]) and not force:
             return self[keys]
         
-        filter = 'ignore' if suppress_warnings else 'default'
-
         if nproc is None:
             r = np.vectorize(get_remnant)(self['mass_1']*lal.MSUN_SI, 
-                                          self['mass_2']*lal.MSUN_SI,
-                                          self['spin_1x'], self['spin_1y'],
-                                          self['spin_1z'], self['spin_2x'],
-                                          self['spin_2y'], self['spin_2z'],
-                                          f_ref, model)
+                                        self['mass_2']*lal.MSUN_SI,
+                                        self['spin_1x'], self['spin_1y'],
+                                        self['spin_1z'], self['spin_2x'],
+                                        self['spin_2y'], self['spin_2z'],
+                                        f_ref, model)
         else:
             with mp.Pool(nproc) as p:
                 r = p.starmap(get_remnant, zip(self['mass_1']*lal.MSUN_SI, 
-                                               self['mass_2']*lal.MSUN_SI,
-                                               self['spin_1x'], self['spin_1y'],
-                                               self['spin_1z'], self['spin_2x'],
-                                               self['spin_2y'], self['spin_2z'],
-                                               [f_ref]*len(self),
-                                               [model]*len(self)))
+                                            self['mass_2']*lal.MSUN_SI,
+                                            self['spin_1x'], self['spin_1y'],
+                                            self['spin_1z'], self['spin_2x'],
+                                            self['spin_2y'], self['spin_2z'],
+                                            [f_ref]*len(self),
+                                            [model]*len(self)))
                 
-        r = np.array(r)
+        r = np.array(r).reshape(len(self), 2)
         self['final_mass'] = r[:,0] / lal.MSUN_SI
         self['final_spin'] = r[:,1]
         return self[keys]

@@ -70,6 +70,15 @@ class Result(az.InferenceData):
             return None
         
     @property
+    def h_det_mode(self):
+        """Alias for `posterior.h_det_mode`, in case this is not already present,
+        it gets computed from the sum of all modes."""
+        if 'h_det_mode' in self.posterior:
+            return self.posterior.h_det_mode
+        else:
+            return None
+        
+    @property
     def default_label_format(self) -> dict:
         """Default formatting options for DataFrames.
         """
@@ -313,10 +322,7 @@ class Result(az.InferenceData):
             snrs = opt_ifo_snrs
         else:
             # get analysis data, shaped as (ifo, time)
-            if "strain" in self.observed_data:
-                ds = self.observed_data.strain
-            elif "strain" in self.constant_data:
-                ds = self.constant_data.strain
+            ds = self.observed_strain
             # whiten it with the Cholesky factors, so shape will remain (ifo, time)
             wds = self.whiten(ds)
             # take inner product between whitened template and data, and normalize
@@ -326,6 +332,15 @@ class Result(az.InferenceData):
             return np.linalg.norm(snrs, axis=0)
         else:
             return snrs
+        
+    @property
+    def observed_strain(self):
+        if "strain" in self.observed_data:
+            return self.observed_data.strain
+        elif "strain" in self.constant_data:
+            return self.constant_data.strain
+        else:
+            raise KeyError("No observed strain found in result.")
 
     @property
     def waic(self) -> az.ELPDData :
@@ -361,7 +376,7 @@ class Result(az.InferenceData):
         residuals = {}
         residuals_stacked = {}
         for ifo in self.ifos.values.astype(str):
-            r = self.constant_data.strain.sel(ifo=ifo) -\
+            r = self.observed_strain.sel(ifo=ifo) -\
                 self.h_det.sel(ifo=ifo)
             residuals[ifo] = r.transpose('chain', 'draw', 'time_index')
             residuals_stacked[ifo] = residuals[ifo].stack(sample=['chain',
