@@ -254,7 +254,7 @@ class TimeSeries(Series):
         return FrequencySeries(data, index=freq, **info)
 
     def interpolate_to_index(self, time=None, t0=None, duration=None,
-                             fsamp=None, **kws):
+                             delta_t=None, fsamp=None, **kws):
         """Reinterpolate the :class:`TimeSeries` to new index. Inherits from
         :func:`Series.interpolate_to_index`.
 
@@ -278,6 +278,11 @@ class TimeSeries(Series):
             interpolated series
         """
         if time is None:
+            if fsamp is None and delta_t is not None:
+                fsamp = 1/delta_t
+            elif fsamp is None:
+                raise ValueError("must provide only one of delta_t or fsamp")
+                
             t0 = t0 or self.time.min()
             duration = duration or (self.time.max() - t0)
             fsamp = fsamp or self.fsamp
@@ -346,9 +351,8 @@ class FrequencySeries(Series):
             info['name'] = info.pop('_name')
         return TimeSeries(data, index=time, **info)
 
-    def interpolate_to_index(self, freq=None, fmin=None, fmax=None,
-                             delta_f=None, **kws):
-        """Reinterpolate the :class:`FrequencySeries` to new index. Inherits
+    def interpolate_to_index(self, freq=None, delta_f=None, fmin=None, **kws):
+        """Interpolate the :class:`FrequencySeries` to new index. Inherits
         from :func:`Series.interpolate_to_index`.
 
         Arguments
@@ -370,11 +374,8 @@ class FrequencySeries(Series):
             interpolated series
         """
         if freq is None:
-            fmin = fmin or self.freq.min()
-            fmax = fmax or self.freq.max()
-            delta_f = delta_f or self.delta_f
-            N = (1 + (fmax-fmin)/delta_f) or len(self.freq)
-            freq = np.linspace(fmin, fmax, int(N))
+            fmin = self.freq.min() if fmin is None else fmin
+            freq = np.arange(len(self))*(delta_f or self.delta_f) + fmin
         return super(FrequencySeries, self).interpolate_to_index(freq, **kws)
 
 
@@ -535,8 +536,7 @@ class Data(TimeSeries):
         return PowerSpectrum.from_data(self, **kws)
     
     @classmethod
-    def from_psd(cls, psd : PowerSpectrum,
-                 freq : np.ndarray | None = None,
+    def from_psd(cls, psd : 'PowerSpectrum',
                  rng : int | np.random.Generator | None = None,
                  epoch : float = 0.,
                  **kws):
@@ -572,7 +572,7 @@ class Data(TimeSeries):
         noise_real = rng.normal(size=len(freq), loc=0, scale=np.sqrt(var))
         noise_imag = rng.normal(size=len(freq), loc=0, scale=np.sqrt(var))
         
-        noise_fd = FrequencySeries(noise_real + 1j*noise_imag, index=freq)
+        noise_fd = psd.draw_fd_noise(freq=freq, delta_f=delta_f, rng=rng)
         noise_td = noise_fd.to_time_series(epoch=epoch)
         
         ifo = kws.pop('ifo', getattr(psd, 'ifo', None))
@@ -634,7 +634,7 @@ class PowerSpectrum(FrequencySeries):
         return p
 
     @classmethod
-    def from_lalsimulation(cls, func, freq, flow=0, pad_value=None **kws):
+    def from_lalsimulation(cls, func, freq, flow=0, fill_value=None, **kws):
         """Obtain :class:`PowerSpectrum` from LALSimulation function.
 
         Arguments
@@ -660,21 +660,22 @@ class PowerSpectrum(FrequencySeries):
             import lalsimulation as lalsim
             func = getattr(lalsim, func)
         f_ref = freq[np.argmin(abs(freq - flow))]
-        p_ref = func(f_ref) if pad_value is None else pad_value
+        p_ref = func(f_ref) if fill_value is None else fill_value
         def get_psd_bin(f):
             if f > flow:
                 return func(f)
             else:
-                return cls._pad_low_freqs(f, f_ref, p_ref)
+                return cls._patch_low_freqs(f, f_ref, p_ref)
         psd = cls(np.vectorize(get_psd_bin)(freq), index=freq)
         return psd
         
     @staticmethod
-    def _pad_low_freqs(f, f_ref, psd_ref):
+    def _patch_low_freqs(f, f_ref, psd_ref):
         # made up function to taper smoothly
         return psd_ref + psd_ref*(f_ref-f)*np.exp(-(f_ref-f))/3
 
-    def flatten(self, flow, fhigh=None, patch_level=None, inplace=False):
+    def flatten(self, flow, fhigh=None, patch_level=None, inplace=False,
+                fill_value=None):
         """Modify PSD at low or high frequencies so that it flattens to a
         constant.
 
@@ -690,6 +691,8 @@ class PowerSpectrum(FrequencySeries):
             if a float, the same value is used in both ends; if `None`, will
             patch with 10x the maximum PSD value in the respective patched
             region.
+        fill_value : float
+            an alias for patch level for consistency with interp1d
         inplace : bool
             modify PSD in place; otherwise, returns copy. Defaults to `False`.
 
@@ -705,6 +708,8 @@ class PowerSpectrum(FrequencySeries):
         flow = max(flow or min(f), min(f))
         fhigh = min(fhigh or max(f), max(f))
         # create tuple (patch_level_low, patch_level_high)
+        if fill_value is not None:
+            patch_level = fill_value
         if patch_level is None:
             patch_level = (10*max(psd[f < flow]), 10*max(psd[f >= fhigh]))
         else:
@@ -731,19 +736,36 @@ class PowerSpectrum(FrequencySeries):
         rho = 0.5*np.fft.irfft(self) / self.delta_t
         return AutoCovariance(rho, delta_t=self.delta_t)
     
-    def draw_fd_noise(self):
-        """Draw noise from the PSD.
+    def draw_fd_noise(self, freq : np.ndarray | None = None,
+                      delta_f : float | None = None,
+                      rng : int | np.random.Generator | None = None,
+                      **kws):
+        """Draw Fourier-domain noise from the PSD.
 
         Returns
         -------
         noise : FrequencySeries
             noise realization.
         """
-        n = len(self)
-        std = np.sqrt(self / (4*self.delta_f))
+        if isinstance(rng, int):
+            rng = np.random.default_rng(rng)
+        elif rng is None:
+            rng = np.random.default_rng()
+        if freq is None and delta_f is None:
+            freq = self.freq
+        elif delta_f is not None and freq is not None:
+            raise ValueError("provide either freq or delta_f, not both")
+        psd = self.interpolate_to_index(freq, delta_f **kws)
+        
+        # draw noise with the correct variance corresponding to the LIGO
+        # definition of the PSD (cf. GW likelihood)
+        n = len(freq)
+        std = np.sqrt(psd / (4*self.delta_f))
         noise_real = np.random.normal(size=n, loc=0, scale=std)
         noise_imag = np.random.normal(size=n, loc=0, scale=std)
-        return FrequencySeries(noise_real + 1j*noise_imag, index=self.index)
+        
+        return FrequencySeries(noise_real + 1j*noise_imag,
+                               index=freq, name=self.name)
 
 
 class AutoCovariance(TimeSeries):
