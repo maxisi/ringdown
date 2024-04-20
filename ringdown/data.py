@@ -26,7 +26,7 @@ class Series(pd.Series):
         return Series
 
     @classmethod
-    def read(cls, path, kind=None, **kws):
+    def read(cls, path : str | None = None, kind : str | None = None, **kws):
         """Load data from disk.
         
         If ``kind`` is `gwosc` assumes input is an strain HDF5 file downloaded
@@ -41,17 +41,35 @@ class Series(pd.Series):
         Arguments
         ---------
         path : str
-            path to file
+            path to file, or None if fetching remote data
         kind : str
-            kind of file to load: `gwsoc`, `hdf` or `csv`
+            kind of file to load: `gwsoc`, `hdf` or `csv`, or `discover` to
+            automatically discover remote or local data with GWpy.
 
         Returns
         -------
         series : Series
             series loaded from disk
         """
+        if path is None and kind is None:
+            raise ValueError("must provide either path or kind")
+        
         kind = (kind or '').lower()
         channel = kws.pop('channel', None)
+        start = kws.pop('start', None)
+        end = kws.pop('end', None)
+        t0 = kws.pop('t0', None)
+        seglen = kws.pop('seglen', None)
+        if start is None and end is None and t0 is not None and path is None:
+            if seglen is None:
+                raise ValueError("must provide seglen if t0 is provided")
+            start = t0 - seglen/2
+            end = t0 + seglen/2
+            logging.info(f"fetching {seglen} s long segment centered on {t0}"
+                         f" [{start}, {end}]")
+        if start is not None and end is not None and path is not None:
+            logging.warning("seglen options ignored when loading from disk")
+        
         if not kind:
             # attempt to guess filetype
             ext = os.path.splitext(path)[1].lower().strip('.')
@@ -63,22 +81,63 @@ class Series(pd.Series):
                 raise ValueError("unrecognized extension: {}".format(ext))
 
         if kind == 'gwosc':
-            with h5py.File(path, 'r') as f:
-                t0 = f['meta/GPSstart'][()]
-                T = f['meta/Duration'][()]
-                h = f['strain/Strain'][:]
-                dt = T/len(h)
-                time = t0 + dt*np.arange(len(h))
-                return cls(h, index=time, **kws)
+            if path is not None and os.path.exists(path):
+                logging.info("loading GWOSC file from disk")
+                # read GWOSC HDF5 file from disk
+                with h5py.File(path, 'r') as f:
+                    t0 = f['meta/GPSstart'][()]
+                    T = f['meta/Duration'][()]
+                    h = f['strain/Strain'][:]
+                    dt = T/len(h)
+                    time = t0 + dt*np.arange(len(h))
+                    return cls(h, index=time, **kws)
+            else:
+                logging.info("GWOSC file not found, attempting to fetch from server")
+                # first check that we have GWpy, which is an optional dependency
+                from gwpy.timeseries import TimeSeries
+                if start is None or end is None:
+                    raise ValueError("need start and end times to fetch from GWOSC")
+                ifo = kws.get('ifo', None)
+                if ifo is None:
+                    raise ValueError("ifo must be provided to fetch from GWOSC")
+                # get arguments accepted by TimeSeries.fetch_open_data()
+                ts_args = list(inspect.signature(TimeSeries.fetch_open_data).parameters.keys())
+                kwargs = list(kws.keys())
+                ts_kws = {k: kws.pop(k) for k in ts_args if k in kwargs 
+                          and k not in['ifo', 'start', 'end']}
+                ts = TimeSeries.fetch_open_data(ifo, start, end, **ts_kws)
+                # GWpy puts units on its times, we remove them by redefining the index
+                return cls(ts.value, index=np.array(ts.times), **kws)
+            
+        elif kind == 'discover':
+            logging.info("attempting to discover remote or local data using GWpy")
+            # first check that we have GWpy, which is an optional dependency
+            from gwpy.timeseries import TimeSeries
+            logging.info("attempting to discover remote or local data using NDS2/FrameCPP")
+            # validate all arguments
+            if channel is None:
+                raise KeyError('channel must be specified for frame files')
+            if start is None or end is None:
+                raise ValueError("start and end times must be provided to fetch from GWOSC")
+            # get arguments accepted by TimeSeries.get(), fetch() and find()
+            ts_args = list(inspect.signature(TimeSeries.get).parameters.keys())
+            ts_args += list(inspect.signature(TimeSeries.fetch).parameters.keys())
+            ts_args += list(inspect.signature(TimeSeries.find).parameters.keys())
+            kwargs = list(kws.keys())
+            ts_kws = {k: kws.pop(k) for k in ts_args if k in kwargs
+                      and k not in ['channel', 'start', 'end']}
+            # fetch data and form Data object
+            ts = TimeSeries.get(channel, start, end, **ts_kws)
+            return cls(ts.value, index=np.array(ts.times), **kws)
+        
         elif kind == 'frame':
             if channel is None:
                 raise KeyError('channel must be specificed for frame files')
-            try:
-                from gwpy.timeseries import TimeSeries
-            except ImportError:
-                raise ImportError("cannot load frame files without gwpy")
+            from gwpy.timeseries import TimeSeries
             ts = TimeSeries.read(path, channel)
-            return cls(ts.value, index=np.array(ts.times), **kws) # gwpy puts units on its times, we remove them.
+            # GWpy puts units on its times, we remove them by redefining the index
+            return cls(ts.value, index=np.array(ts.times), **kws)
+        
         elif kind in ['hdf', 'csv']:
             read_func = getattr(pd, 'read_{}'.format(kind))
             # get list of arguments accepted by pandas read function in order
@@ -105,6 +164,12 @@ class Series(pd.Series):
             return cls(d, **cls_kws)
         else:
             raise ValueError("unrecognized file kind: {}".format(kind))
+    
+    @classmethod
+    def fetch(cls, *args, **kws):
+        """Alias to :meth:`Series.read`.
+        """
+        return cls.read(*args, **kws)
 
     _DEF_INTERP_KWS = dict(kind='cubic', fill_value=0, bounds_error=False)
 

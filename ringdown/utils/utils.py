@@ -46,7 +46,7 @@ def np2(x):
         p = p << 1
     return p
 
-def get_path_dict_from_pattern(path, ifos=None):
+def get_dict_from_pattern(path, ifos=None):
         if isinstance(path, str):
             path_dict = try_parse(path)
             if isinstance(path_dict, str):

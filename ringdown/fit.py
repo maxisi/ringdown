@@ -872,7 +872,8 @@ class Fit(object):
         if acf is not None:
             self.acfs[data.ifo] = acf
     
-    def load_data(self, path, ifos=None, channel=None, **kws):
+    def load_data(self, path=None, ifos=None, channel=None,
+                  frametype=None, **kws):
         """Load data from disk.
 
         Additional arguments are passed to :meth:`ringdown.data.Data.read`.
@@ -894,27 +895,48 @@ class Fit(object):
         channel : dict, str
             dictionary of channel names indexed by interferometer keys, or
             channel name string replacement pattern, e.g.,
-            ``'H1:GWOSC-16KHZ_R1_STRAIN'`` where `i` and `ifo` will be
+            ``'{ifo}:GWOSC-16KHZ_R1_STRAIN'`` where `i` and `ifo` will be
             respectively replaced by the first letter and key for each detector
             listed in `ifos` (e.g., `H` and `H1` for LIGO Hanford).  Only used
             when `kind = 'frame'`.
+            
+        frametype : dict, str
+            dictionary of frame types indexed by interferometer keys, or frame
+            type string replacement pattern, e.g., `'H1_HOFT_C00'`, with 
+            same replacement rules as for `channel` and `path`. Only used when
+            `kind = 'discover'`.
         """
         # record all arguments
         settings = {k: v for k,v in locals().items() if k != 'self'}
         for k, v in settings.pop('kws').items():
             settings[k] = v
         
+        if ifos is None:
+            if hasattr(path, 'keys'):
+                ifos = list(path.keys())
+            else:
+                raise ValueError("no ifos provided")
+        
         # TODO: add ability to generate synthetic data here?
-        path_dict = utils.get_path_dict_from_pattern(path, ifos)
+        if path is not None:
+            path_dict = utils.get_dict_from_pattern(path, ifos)
+        else:
+            path_dict = {k: None for k in ifos}
+        
         if channel is not None:
-            channel_dict = utils.get_path_dict_from_pattern(channel, ifos)
+            channel_dict = utils.get_dict_from_pattern(channel, ifos)
         else:
             channel_dict = {k: None for k in path_dict.keys()}
+        
+        if frametype is not None:
+            frametype_dict = utils.get_dict_from_pattern(frametype, ifos)
+        else:
+            frametype_dict = {k: None for k in path_dict.keys()}
             
         tslide = kws.pop('slide', {}) or {}
         for ifo, path in path_dict.items():
-            self.add_data(Data.read(path, ifo=ifo, 
-                                    channel=channel_dict[ifo], **kws))
+            self.add_data(Data.read(path, ifo=ifo, channel=channel_dict[ifo],
+                                    frametype=frametype_dict[ifo], **kws))
         # apply time slide if requested
         for i, dt in tslide.items():
             d = self.data[i]
@@ -994,7 +1016,7 @@ class Fit(object):
         
         if isinstance(path, str) and ifos is None:
             ifos = self.ifos
-        path_dict = utils.get_path_dict_from_pattern(path, ifos)
+        path_dict = utils.get_dict_from_pattern(path, ifos)
         for ifo, p in path_dict.items():
             if from_psd:
                 self.acfs[ifo] = PowerSpectrum.read(p, **kws).to_acf()
