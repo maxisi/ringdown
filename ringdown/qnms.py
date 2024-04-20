@@ -50,8 +50,8 @@ class KerrMode(object):
     def __call__(self, *args, **kwargs):
         f, tau = self.ftau(*args, **kwargs)
         return 2*np.pi*f - 1j/tau
-
-    def ftau(self, chi, m_msun=None, approx=False):
+    
+    def fgamma(self, chi, m_msun=None, approx=False):
         if approx:
             logchi = np.log1p(-chi)
             c = (chi, np.ones_like(chi), logchi, logchi**2, logchi**3, logchi**4)
@@ -63,10 +63,13 @@ class KerrMode(object):
                 return q(c)[0]
             f = np.sign(m)*np.vectorize(omega)(chi).real/(2*np.pi)
             g = abs(np.vectorize(omega)(chi).imag)
-        if m_msun:
+        if m_msun is not None:
            f /= (m_msun * T_MSUN)
            g /= (m_msun * T_MSUN)
-            
+        return f, g
+
+    def ftau(self, chi, m_msun=None, approx=False):
+        f, g = self.fgamma(chi, m_msun, approx)            
         return f, 1/g
 
 class ParameterLabel(object):
