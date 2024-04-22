@@ -251,11 +251,11 @@ class Signal(TimeSeries):
             timeshift_vector = np.exp(-2.*1j*np.pi*delay*frequencies)
             h = np.fft.irfft(h_fd * timeshift_vector, n=len(h))
         else:
-            idt = int(round(delay * self.fsamp))
+            idt = int(round(delay * self.f_samp))
             if interpolate:
                 hint = np.interp1d(self.time, h, kind='cubic', fill_value=0,
                                    bounds_error=False)
-                dt = (idt - delay*self.fsamp)*self.delta_t
+                dt = (idt - delay*self.f_samp)*self.delta_t
                 h = hint(self.time + dt)
             h = np.roll(h, idt)
         # record projection information

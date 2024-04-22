@@ -377,6 +377,7 @@ class Fit(object):
             ifos = [i.strip() for i in ifo_input.split(',')]
         path_input = config['data']['path']
         
+        # TODO: add ability to generate synthetic data here
         # NOTE: not popping in order to preserve original ConfigParser
         kws = {k: utils.try_parse(v) for k,v in config['data'].items()
                   if k not in ['ifos', 'path']}
@@ -927,21 +928,20 @@ class Fit(object):
             else:
                 raise ValueError("no ifos provided")
         
-        # TODO: add ability to generate synthetic data here?
-        if path is not None:
-            path_dict = utils.get_dict_from_pattern(path, ifos)
-        else:
+        if path is None:
             path_dict = {k: None for k in ifos}
+        else:
+            path_dict = utils.get_dict_from_pattern(path, ifos)
         
         if channel is not None:
-            channel_dict = utils.get_dict_from_pattern(channel, ifos)
-        else:
             channel_dict = {k: None for k in path_dict.keys()}
+        else:
+            channel_dict = utils.get_dict_from_pattern(channel, ifos)
         
         if frametype is not None:
-            frametype_dict = utils.get_dict_from_pattern(frametype, ifos)
-        else:
             frametype_dict = {k: None for k in path_dict.keys()}
+        else:
+            frametype_dict = utils.get_dict_from_pattern(frametype, ifos)
             
         tslide = kws.pop('slide', {}) or {}
         for ifo, path in path_dict.items():
