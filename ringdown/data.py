@@ -198,7 +198,7 @@ class Series(pd.Series):
         else:
             interp_func = interp1d(self.index, self.values, **kws)
             interp = interp_func(new_index)
-        info = {a: getattr(self, a) for a in getattr(self, '_metadata', [])}
+        info = {a: getattr(self, a, None) for a in getattr(self, '_metadata', [])}
         return self._constructor(interp, index=new_index, **info)
     interpolate_to_index.__doc__ = interpolate_to_index.__doc__.format(_DEF_INTERP_KWS)
 
@@ -426,6 +426,10 @@ class Data(TimeSeries):
         super(Data, self).__init__(*args, **kwargs)
         self.ifo = ifo
         self.info = info or {}
+        if ifo is None and len(args) > 0:
+            self.ifo = getattr(args[0], 'ifo', None)
+        if info is None and len(args) > 0:
+            self.info = getattr(args[0], 'info', None)
 
     @property
     def _constructor(self):
@@ -578,7 +582,6 @@ class Data(TimeSeries):
         data : Data
             time series data.
         """
-        _meta = {k: kws.pop(k, None) for k in getattr(cls, '_metadata', [])}
         noise_td = PowerSpectrum(psd).draw_noise_td(**kws)
         return Data(noise_td, **_meta)
         
@@ -600,6 +603,10 @@ class PowerSpectrum(FrequencySeries):
             self.index = np.arange(len(self))*delta_f
         self.ifo = ifo
         self.info = info or {}
+        if ifo is None and len(args) > 0:
+            self.ifo = getattr(args[0], 'ifo', None)
+        if info is None and len(args) > 0:
+            self.info = getattr(args[0], 'info', None)
 
     @property
     def _constructor(self):
@@ -659,11 +666,11 @@ class PowerSpectrum(FrequencySeries):
         # default to median-averaged, not mean-averaged to handle outliers.
         kws['average'] = kws.get('average', 'median') 
         freq, psd = sig.welch(data, fs=fs, **kws)
-        _meta = {a: getattr(data, a) for a in getattr(data, '_metadata', [])}
+        _meta = {a: getattr(data, a, None) for a in getattr(cls, '_metadata', [])}
         p = cls(psd, index=freq, **_meta)
         if f_min is not None or f_max is not None:
             p.patch(f_min=f_min, f_max=f_max, fill_value=fill_value,
-                    inplace=True)
+                    in_place=True)
         return p
 
     @classmethod
@@ -689,7 +696,6 @@ class PowerSpectrum(FrequencySeries):
         psd : PowerSpectrum
             power spectrum frequency series.
         """
-        _meta = {a: kws.pop(a, None) for a in getattr(cls, '_metadata', [])}
         if isinstance(func, str):
             import lalsimulation as lalsim
             func = getattr(lalsim, func)
@@ -700,14 +706,14 @@ class PowerSpectrum(FrequencySeries):
                 return func(f)
             else:
                 return cls._patch_low_freqs(f, f_ref, p_ref)
-        return cls(np.vectorize(get_psd_bin)(freq), index=freq, **_meta)
+        return cls(np.vectorize(get_psd_bin)(freq), index=freq, **kws)
         
     @staticmethod
     def _patch_low_freqs(f, f_ref, psd_ref):
         # made up function to taper smoothly
         return psd_ref + psd_ref*(f_ref-f)*np.exp(-(f_ref-f))/3
 
-    def patch(self, f_min, f_max=None, patch_level=None, inplace=False,
+    def patch(self, f_min, f_max=None, patch_level=None, in_place=False,
               fill_value=None):
         """Modify PSD at low or high frequencies so that it patches to a
         constant.
@@ -726,16 +732,16 @@ class PowerSpectrum(FrequencySeries):
             region.
         fill_value : float
             an alias for patch level for consistency with interp1d
-        inplace : bool
+        in_place : bool
             modify PSD in place; otherwise, returns copy. Defaults to `False`.
 
         Returns
         -------
         psd : PowerSpectrum, None
-            returns PSD only if not ``inplace``.
+            returns PSD only if not ``in_place``.
         """
         # copy array or operate in place
-        psd = self if inplace else self.copy()
+        psd = self if in_place else self.copy()
         # determine highest frequency
         f = psd.freq
         f_min = max(f_min or min(f), min(f))
@@ -754,7 +760,7 @@ class PowerSpectrum(FrequencySeries):
         psd[f < f_min] = patch_level[0]
         # patch high frequencies
         psd[f > f_max] = patch_level[1]
-        if not inplace:
+        if not in_place:
             return psd
 
     def to_acf(self):
@@ -767,7 +773,8 @@ class PowerSpectrum(FrequencySeries):
             autocovariance function.
         """
         rho = 0.5*np.fft.irfft(self) / self.delta_t
-        _meta = {a: getattr(self, a) for a in getattr(self, '_metadata', [])}
+        _meta = {a: getattr(self, a, None) 
+                 for a in getattr(self, '_metadata', [])}
         return AutoCovariance(rho, delta_t=self.delta_t, **_meta)
     
     def draw_noise_fd(self, freq : np.ndarray | None = None,
@@ -901,6 +908,11 @@ class AutoCovariance(TimeSeries):
             self.index = np.arange(len(self))*delta_t
         self.ifo = ifo
         self.info = info or {}
+        if ifo is None and len(args) > 0:
+            self.ifo = getattr(args[0], 'ifo', None)
+        if info is None and len(args) > 0:
+            self.info = getattr(args[0], 'info', None)
+            
 
     @property
     def _constructor(self):
@@ -934,7 +946,6 @@ class AutoCovariance(TimeSeries):
         acf : AutoCovariance
             estimate of the autocovariance function.
         """
-        _meta = {a: kws.pop(a, None) for a in getattr(cls, '_metadata', [])}
         dt = getattr(d, 'delta_t', delta_t)
         n = n or len(d)
         if method.lower() == 'td':
@@ -960,7 +971,6 @@ class AutoCovariance(TimeSeries):
         # acf = 0.5*np.fft.irfft(psd) / delta_t
         psd = 2 * self.delta_t * abs(np.fft.rfft(self))
         freq = np.fft.rfftfreq(len(self), d=self.delta_t)
-        _meta = {a: getattr(self, a) for a in getattr(self, '_metadata', [])}
         return PowerSpectrum(psd, index=freq, **_meta)
 
     @property
@@ -1026,9 +1036,9 @@ class AutoCovariance(TimeSeries):
         w_data = sl.solve_triangular(L, data, lower=True)
         # return same type as input
         if isinstance(data, Data):
-            _meta = {a: getattr(data, a) 
+            _meta = {a: getattr(data, a, None) 
                      for a in getattr(data, '_metadata', [])}
-            w_data = Data(w_data, index=data.index, ifo=data.ifo, **_meta)
+            w_data = Data(w_data, index=data.index, **_meta)
         elif isinstance(data, TimeSeries):
             w_data = TimeSeries(w_data, index=data.index)
         return w_data
