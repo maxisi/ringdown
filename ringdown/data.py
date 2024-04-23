@@ -56,6 +56,7 @@ class Series(pd.Series):
         
         kind = (kind or '').lower()
         channel = kws.pop('channel', None)
+        frametype = kws.pop('frametype', None)
         start = kws.pop('start', None)
         end = kws.pop('end', None)
         t0 = kws.pop('t0', None)
@@ -116,9 +117,9 @@ class Series(pd.Series):
             logging.info("attempting to discover remote or local data using NDS2/FrameCPP")
             # validate all arguments
             if channel is None:
-                raise KeyError('channel must be specified for frame files')
+                raise KeyError('channel must be specified to discover')
             if start is None or end is None:
-                raise ValueError("start and end times must be provided to fetch from GWOSC")
+                raise ValueError("start and end times must be provided to discover data")
             # get arguments accepted by TimeSeries.get(), fetch() and find()
             ts_args = list(inspect.signature(TimeSeries.get).parameters.keys())
             ts_args += list(inspect.signature(TimeSeries.fetch).parameters.keys())
@@ -126,13 +127,14 @@ class Series(pd.Series):
             kwargs = list(kws.keys())
             ts_kws = {k: kws.pop(k) for k in ts_args if k in kwargs
                       and k not in ['channel', 'start', 'end']}
+            ts_kws['frametype'] = frametype
             # fetch data and form Data object
             ts = TimeSeries.get(channel, start, end, **ts_kws)
             return cls(ts.value, index=np.array(ts.times), **kws)
         
         elif kind == 'frame':
             if channel is None:
-                raise KeyError('channel must be specificed for frame files')
+                raise KeyError('channel must be specified for frame files')
             from gwpy.timeseries import TimeSeries
             ts = TimeSeries.read(path, channel)
             # GWpy puts units on its times, we remove them by redefining the index
@@ -154,7 +156,7 @@ class Series(pd.Series):
             cls_kws = {k: v for k,v in kws.items() if k not in read_vars}
             if kind == 'csv' and 'float_precision' not in read_kws:
                 logging.warning("specify `float_precision='round_trip'` or risk "
-                                "strange errors due to precission loss")
+                                "strange errors due to precision loss")
             if kind == 'csv':
                 read_kws['header'] = kws.get('header', None)
             # squeeze if needed (since sequeeze argument no longer accepted)
