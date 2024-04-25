@@ -515,15 +515,15 @@ class Data(TimeSeries):
 
         fny = 0.5/(raw_time[1] - raw_time[0])
         # Filter
-        if f_min and not fhigh:
+        if f_min and not f_max:
             b, a = sig.butter(4, f_min/fny, btype='highpass', output='ba')
-        elif fhigh and not f_min:
-            b, a = sig.butter(4, fhigh/fny, btype='lowpass', output='ba')
-        elif f_min and fhigh:
-            b, a = sig.butter(4, (f_min/fny, fhigh/fny), btype='bandpass',
+        elif f_max and not f_min:
+            b, a = sig.butter(4, f_max/fny, btype='lowpass', output='ba')
+        elif f_min and f_max:
+            b, a = sig.butter(4, (f_min/fny, f_max/fny), btype='bandpass',
                               output='ba')
 
-        if f_min or fhigh:
+        if f_min or f_max:
             cond_data = sig.filtfilt(b, a, raw_data)
         else:
             cond_data = raw_data
