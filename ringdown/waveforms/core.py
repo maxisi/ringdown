@@ -264,7 +264,7 @@ class Signal(TimeSeries):
         info.update({k: pars[k] for k in ['tgps', 'antenna_patterns', 'delay',
                                           'ra', 'dec', 'psi', 'fd_shift',
                                           'interpolate']})
-        return Data(h, ifo=ifo, index=self.time, info=info)
+        return Data(h, ifo=ifo, index=self.time, attrs=info)
     project.__doc__ = project.__doc__.format(from_geo=_FROM_GEO_KEY)
     
     def plot(self, ax=None, envelope : bool = False):
