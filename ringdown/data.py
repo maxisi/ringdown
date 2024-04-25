@@ -664,14 +664,15 @@ class PowerSpectrum(FrequencySeries):
         # default to median-averaged, not mean-averaged to handle outliers.
         kws['average'] = kws.get('average', 'median') 
         freq, psd = sig.welch(data, fs=fs, **kws)
-        p = cls(psd, index=freq)
+        _meta = {a: getattr(data, a, None) for a in getattr(data, '_meta', [])}
+        p = cls(psd, index=freq, **_meta)
         if f_min is not None or f_max is not None:
             p.patch(f_min=f_min, f_max=f_max, fill_value=fill_value,
                     in_place=True)
         return p
 
     @classmethod
-    def from_lalsimulation(cls, func, freq, flow=0, fill_value=None, **kws):
+    def from_lalsimulation(cls, func, freq, f_min=0, fill_value=None, **kws):
         """Obtain :class:`PowerSpectrum` from LALSimulation function.
 
         Arguments
@@ -681,7 +682,7 @@ class PowerSpectrum(FrequencySeries):
             ``SimNoisePSDaLIGOZeroDetHighPower``).
         freq : array
             frequencies over which to evaluate PSD.
-        flow : float
+        f_min : float
             lower frequency threshold for padding: PSD will be patched below
             this value.
         \*\*kw : 
@@ -696,10 +697,10 @@ class PowerSpectrum(FrequencySeries):
         if isinstance(func, str):
             import lalsimulation as lalsim
             func = getattr(lalsim, func)
-        f_ref = freq[np.argmin(abs(freq - flow))]
+        f_ref = freq[np.argmin(abs(freq - f_min))]
         p_ref = func(f_ref) if fill_value is None else fill_value
         def get_psd_bin(f):
-            if f > flow:
+            if f > f_min:
                 return func(f)
             else:
                 return cls._patch_low_freqs(f, f_ref, p_ref)
@@ -946,11 +947,12 @@ class AutoCovariance(TimeSeries):
             rho = np.fft.ifftshift(rho)
             rho = rho[:n] / len(d)
         elif method.lower() == 'fd':
-            kws['fs'] = kws.get('fs', 1/dt)
+            kws['f_samp'] = kws.get('f_samp', 1/dt)
             rho = PowerSpectrum.from_data(d, **kws).to_acf()
         else:
             raise ValueError("method must be 'td' or 'fd' not %r" % method)
-        return cls(rho, delta_t=dt)
+        _meta = {a: getattr(d, a, None) for a in getattr(d, '_meta', [])}
+        return cls(rho, delta_t=dt, **_meta)
 
     def to_psd(self) -> PowerSpectrum:
         """Returns corresponding :class:`PowerSpectrum`, obtained by Fourier
@@ -967,20 +969,20 @@ class AutoCovariance(TimeSeries):
         return PowerSpectrum(psd, index=freq)
 
     @property
-    def matrix(self):
+    def matrix(self) -> np.ndarray :
         """Covariance matrix built from ACF, :math:`C_{ij} = \\rho(|i-j|)`.
         """
         return sl.toeplitz(self)
 
     @property
-    def cholesky(self):
+    def cholesky(self) -> np.ndarray :
         """Cholesky factor :math:`L` of covariance matrix :math:`C = L^TL`.
         """
         if getattr(self, '_cholesky', None) is None:
             self._cholesky = np.linalg.cholesky(self.matrix)
         return self._cholesky
 
-    def compute_snr(self, x, y=None):
+    def compute_snr(self, x, y=None) -> float :
         """Efficiently compute the signal-to_noise ratio
         :math:`\\mathrm{SNR} = \left\langle x \mid y \\right\\rangle /
         \\sqrt{\\left\langle x \mid x \\right\\rangle}`, where the inner product
@@ -1009,7 +1011,7 @@ class AutoCovariance(TimeSeries):
         ow_x = sl.solve_toeplitz(self.iloc[:len(x)], x)
         return np.dot(ow_x, y)/np.sqrt(np.dot(x, ow_x))
 
-    def whiten(self, data):
+    def whiten(self, data) -> Data | TimeSeries | np.ndarray :
         """Whiten stretch of data using ACF.
 
         Arguments
@@ -1028,8 +1030,9 @@ class AutoCovariance(TimeSeries):
         L = self.iloc[:len(data)].cholesky
         w_data = sl.solve_triangular(L, data, lower=True)
         # return same type as input
+        _meta = {a: getattr(data, a, None) for a in getattr(data, '_meta', [])}
         if isinstance(data, Data):
-            w_data = Data(w_data, index=data.index)
+            w_data = Data(w_data, index=data.index, **_meta)
         elif isinstance(data, TimeSeries):
             w_data = TimeSeries(w_data, index=data.index)
         return w_data
