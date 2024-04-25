@@ -104,9 +104,9 @@ class Target(ABC):
             compute from sky location.
         """
         if ra is None:
-            return DetectorTarget.construct(t0, antenna_patterns)
+            return DetectorTarget.construct(t0, antenna_patterns, **kws)
         else:
-            return SkyTarget.construct(t0, ra, dec, psi, reference_ifo)
+            return SkyTarget.construct(t0, ra, dec, psi, reference_ifo, **kws)
 
 
 @dataclass
@@ -190,7 +190,7 @@ class SkyTarget(Target):
     
     @classmethod
     def construct(cls, t0 : float, ra : float, dec : float, psi : float,
-                 reference_ifo : str | None = None):
+                 reference_ifo : str | None = None, **kws):
         """Create a sky location from a reference time, either a specific
         detector or geocenter.
         
@@ -219,6 +219,8 @@ class SkyTarget(Target):
             tgps = lal.LIGOTimeGPS(t0)
             dt = lal.TimeDelayFromEarthCenter(det.location, ra, dec, tgps)
             tgeo = t0 - dt
+        if kws:
+            logging.info(f"unused keyword arguments: {kws}")
         return cls(lal.LIGOTimeGPS(tgeo), ra, dec, psi)
 
 
@@ -242,8 +244,8 @@ class DetectorTarget(Target):
                                  for k in self.antenna_patterns.keys()}
         for i, fpfc in _antenna_patterns.items():
             if fpfc is None:
-                if len(_antenna_patterns) > 1:
-                    logging.warning("defaulting to (1, 0) antenna patterns")
+                if len(_antenna_patterns) > 1 or i is not None:
+                    logging.warning(f"defaulting to (1, 0) antenna patterns for {i} detector")
                 else:
                     logging.info("defaulting to (1, 0) antenna patterns")
                 fpfc = (1, 0)
@@ -297,7 +299,6 @@ class DetectorTarget(Target):
                            "you might need to reset the target.")
     
     def get_detector_time(self, ifo):
-        print(ifo, self.detector_times)
         if ifo in self.detector_times:
             return self.detector_times[ifo]
         else:
@@ -305,7 +306,43 @@ class DetectorTarget(Target):
                              "you might need to reset the target.")
     
     @classmethod
-    def construct(cls, detector_times, antenna_patterns):
+    def construct(cls, detector_times, antenna_patterns, ifos=None):
+        if isinstance(ifos, str):
+            ifos = [ifos]
+        if ifos and antenna_patterns is None:
+            # ifos have been provided but no antenna patterns
+            antenna_patterns = {ifo: None for ifo in ifos}
+            if len(ifos) == 1 and not ifos[0] is None:
+                # the IFO has a distinct name, warn about this
+                logging.info(
+                    "assuming the unlabeled antenna patterns were meant "
+                    f"for {ifos[0]}")
+        elif ifos and not hasattr(antenna_patterns, 'keys'):
+            # ifos have been provided and antenna_patterns is not dict-like
+            if antenna_patterns is not None:
+                # check whether antenna patterns is a tuple or a list of tuples
+                if len(antenna_patterns) == 2 and len(ifos) == 1:
+                    # this is ambiguous: we can have (Fp, Fc), or [(Fp, Fc),
+                    # (Fp, Fc)] check that antenna patterns is tuple (Fp, Fc)
+                    # by trying to convert elements to float
+                    try:
+                        antenna_patterns = {ifos[0]: 
+                            [float(a) for a in antenna_patterns]}
+                        if ifos[0] is not None:
+                            # the IFO has a distinct name, warn about this
+                            logging.info(
+                                "assuming the unlabeled antenna patterns "
+                                f"were meant for {ifos[0]}")
+                    except TypeError:
+                        # the antenna patterns are not a tuple of floats,
+                        # so it may be an list of tuples with length ifos
+                        pass
+        # check again and construct AP dictionary if necessary
+        if ifos and antenna_patterns and not hasattr(antenna_patterns, 'keys'):
+            if len(ifos) == len(antenna_patterns):
+                antenna_patterns = dict(zip(ifos, antenna_patterns))
+        elif ifos:
+            logging.info("ignoring ifos argument")
         return cls(detector_times, antenna_patterns)
 
 

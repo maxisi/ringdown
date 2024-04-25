@@ -882,6 +882,16 @@ class Fit(object):
         self.data[data.ifo] = data
         if acf is not None:
             self.acfs[data.ifo] = acf
+        
+        # check compatibility with target
+        if self.has_target:
+            try:
+                self.target.get_antenna_patterns(data.ifo)
+                self.target.get_detector_time(data.ifo)
+            except ValueError:
+                logging.warning("data incompatible with target! "
+                                "removing target (please reset)")
+                self.target = None
     
     def load_data(self, path=None, ifos=None, channel=None,
                   frametype=None, **kws):
@@ -1163,7 +1173,7 @@ class Fit(object):
             self._duration = float(duration)
         
         self.target = Target.construct(t0, ra, dec, psi, reference_ifo,
-                                       antenna_patterns)
+                                       antenna_patterns, ifos=self.ifos)
                 
         # make sure that start times are encompassed by data (if data exist)
         for i, data in self.data.items():
