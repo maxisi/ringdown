@@ -103,10 +103,10 @@ class Target(ABC):
             dictionary of antenna patterns for each detector, or `None` to
             compute from sky location.
         """
-        if antenna_patterns is None:
-            return SkyTarget.construct(t0, ra, dec, psi, reference_ifo)
-        else:
+        if ra is None:
             return DetectorTarget.construct(t0, antenna_patterns)
+        else:
+            return SkyTarget.construct(t0, ra, dec, psi, reference_ifo)
 
 
 @dataclass
@@ -225,23 +225,53 @@ class DetectorTarget(Target):
     antenna_patterns : dict | None = None
     
     def __post_init__(self):
-        # validate input: floats or None
-        for k, v in self.as_dict().items():
-            if v is not None:
-                if k == 'detector_times':
-                    self.detector_times = {i: float(v) for i,v in v.items()}
-                elif k == 'antenna_patterns':
-                    aps = {}
-                    for i, fpfc in v.items():
-                        if len(i) != 2:
-                            raise ValueError("antenna patterns must be (Fp, Fc)")
-                        aps[k] = (float(fpfc[0]), float(fpfc[1]))
-                    self.antenna_patterns = aps
-        # make sure options are not contradictory                   
-        if self.is_set:
-            for k, v in self.as_dict().items():
-                if v is None:
-                    raise ValueError(f"missing {k}")
+        
+        # validate antenna patterns
+        if not hasattr(self.antenna_patterns, 'keys'):
+            # assume antenna_patterns is (Fp, Fc); will check below
+            _antenna_patterns = {None: self.antenna_patterns}
+        else:
+            # make sure antenna patterns is a dictionary
+            _antenna_patterns = {k: self.antenna_patterns[v] 
+                                 for k in self.antenna_patterns.keys()}
+        for i, fpfc in _antenna_patterns.items():
+            if fpfc is None:
+                if len(_antenna_patterns) > 1:
+                    logging.warning("defaulting to unit antenna patterns")
+                else:
+                    logging.info("defaulting to unit antenna patterns")
+                fpfc = (1, 1)
+            if len(fpfc) != 2:
+                raise ValueError("antenna patterns must be (Fp, Fc)")
+            _antenna_patterns[i] = (float(fpfc[0]), float(fpfc[1]))
+        self.antenna_patterns = _antenna_patterns
+
+        # validate times
+        if not hasattr(self.detector_times, 'keys'):
+            # assume t0 is a single time, will check below
+            if len(_antenna_patterns) > 1:
+                logging.warning("setting same start time for all detectors")
+            self.detector_times = {i: float(self.detector_times)
+                                   for i in _antenna_patterns.keys()}
+        else:
+            pass
+        
+        # construct start-time dictionary based on antenna patterns    
+        _detector_times = {}
+        for i in _antenna_patterns.keys():
+            if i in self.detector_times:
+                _detector_times[i] = float(self.detector_times[i])
+            else:
+                raise ValueError(f"missing start time for {i}")
+        # check that there were no extra start times
+        extra_times = set(_detector_times.keys()) -\
+                        set(_antenna_patterns.keys())
+        if extra_times:
+            raise ValueError("detectors without antenna patterns: "
+                             f"{extra_times}")
+        else:
+            pass
+        self.detector_times = _detector_times
     
     @property
     def t0(self):
@@ -261,44 +291,7 @@ class DetectorTarget(Target):
     
     @classmethod
     def construct(cls, detector_times, antenna_patterns):
-        # TODO: merge this with __post_init__
-        if not hasattr(antenna_patterns, 'keys'):
-            # assume antenna_patterns is (Fp, Fc); will check below
-            antenna_patterns = {None: antenna_patterns}
-        else:
-            pass
-        # antenna patterns have been explicitly provided, validate their
-        # structure and store for later
-        _antenna_patterns = {}
-        for i in antenna_patterns.keys():
-            ap = antenna_patterns[i]
-            if len(ap) != 2:
-                raise ValueError("antenna patterns must be (Fp, Fc)")
-            _antenna_patterns[i] = (float(ap[0]), float(ap[1]))
-
-        if not hasattr(detector_times, 'keys'):
-            # assume t0 is a single time, will check below
-            logging.warning("setting same start time for all detectors")
-            detector_times = {i: float(detector_times) 
-                          for i in _antenna_patterns.keys()}
-        else:
-            pass
-        # construct start-time dictionary based on antenna patterns    
-        _detector_times = {}
-        for i in _antenna_patterns.keys():
-            if i in detector_times:
-                _detector_times[i] = float(detector_times[i])
-            else:
-                raise ValueError(f"missing start time for {i}")
-        # check that there were no extra start times
-        extra_times = set(_detector_times.keys()) -\
-                        set(_antenna_patterns.keys())
-        if extra_times:
-            raise ValueError("detectors without antenna patterns: "
-                             f"{extra_times}")
-        else:
-            pass
-        return cls(_detector_times, _antenna_patterns)
+        return cls(detector_times, antenna_patterns)
 
 
 class TargetCollection(utils.MultiIndexCollection):

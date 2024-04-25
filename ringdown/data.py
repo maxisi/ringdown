@@ -296,7 +296,7 @@ class TimeSeries(Series):
             # Use the time array for the delta_t and duration, but set 
             # the t0 provided
             time = time - time[0] + t0
-        return super(TimeSeries, self).interpolate_to_index(time, **kws)
+        return super().interpolate_to_index(time, **kws)
 
 
 class FrequencySeries(Series):
@@ -404,8 +404,7 @@ class FrequencySeries(Series):
             yinterp.index = freq
             return yinterp
         else:
-            return super(FrequencySeries, 
-                         self).interpolate_to_index(freq, **kws)
+            return super().interpolate_to_index(freq, **kws)
 
 
 class Data(TimeSeries):
@@ -425,7 +424,7 @@ class Data(TimeSeries):
         if ifo is not None:
             ifo = ifo.upper()
         kwargs['name'] = kwargs.get('name', ifo)
-        super(Data, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         if len(args) == 0:
             args = [None]
         self.ifo = ifo or getattr(args[0], 'ifo', None)
@@ -598,7 +597,7 @@ class PowerSpectrum(FrequencySeries):
         if ifo is not None:
             ifo = ifo.upper()
         kwargs['name'] = kwargs.get('name', ifo)
-        super(PowerSpectrum, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         if delta_f is not None:
             self.index = np.arange(len(self))*delta_f
         if len(args) == 0:
@@ -899,7 +898,7 @@ class AutoCovariance(TimeSeries):
         if ifo is not None:
             ifo = ifo.upper()
         kwargs['name'] = kwargs.get('name', ifo)
-        super(AutoCovariance, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         if delta_t is not None:
             self.index = np.arange(len(self))*delta_t
         if len(args) == 0:
