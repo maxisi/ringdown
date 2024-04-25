@@ -306,7 +306,27 @@ class DetectorTarget(Target):
                              "you might need to reset the target.")
     
     @classmethod
-    def construct(cls, detector_times, antenna_patterns, ifos=None):
+    def construct(cls,
+                  detector_times : dict | float | list,
+                  antenna_patterns : dict | list[tuple[float]] | tuple[float,float],
+                  ifos : list | str = None):
+        """Create a target object from a set of detector times and antenna 
+        patterns.
+        
+        The preferred input is two dictionaries of detector times and antenna
+        pattern (Fp, Fc) tuples indexed by interferometer name. Alternatively,
+        lists of values can be provided for both `detector_times` and
+        `antenna_patterns` to be indexed by a list of interferometer names 
+        `ifo`.
+        
+        If a single time is provided, it will be used for all detectors. If a
+        single tuple is provided for antenna patterns, it will be used if only
+        a single detector was specified through `ifos`.
+        
+        If no detector names are specified as either keys of `antenna_patterns`
+        or the `ifos` argument, then will assume a single detector named
+        `None`.
+        """
         if isinstance(ifos, str):
             ifos = [ifos]
         if ifos and antenna_patterns is None:
@@ -341,6 +361,20 @@ class DetectorTarget(Target):
         if ifos and antenna_patterns and not hasattr(antenna_patterns, 'keys'):
             if len(ifos) == len(antenna_patterns):
                 antenna_patterns = dict(zip(ifos, antenna_patterns))
+                if not hasattr(detector_times, 'keys'):
+                    # check if detector_times is also a list of values
+                    try:
+                        if len(detector_times) == len(antenna_patterns):
+                            detector_times = dict(zip(ifos, detector_times))
+                        else:
+                            raise ValueError("detector_times and antenna_patterns "
+                                            "must have the same length")
+                    except TypeError:
+                        pass
+            elif antenna_patterns is not None and ifos is not None:
+                raise ValueError("antenna patterns must be a dictionary, "
+                                "a list of tuples with the same length as ifos, "
+                                "or a single tuple for a single ifo")
         elif ifos:
             logging.info("ignoring ifos argument")
         return cls(detector_times, antenna_patterns)
