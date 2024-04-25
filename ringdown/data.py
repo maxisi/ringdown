@@ -959,6 +959,8 @@ class AutoCovariance(TimeSeries):
             rho = PowerSpectrum.from_data(d, **kws).to_acf()
         else:
             raise ValueError("method must be 'td' or 'fd' not %r" % method)
+        _meta = {a: getattr(cls, a, None) 
+                     for a in getattr(cls, '_metadata', [])}
         return cls(rho, delta_t=dt, **_meta)
 
     def to_psd(self) -> PowerSpectrum:
