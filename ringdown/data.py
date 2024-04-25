@@ -200,8 +200,8 @@ class Series(pd.Series):
         else:
             interp_func = interp1d(self.index, self.values, **kws)
             interp = interp_func(new_index)
-        info = {a: getattr(self, a, None) for a in getattr(self, '_metadata', [])}
-        return self._constructor(interp, index=new_index, **info)
+        attrs = {a: getattr(self, a, None) for a in getattr(self, '_meta', [])}
+        return self._constructor(interp, index=new_index, **attrs)
     interpolate_to_index.__doc__ = interpolate_to_index.__doc__.format(_DEF_INTERP_KWS)
 
 
@@ -415,23 +415,21 @@ class Data(TimeSeries):
     ----------
     ifo : str
         detector identifier (e.g., 'H1' for LIGO Hanford).
-    info : dict
+    attrs : dict
         optional additional information, e.g., to identify data provenance.
     """
 
-    _metadata = ['ifo', 'info']
+    _meta = ['ifo', 'attrs']
 
-    def __init__(self, *args, ifo=None, info=None,  **kwargs):
+    def __init__(self, *args, ifo=None, attrs=None,  **kwargs):
         if ifo is not None:
             ifo = ifo.upper()
         kwargs['name'] = kwargs.get('name', ifo)
         super(Data, self).__init__(*args, **kwargs)
-        self.ifo = ifo
-        self.info = info or {}
-        if ifo is None and len(args) > 0:
-            self.ifo = getattr(args[0], 'ifo', None)
-        if info is None and len(args) > 0:
-            self.info = getattr(args[0], 'info', None)
+        if len(args) == 0:
+            args = [None]
+        self.ifo = ifo or getattr(args[0], 'ifo', None)
+        self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
 
     @property
     def _constructor(self):
@@ -450,7 +448,9 @@ class Data(TimeSeries):
     def condition(self, t0 : float | None = None,
                   ds : int | None = None,
                   f_min : float | None = None,
-                  fhigh : float | None = None,
+
+                  f_max : float | None = None,
+
                   trim : float = 0.25,
                   digital_filter : bool = True,
                   remove_mean : bool = True,
@@ -465,9 +465,9 @@ class Data(TimeSeries):
             target time to be preserved after downsampling.
         ds : int
             decimation factor for downsampling.
-        flow : float
+        f_min : float
             lower frequency for high passing.
-        fhigh : float
+        f_max : float
             higher frequency for low passing.
         trim : float
             fraction of data to trim from edges after conditioning, to avoid
@@ -585,7 +585,7 @@ class Data(TimeSeries):
             time series data.
         """
         noise_td = PowerSpectrum(psd).draw_noise_td(**kws)
-        return Data(noise_td, **_meta)
+        return Data(noise_td)
         
 
 class PowerSpectrum(FrequencySeries):
@@ -593,9 +593,9 @@ class PowerSpectrum(FrequencySeries):
     :class:`FrequencySeries`.
     """
     
-    _metadata = ['ifo', 'info']
+    _meta = ['ifo', 'attrs']
             
-    def __init__(self, *args, delta_f=None, ifo=None, info=None,
+    def __init__(self, *args, delta_f=None, ifo=None, attrs=None,
                  **kwargs):
         if ifo is not None:
             ifo = ifo.upper()
@@ -603,12 +603,10 @@ class PowerSpectrum(FrequencySeries):
         super(PowerSpectrum, self).__init__(*args, **kwargs)
         if delta_f is not None:
             self.index = np.arange(len(self))*delta_f
-        self.ifo = ifo
-        self.info = info or {}
-        if ifo is None and len(args) > 0:
-            self.ifo = getattr(args[0], 'ifo', None)
-        if info is None and len(args) > 0:
-            self.info = getattr(args[0], 'info', None)
+        if len(args) == 0:
+            args = [None]
+        self.ifo = ifo or getattr(args[0], 'ifo', None)
+        self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
 
     @property
     def _constructor(self):
@@ -668,7 +666,7 @@ class PowerSpectrum(FrequencySeries):
         # default to median-averaged, not mean-averaged to handle outliers.
         kws['average'] = kws.get('average', 'median') 
         freq, psd = sig.welch(data, fs=fs, **kws)
-        _meta = {a: getattr(data, a, None) for a in getattr(cls, '_metadata', [])}
+        _meta = {a: getattr(data, a, None) for a in getattr(data, '_meta', [])}
         p = cls(psd, index=freq, **_meta)
         if f_min is not None or f_max is not None:
             p.patch(f_min=f_min, f_max=f_max, fill_value=fill_value,
@@ -676,7 +674,7 @@ class PowerSpectrum(FrequencySeries):
         return p
 
     @classmethod
-    def from_lalsimulation(cls, func, freq, flow=0, fill_value=None, **kws):
+    def from_lalsimulation(cls, func, freq, f_min=0, fill_value=None, **kws):
         """Obtain :class:`PowerSpectrum` from LALSimulation function.
 
         Arguments
@@ -686,7 +684,7 @@ class PowerSpectrum(FrequencySeries):
             ``SimNoisePSDaLIGOZeroDetHighPower``).
         freq : array
             frequencies over which to evaluate PSD.
-        flow : float
+        f_min : float
             lower frequency threshold for padding: PSD will be patched below
             this value.
         \*\*kw : 
@@ -701,10 +699,10 @@ class PowerSpectrum(FrequencySeries):
         if isinstance(func, str):
             import lalsimulation as lalsim
             func = getattr(lalsim, func)
-        f_ref = freq[np.argmin(abs(freq - flow))]
+        f_ref = freq[np.argmin(abs(freq - f_min))]
         p_ref = func(f_ref) if fill_value is None else fill_value
         def get_psd_bin(f):
-            if f > flow:
+            if f > f_min:
                 return func(f)
             else:
                 return cls._patch_low_freqs(f, f_ref, p_ref)
@@ -775,9 +773,7 @@ class PowerSpectrum(FrequencySeries):
             autocovariance function.
         """
         rho = 0.5*np.fft.irfft(self) / self.delta_t
-        _meta = {a: getattr(self, a, None) 
-                 for a in getattr(self, '_metadata', [])}
-        return AutoCovariance(rho, delta_t=self.delta_t, **_meta)
+        return AutoCovariance(rho, delta_t=self.delta_t)
     
     def draw_noise_fd(self, freq : np.ndarray | None = None,
                       delta_f : float | None = None,
@@ -898,9 +894,9 @@ class AutoCovariance(TimeSeries):
     :class:`TimeSeries`.
     """
     
-    _metadata = ['ifo', 'info']
+    _meta = ['ifo', 'attrs']
             
-    def __init__(self, *args, delta_t=None, ifo=None, info=None,
+    def __init__(self, *args, delta_t=None, ifo=None, attrs=None,
                  **kwargs):
         if ifo is not None:
             ifo = ifo.upper()
@@ -908,12 +904,10 @@ class AutoCovariance(TimeSeries):
         super(AutoCovariance, self).__init__(*args, **kwargs)
         if delta_t is not None:
             self.index = np.arange(len(self))*delta_t
-        self.ifo = ifo
-        self.info = info or {}
-        if ifo is None and len(args) > 0:
-            self.ifo = getattr(args[0], 'ifo', None)
-        if info is None and len(args) > 0:
-            self.info = getattr(args[0], 'info', None)
+        if len(args) == 0:
+            args = [None]
+        self.ifo = ifo or getattr(args[0], 'ifo', None)
+        self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
             
 
     @property
@@ -955,12 +949,13 @@ class AutoCovariance(TimeSeries):
             rho = np.fft.ifftshift(rho)
             rho = rho[:n] / len(d)
         elif method.lower() == 'fd':
-            kws['fs'] = kws.get('fs', 1/dt)
+            kws['f_samp'] = kws.get('f_samp', 1/dt)
             rho = PowerSpectrum.from_data(d, **kws).to_acf()
         else:
             raise ValueError("method must be 'td' or 'fd' not %r" % method)
-        _meta = {a: getattr(cls, a, None) 
-                     for a in getattr(cls, '_metadata', [])}
+
+        _meta = {a: getattr(d, a, None) for a in getattr(d, '_meta', [])}
+
         return cls(rho, delta_t=dt, **_meta)
 
     def to_psd(self) -> PowerSpectrum:
@@ -975,23 +970,23 @@ class AutoCovariance(TimeSeries):
         # acf = 0.5*np.fft.irfft(psd) / delta_t
         psd = 2 * self.delta_t * abs(np.fft.rfft(self))
         freq = np.fft.rfftfreq(len(self), d=self.delta_t)
-        return PowerSpectrum(psd, index=freq, **_meta)
+        return PowerSpectrum(psd, index=freq)
 
     @property
-    def matrix(self):
+    def matrix(self) -> np.ndarray :
         """Covariance matrix built from ACF, :math:`C_{ij} = \\rho(|i-j|)`.
         """
         return sl.toeplitz(self)
 
     @property
-    def cholesky(self):
+    def cholesky(self) -> np.ndarray :
         """Cholesky factor :math:`L` of covariance matrix :math:`C = L^TL`.
         """
         if getattr(self, '_cholesky', None) is None:
             self._cholesky = np.linalg.cholesky(self.matrix)
         return self._cholesky
 
-    def compute_snr(self, x, y=None):
+    def compute_snr(self, x, y=None) -> float :
         """Efficiently compute the signal-to_noise ratio
         :math:`\\mathrm{SNR} = \left\langle x \mid y \\right\\rangle /
         \\sqrt{\\left\langle x \mid x \\right\\rangle}`, where the inner product
@@ -1020,7 +1015,7 @@ class AutoCovariance(TimeSeries):
         ow_x = sl.solve_toeplitz(self.iloc[:len(x)], x)
         return np.dot(ow_x, y)/np.sqrt(np.dot(x, ow_x))
 
-    def whiten(self, data):
+    def whiten(self, data) -> Data | TimeSeries | np.ndarray :
         """Whiten stretch of data using ACF.
 
         Arguments
@@ -1039,9 +1034,8 @@ class AutoCovariance(TimeSeries):
         L = self.iloc[:len(data)].cholesky
         w_data = sl.solve_triangular(L, data, lower=True)
         # return same type as input
+        _meta = {a: getattr(data, a, None) for a in getattr(data, '_meta', [])}
         if isinstance(data, Data):
-            _meta = {a: getattr(data, a, None) 
-                     for a in getattr(data, '_metadata', [])}
             w_data = Data(w_data, index=data.index, **_meta)
         elif isinstance(data, TimeSeries):
             w_data = TimeSeries(w_data, index=data.index)

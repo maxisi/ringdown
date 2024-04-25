@@ -577,7 +577,7 @@ class Result(az.InferenceData):
         for i in h.ifo.values.astype(str):
             time = self.sample_times.sel(ifo=i).values
             hdict[i] = data.Data(h.sel(ifo=i).values, ifo=i, index=time,
-                                 info=info)
+                                 attrs=info)
         hdata = hdict if ifo is None else hdict[ifo]
         return hdata
     

@@ -933,12 +933,12 @@ class Fit(object):
         else:
             path_dict = utils.get_dict_from_pattern(path, ifos)
         
-        if channel is not None:
+        if channel is None:
             channel_dict = {k: None for k in path_dict.keys()}
         else:
             channel_dict = utils.get_dict_from_pattern(channel, ifos)
         
-        if frametype is not None:
+        if frametype is None:
             frametype_dict = {k: None for k in path_dict.keys()}
         else:
             frametype_dict = utils.get_dict_from_pattern(frametype, ifos)
