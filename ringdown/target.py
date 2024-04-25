@@ -235,7 +235,7 @@ class DetectorTarget(Target):
                     for i, fpfc in v.items():
                         if len(i) != 2:
                             raise ValueError("antenna patterns must be (Fp, Fc)")
-                        aps[k] = (float(fpfc[0]), float(fpfc[1]))
+                        aps[i] = (float(fpfc[0]), float(fpfc[1]))
                     self.antenna_patterns = aps
         # make sure options are not contradictory                   
         if self.is_set:

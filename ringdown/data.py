@@ -449,7 +449,7 @@ class Data(TimeSeries):
 
     def condition(self, t0 : float | None = None,
                   ds : int | None = None,
-                  flow : float | None = None,
+                  f_min : float | None = None,
                   fhigh : float | None = None,
                   trim : float = 0.25,
                   digital_filter : bool = True,
@@ -515,15 +515,15 @@ class Data(TimeSeries):
 
         fny = 0.5/(raw_time[1] - raw_time[0])
         # Filter
-        if flow and not fhigh:
-            b, a = sig.butter(4, flow/fny, btype='highpass', output='ba')
-        elif fhigh and not flow:
+        if f_min and not fhigh:
+            b, a = sig.butter(4, f_min/fny, btype='highpass', output='ba')
+        elif fhigh and not f_min:
             b, a = sig.butter(4, fhigh/fny, btype='lowpass', output='ba')
-        elif flow and fhigh:
-            b, a = sig.butter(4, (flow/fny, fhigh/fny), btype='bandpass',
+        elif f_min and fhigh:
+            b, a = sig.butter(4, (f_min/fny, fhigh/fny), btype='bandpass',
                               output='ba')
 
-        if flow or fhigh:
+        if f_min or fhigh:
             cond_data = sig.filtfilt(b, a, raw_data)
         else:
             cond_data = raw_data
