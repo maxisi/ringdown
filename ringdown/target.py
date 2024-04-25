@@ -238,7 +238,7 @@ class DetectorTarget(Target):
             _antenna_patterns = {None: self.antenna_patterns}
         else:
             # make sure antenna patterns is a dictionary
-            _antenna_patterns = {k: self.antenna_patterns[v] 
+            _antenna_patterns = {k: self.antenna_patterns[k] 
                                  for k in self.antenna_patterns.keys()}
         for i, fpfc in _antenna_patterns.items():
             if fpfc is None:
@@ -297,6 +297,7 @@ class DetectorTarget(Target):
                            "you might need to reset the target.")
     
     def get_detector_time(self, ifo):
+        print(ifo, self.detector_times)
         if ifo in self.detector_times:
             return self.detector_times[ifo]
         else:
