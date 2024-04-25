@@ -155,7 +155,10 @@ class SkyTarget(Target):
         times : dict
             dictionary of detector times.
         """
-        det = lal.cached_detector_by_prefix[ifo]
+        if ifo in lal.cached_detector_by_prefix:
+            det = lal.cached_detector_by_prefix[ifo]
+        else:
+            raise ValueError(f"unrecognized detector {ifo}")
         tgps = lal.LIGOTimeGPS(self.geocenter_time)
         dt = lal.TimeDelayFromEarthCenter(det.location, self.ra, 
                                             self.dec, tgps)
@@ -175,7 +178,10 @@ class SkyTarget(Target):
         antenna_patterns : dict
             dictionary of antenna patterns.
         """
-        det = lal.cached_detector_by_prefix[ifo]
+        if ifo in lal.cached_detector_by_prefix:
+            det = lal.cached_detector_by_prefix[ifo]
+        else:
+            raise ValueError(f"unrecognized detector {ifo}")
         tgps = lal.LIGOTimeGPS(self.geocenter_time)
         gmst = lal.GreenwichMeanSiderealTime(tgps)
         fpfc = lal.ComputeDetAMResponse(det.response, self.ra, self.dec,
@@ -237,10 +243,10 @@ class DetectorTarget(Target):
         for i, fpfc in _antenna_patterns.items():
             if fpfc is None:
                 if len(_antenna_patterns) > 1:
-                    logging.warning("defaulting to unit antenna patterns")
+                    logging.warning("defaulting to (1, 0) antenna patterns")
                 else:
-                    logging.info("defaulting to unit antenna patterns")
-                fpfc = (1, 1)
+                    logging.info("defaulting to (1, 0) antenna patterns")
+                fpfc = (1, 0)
             if len(fpfc) != 2:
                 raise ValueError("antenna patterns must be (Fp, Fc)")
             _antenna_patterns[i] = (float(fpfc[0]), float(fpfc[1]))
@@ -284,10 +290,18 @@ class DetectorTarget(Target):
         return (None, None, None)
     
     def get_antenna_patterns(self, ifo):
-        return self.antenna_patterns[ifo]
+        if ifo in self.antenna_patterns:
+            return self.antenna_patterns[ifo]
+        else:
+            raise ValueError(f"antenna patterns unavailable for {ifo}; "
+                           "you might need to reset the target.")
     
     def get_detector_time(self, ifo):
-        return self.detector_times[ifo]
+        if ifo in self.detector_times:
+            return self.detector_times[ifo]
+        else:
+            raise ValueError(f"start time unavailable for {ifo}; "
+                             "you might need to reset the target.")
     
     @classmethod
     def construct(cls, detector_times, antenna_patterns):
