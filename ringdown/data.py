@@ -26,7 +26,8 @@ class Series(pd.Series):
         return Series
 
     @classmethod
-    def read(cls, path : str, kind : str | None = None, **kws):
+    def read(cls, path : str, kind : str | None = None, 
+             channel : str | None = None, **kws):
         """Load data from disk.
         
         If ``kind`` is `gwosc` assumes input is an strain HDF5 file downloaded
@@ -41,10 +42,12 @@ class Series(pd.Series):
         Arguments
         ---------
         path : str
-            path to file, or None if fetching remote data
+            path to file, or None if fetching remote data.
         kind : str
-            kind of file to load: `gwsoc`, `hdf` or `csv`, or `discover` to
-            automatically discover remote or local data with GWpy.
+            kind of file to load: `gwsoc`, `hdf` or `csv`.
+        channel : str
+            channel name to use when reading GW frame files (not required
+            otherwise).
 
         Returns
         -------
@@ -52,7 +55,6 @@ class Series(pd.Series):
             series loaded from disk
         """
         kind = (kind or '').lower()
-        channel = kws.pop('channel', None)
         
         if not kind:
             # attempt to guess filetype
@@ -72,9 +74,11 @@ class Series(pd.Series):
                     t0 = f['meta/GPSstart'][()]
                     T = f['meta/Duration'][()]
                     h = f['strain/Strain'][:]
-                    dt = T/len(h)
-                    time = t0 + dt*np.arange(len(h))
-                    return cls(h, index=time, **kws)
+                dt = T/len(h)
+                time = t0 + dt*np.arange(len(h))
+                # get valid arguments and form class
+                meta = {a: kws.get(a, None) for a in getattr(cls, '_meta', [])}
+                return cls(h, index=time, **meta)
             else:
                 raise FileNotFoundError("file not found: {}".format(path))
             
@@ -109,7 +113,7 @@ class Series(pd.Series):
                                 "strange errors due to precision loss")
             if kind == 'csv':
                 read_kws['header'] = kws.get('header', None)
-            # squeeze if needed (since sequeeze argument no longer accepted)
+            # squeeze if needed (since squeeze argument no longer accepted)
             d = read_func(path, **read_kws)
             if squeeze and not isinstance(d, pd.Series):
                 d = d.squeeze("columns")
