@@ -26,7 +26,7 @@ class Series(pd.Series):
         return Series
 
     @classmethod
-    def read(cls, path : str | None = None, kind : str | None = None, **kws):
+    def read(cls, path : str, kind : str | None = None, **kws):
         """Load data from disk.
         
         If ``kind`` is `gwosc` assumes input is an strain HDF5 file downloaded
@@ -51,25 +51,8 @@ class Series(pd.Series):
         series : Series
             series loaded from disk
         """
-        if path is None and kind is None:
-            raise ValueError("must provide either path or kind")
-        
         kind = (kind or '').lower()
         channel = kws.pop('channel', None)
-        frametype = kws.pop('frametype', None)
-        start = kws.pop('start', None)
-        end = kws.pop('end', None)
-        t0 = kws.pop('t0', None)
-        seglen = kws.pop('seglen', None)
-        if start is None and end is None and t0 is not None and path is None:
-            if seglen is None:
-                raise ValueError("must provide seglen if t0 is provided")
-            start = t0 - seglen/2
-            end = t0 + seglen/2
-            logging.info(f"fetching {seglen} s long segment centered on {t0}"
-                         f" [{start}, {end}]")
-        if start is not None and end is not None and path is not None:
-            logging.warning("seglen options ignored when loading from disk")
         
         if not kind:
             # attempt to guess filetype
@@ -93,49 +76,16 @@ class Series(pd.Series):
                     time = t0 + dt*np.arange(len(h))
                     return cls(h, index=time, **kws)
             else:
-                logging.info("GWOSC file not found, attempting to fetch from server")
-                # first check that we have GWpy, which is an optional dependency
-                from gwpy.timeseries import TimeSeries
-                if start is None or end is None:
-                    raise ValueError("need start and end times to fetch from GWOSC")
-                ifo = kws.get('ifo', None)
-                if ifo is None:
-                    raise ValueError("ifo must be provided to fetch from GWOSC")
-                # get arguments accepted by TimeSeries.fetch_open_data()
-                ts_args = list(inspect.signature(TimeSeries.fetch_open_data).parameters.keys())
-                kwargs = list(kws.keys())
-                ts_kws = {k: kws.pop(k) for k in ts_args if k in kwargs 
-                          and k not in['ifo', 'start', 'end']}
-                ts = TimeSeries.fetch_open_data(ifo, start, end, **ts_kws)
-                # GWpy puts units on its times, we remove them by redefining the index
-                return cls(ts.value, index=np.array(ts.times), **kws)
+                raise FileNotFoundError("file not found: {}".format(path))
             
-        elif kind == 'discover':
-            logging.info("attempting to discover remote or local data using GWpy")
-            # first check that we have GWpy, which is an optional dependency
-            from gwpy.timeseries import TimeSeries
-            logging.info("attempting to discover remote or local data using NDS2/FrameCPP")
-            # validate all arguments
-            if channel is None:
-                raise KeyError('channel must be specified to discover')
-            if start is None or end is None:
-                raise ValueError("start and end times must be provided to discover data")
-            # get arguments accepted by TimeSeries.get(), fetch() and find()
-            ts_args = list(inspect.signature(TimeSeries.get).parameters.keys())
-            ts_args += list(inspect.signature(TimeSeries.fetch).parameters.keys())
-            ts_args += list(inspect.signature(TimeSeries.find).parameters.keys())
-            kwargs = list(kws.keys())
-            ts_kws = {k: kws.pop(k) for k in ts_args if k in kwargs
-                      and k not in ['channel', 'start', 'end']}
-            ts_kws['frametype'] = frametype
-            # fetch data and form Data object
-            ts = TimeSeries.get(channel, start, end, **ts_kws)
-            return cls(ts.value, index=np.array(ts.times), **kws)
-        
         elif kind == 'frame':
             if channel is None:
                 raise KeyError('channel must be specified for frame files')
-            from gwpy.timeseries import TimeSeries
+            try:
+                from gwpy.timeseries import TimeSeries
+            except ModuleNotFoundError:
+                raise ImportError("missing optional dependency 'gwpy'; "
+                    "use pip or conda to install it")
             ts = TimeSeries.read(path, channel)
             # GWpy puts units on its times, we remove them by redefining the index
             return cls(ts.value, index=np.array(ts.times), **kws)
@@ -168,10 +118,101 @@ class Series(pd.Series):
             raise ValueError("unrecognized file kind: {}".format(kind))
     
     @classmethod
-    def fetch(cls, *args, **kws):
-        """Alias to :meth:`Series.read`.
+    def fetch(cls, channel : str, start : float | None = None,
+              end : float | None = None, t0 : float | None = None,
+              seglen : float | None = None, frametype : str | None = None,
+              **kws):
+        """Download open data or discover data using NDS2 (requires GWpy).
+        
+        Uses GWpy's :meth:`gwpy.timeseries.TimeSeries.fetch_open_data` or
+        :meth:`gwpy.timeseries.TimeSeries.get` to download data. If `channel`
+        is 'GWOSC', then it will download open data from GWOSC; otherwise, it
+        will attempt to discover remote or local data using NDS2.
+        
+        Arguments
+        ---------
+        channel : str
+            channel name or 'GWOSC' for public data.
+        start : float
+            start GPS time.
+        end : float
+            end GPS time.
+        t0 : float
+            center time of segment to fetch (alternative to start and end).
+        seglen : float
+            length of segment to fetch (alternative to start and end).
+        frametype : str
+            specify frame type to facilitate NDS frame discovery.
+        \*\*kws :
+            additional keyword arguments passed to GWpy's fetch function.
+            
+        Returns
+        -------
+        series : Series
+            series downloaded from GWOSC or NDS.
         """
-        return cls.read(*args, **kws)
+        # first check that we have GWpy, which is an optional dependency
+        try:
+            from gwpy.timeseries import TimeSeries
+        except ModuleNotFoundError:
+            raise ImportError("missing optional dependency 'gwpy'; "
+                              "use pip or conda to install it")
+        
+        # validate time input
+        if start is None and end is None and\
+            t0 is not None and seglen is not None:
+            start = t0 - seglen/2
+            end = t0 + seglen/2
+            logging.info(f"fetching {seglen} s long segment centered on {t0}"
+                         f" [{start}, {end}]")
+        elif start is None or end is None:
+            raise ValueError("must provide start and end times,"
+                             " or t0 and seglen")
+
+        # download data
+        if channel.lower() == 'gwosc':
+            logging.info("fetching open data from GWOSC")
+            ifo = kws.get('ifo', None)
+            if ifo is None:
+                raise ValueError("must provide ifo to fetch from GWOSC")
+            attrs = {a: kws.pop(a, None) for a in getattr(cls, '_meta', [])}
+            d = TimeSeries.fetch_open_data(ifo, start, end, **kws)
+            # GWpy puts units on its times, we remove them
+            return cls(d.value, index=np.array(d.times), **attrs)
+        else:
+            logging.info("fetching remote or local data using GWpy")
+            attrs = {a: kws.pop(a, None) for a in getattr(cls, '_meta', [])}
+            d = TimeSeries.get(channel, start, end, frametype=frametype, **kws)
+            # GWpy puts units on its times, we remove them
+            return cls(d.value, index=np.array(d.times), **attrs)
+
+    @classmethod
+    def load(cls, path : str | None = None, channel : str | None = None, **kws):
+        """Universal load function to read data from disk or discover GWOSC/NDS
+        data using GWpy.
+        
+        Arguments
+        ---------
+        path : str
+            path to file, or None if fetching remote data
+        channel : str
+            channel name or 'GWOSC' for public data (case insensitive)
+        \*\*kws :
+            additional keyword arguments passed to :meth:`Series.read` or
+            :meth:`Series.fetch`.
+        """
+        if path is None and channel is not None:
+            ts = cls.fetch(channel, **kws)
+        elif path is not None:
+            ts = cls.read(path, channel=channel, **kws)
+        else:
+            raise ValueError("must provide either path or channel to load data")
+        # record data provenance in series attrs (note that attrs is a property
+        # of pandas.Series, we don't need to re-create it)
+        info = dict(path=path, channel=channel)
+        info.update(kws)
+        ts.attrs.update(dict(load=info))
+        return ts
 
     _DEF_INTERP_KWS = dict(kind='cubic', fill_value=0, bounds_error=False)
 

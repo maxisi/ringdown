@@ -955,12 +955,13 @@ class Fit(object):
             
         tslide = kws.pop('slide', {}) or {}
         for ifo, path in path_dict.items():
-            self.add_data(Data.read(path, ifo=ifo, channel=channel_dict[ifo],
+            self.add_data(Data.load(path, ifo=ifo, channel=channel_dict[ifo],
                                     frametype=frametype_dict[ifo], **kws))
         # apply time slide if requested
         for i, dt in tslide.items():
             d = self.data[i]
-            new_d = Data(np.roll(d, int(dt / d.delta_t)), ifo=i, index=d.time)
+            m = {k: getattr(d, k, None) for k in getattr(d, '_meta', [])}
+            new_d = Data(np.roll(d, int(dt / d.delta_t)), index=d.time, **m)
             self.add_data(new_d)
         # record data provenance
         settings['path'] = path_dict
