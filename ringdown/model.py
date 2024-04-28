@@ -339,7 +339,7 @@ def make_model(modes : int | list[(int, int, int, int)],
             if df_min is None or df_max is None:
                 f = numpyro.deterministic('f', f_gr)
             else:
-                df_unit = numpyro.sample('df_unit', dist.Uniform(0, 1), sample_shape=(n_modes,1))
+                df_unit = numpyro.sample('df_unit', dist.Uniform(0, 1), sample_shape=(n_modes,))
                 # Don't want to shadow df_min and df_max
                 df_low = jnp.array([0.0 if x is None else x for x in df_min])
                 df_high = jnp.array([0.0 if x is None else x for x in df_max])
