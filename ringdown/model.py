@@ -12,8 +12,7 @@ import arviz as az
 import warnings
 from arviz.data.base import dict_to_dataset
 import logging
-import jaxlib.xla_extension
-import jax.random
+
 
 def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales):
     ts = jnp.array(ts)

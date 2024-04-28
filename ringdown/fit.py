@@ -941,7 +941,7 @@ class Fit(object):
         if path is None:
             path_dict = {k: None for k in ifos}
         else:
-            path_dict = utils.get_dict_from_pattern(path, ifos)
+            path_dict = utils.get_dict_from_pattern(path, ifos, abspath=True)
         
         if channel is None:
             channel_dict = {k: None for k in path_dict.keys()}
@@ -1037,7 +1037,7 @@ class Fit(object):
         
         if isinstance(path, str) and ifos is None:
             ifos = self.ifos
-        path_dict = utils.get_dict_from_pattern(path, ifos)
+        path_dict = utils.get_dict_from_pattern(path, ifos, abspath=True)
         for ifo, p in path_dict.items():
             if from_psd:
                 self.acfs[ifo] = PowerSpectrum.read(p, **kws).to_acf()
