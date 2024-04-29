@@ -22,7 +22,7 @@ import logging
 
 _WHITENED_LOGLIKE_KEY = 'whitened_pointwise_loglike'
 
-_DATAFRAME_PARAMETERS = ['m', 'chi', 'f', 'g', 'a', 'phi', 'theta', 'ellip']
+_DATAFRAME_PARAMETERS = ['m', 'chi', 'f', 'g', 'a', 'phi', 'theta', 'ellip', 'df', 'dg']
 
 class Result(az.InferenceData):
     """Result from a ringdown fit."""
@@ -447,7 +447,7 @@ class Result(az.InferenceData):
         samples = self.stacked_samples
         if nsamp is not None:
             rng = rng or np.random.default_rng(rng)
-            idxs = rng.choice(len(samples), nsamp, replace=False)
+            idxs = rng.choice(samples.dims['sample'], nsamp, replace=False)
             samples = samples.isel(sample=idxs)
         else:
             idxs = None
@@ -474,7 +474,7 @@ class Result(az.InferenceData):
         samples = self.stacked_samples
         if nsamp is not None:
             rng = rng or np.random.default_rng(rng)
-            idxs = rng.choice(len(samples), nsamp, replace=False)
+            idxs = rng.choice(samples.dims['sample'], nsamp, replace=False)
             samples = samples.isel(sample=idxs)
         else:
             idxs = None

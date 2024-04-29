@@ -447,7 +447,7 @@ def make_model(modes : int | list[(int, int, int, int)],
 MODEL_VARIABLES_BY_MODE = ['a_scale', 'a', 'acx', 'acy', 'apx', 'apy', 
                            'acx_unit', 'acy_unit', 'apx_unit', 'apy_unit',
                            'ellip', 'f', 'g', 'omega', 'phi', 'phi_l',
-                           'phi_r', 'quality', 'tau', 'theta']
+                           'phi_r', 'quality', 'tau', 'theta', 'df', 'dg']
 MODEL_DIMENSIONS = {k: ['mode'] for k in MODEL_VARIABLES_BY_MODE}
 MODEL_DIMENSIONS['h_det'] = ['ifo', 'time_index']
 MODEL_DIMENSIONS['h_det_mode'] = ['ifo', 'mode', 'time_index']

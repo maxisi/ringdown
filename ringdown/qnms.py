@@ -79,6 +79,8 @@ class ParameterLabel(object):
         'chi': '$\\chi$',
         'f': '$f_{{{mode}}} / \\mathrm{{Hz}}$',
         'g': '$\\gamma_{{{mode}}} / \\mathrm{{Hz}}$',
+        'df': '$\delta f_{{{mode}}}$',
+        'dg': '$\delta \gamma_{{{mode}}}$',
         'a': '$A_{{{mode}}}$',
         'phi': '$\\phi_{{{mode}}}$',
         'theta': '$\\theta_{{{mode}}}$',
