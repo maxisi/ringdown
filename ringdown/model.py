@@ -360,10 +360,6 @@ def make_model(modes : int | list[(int, int, int, int)],
         # modes should be established, and we can proceed with the rest of the
         # model.
 
-        tau = numpyro.deterministic('tau', 1/g)
-        omega = numpyro.deterministic('omega', 2*np.pi*f)
-        quality = numpyro.deterministic('quality', np.pi*f*tau)
-
         if marginalized:
             a_scale = numpyro.sample('a_scale', dist.Uniform(0, a_scale_max), 
                                      sample_shape=(n_modes,))
