@@ -8,6 +8,23 @@ from . import indexing
 T_MSUN = lal.GMSUN_SI / lal.C_SI**3
 
 def get_ftau(M, chi, n, l=2, m=2):
+    """Get the frequency and damping time of a Kerr quasinormal mode.
+    
+    This is a wrapper around the package `qnm`.
+    
+    Arguments
+    ---------
+    M : float
+        Black hole mass in solar masses.
+    chi : float
+        Dimensionless spin parameter.
+    n : int
+        Overtone number.
+    l : int
+        Spherical harmonic index (def. 2)
+    m : int
+        Azimuthal harmonic index (def. 2)
+    """
     q22 = qnm.modes_cache(-2, l, m, n)
     omega, _, _ = q22(a=chi)
     f = np.real(omega)/(2*np.pi) / (T_MSUN*M)

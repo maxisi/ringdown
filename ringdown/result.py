@@ -440,6 +440,28 @@ class Result(az.InferenceData):
                                 rng : int | np.random.Generator = None,
                                 ignore_index=False,
                                 **kws) -> pd.DataFrame :
+        """Get a DataFrame of parameter samples drawn from the posterior.
+        
+        The columns correspond to parameters and the index to the sample, 
+        which can be used to locate this row in the `Result.stacked_samples`.
+        If `ignore_index`, the index will be reset rather than showing the
+        location in the original set of samples.
+        
+        The parameters are labeled using the `qnms.ParameterLabel` class.
+        
+        Arguments
+        ---------
+        nsamp : int
+            number of samples to draw from the posterior (optional).
+        rng : numpy.random.Generator | int
+            random number generator or seed (optional).
+        ignore_index : bool
+            reset index rather than showing location in original samples
+            (def., `False`).
+        **kws : dict
+            additional keyword arguments to pass to the `get_label` method of
+            :class:`qnms.ParameterLabel`.
+        """
         # set labeling options (e.g., whether to show p index)
         fmt = self.default_label_format.copy()
         fmt.update(kws)
@@ -731,6 +753,7 @@ class ResultCollection(utils.MultiIndexCollection):
         cpaths = []
         if isinstance(path_input, str):
             paths = sorted(glob(path_input))
+            logging.info(f"loading {len(paths)} results from {path_input}")
             for path in paths:
                 pattern = parse(path_input.replace('*', '{}'), path).fixed
                 idx = tuple([utils.try_parse(k) for k in pattern])
@@ -739,12 +762,14 @@ class ResultCollection(utils.MultiIndexCollection):
                     cpath = config.replace('*', '{}').format(*pattern)
                     if os.path.exists(cpath):
                         cpaths.append(cpath)
+        else:
+            paths = path_input
         if config is not None:
             if len(cpaths) != len(paths):
                 raise ValueError("Number of configuration files does not match "
                                  "number of result files.")
         else:
-            cpaths = [None]*len(cpaths)
+            cpaths = [None]*len(paths)
         results = []
         custom_tqdm = utils.get_tqdm(progress)
         for path, cpath in custom_tqdm(zip(paths, cpaths), total=len(paths)):
