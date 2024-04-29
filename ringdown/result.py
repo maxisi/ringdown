@@ -28,6 +28,20 @@ class Result(az.InferenceData):
     """Result from a ringdown fit."""
 
     def __init__(self, *args, config=None, produce_h_det=True, **kwargs):
+        """Initialize a result from a ringdown fit.
+        
+        Arguments
+        ---------
+        *args : list
+            arguments to pass to the `az.InferenceData` constructor.
+        config : str
+            path to configuration file (optional).
+        produce_h_det : bool
+            produce h_det from modes if not already present (def., `True`).
+        **kwargs : dict
+            additional keyword arguments to pass to the `az.InferenceData`
+            constructor.
+        """
         # get config file input if provided
         if len(args) == 1 and isinstance(args[0], az.InferenceData):
             # modeled after from_netcdf
@@ -232,10 +246,12 @@ class Result(az.InferenceData):
         
     @property
     def ifos(self) -> list :
+        """Detectors used in analysis."""
         return self.posterior.ifo
     
     @property
     def modes(self) -> list | None :
+        """Modes used in analysis."""
         if self._modes is None:
             self._modes = indexing.ModeIndexList(self.posterior.mode.values
                                                  if 'mode' in self.posterior
@@ -244,12 +260,27 @@ class Result(az.InferenceData):
     
     @property
     def cholesky_factors(self) -> np.ndarray :
+        """Cholesky L factors used in analysis."""
         if 'L' in self.constant_data:
             return self.constant_data.L
         else:
             return self.constant_data.cholesky_factor
         
-    def whiten(self, datas) -> dict | np.ndarray :
+    def whiten(self, datas : dict | np.ndarray) -> dict | np.ndarray :
+        """Whiten data using the Cholesky factors from the analysis.
+        
+        Arguments
+        ---------
+        datas : dict | np.ndarray
+            data to whiten; if a dictionary, the keys should correspond to the
+            detectors used in the analysis.
+
+        Returns
+        -------
+        wds : dict | np.ndarray
+            whitened data; if a dictionary, the keys correspond to the
+            detectors used in the analysis.
+        """
         chols = self.cholesky_factors
         if isinstance(datas, dict):
             wds = {}    
@@ -423,6 +454,8 @@ class Result(az.InferenceData):
         return self.posterior.stack(sample=('chain', 'draw'))
     
     def set_dataframe_parameters(self, parameters : list[str]) -> None:
+        """Set the parameters to be included in DataFrames derived
+        from this result."""
         pars = []
         for par in parameters:
             p = par.lower()
@@ -433,8 +466,17 @@ class Result(az.InferenceData):
         self._df_parameters.update({p : qnms.ParameterLabel(p) for p in pars})
     
     def get_parameter_key_map(self, modes : bool = True, **kws) -> dict:
-        return {p: self._df_parameters[p].get_label(**kws)
-                for p in self._df_parameters}
+        """Get a dictionary of parameter labels for the result."""
+        if modes:
+            l = {}
+            for m in self.modes:
+                l.update({p: self._df_parameters[p].get_label(mode=m, **kws)
+                         for p in self._df_parameters})
+        else:
+            l = {p: self._df_parameters[p].get_label(**kws)
+                 for p in self._df_parameters}
+        return l
+            
     
     def get_parameter_dataframe(self, nsamp : int | None = None,
                                 rng : int | np.random.Generator = None,
@@ -489,6 +531,31 @@ class Result(az.InferenceData):
             ignore_index : bool = False,
             rng : int | np.random.Generator | None = None,
             **kws) -> pd.DataFrame :
+        """Get a DataFrame of parameter samples drawn from the posterior, with
+        columns for different modes.
+        
+        This is similar to :meth:`get_parameter_dataframe`, but splits the 
+        parameters for each mode into unique columns, rather than stacking 
+        them and labeling the modes through a `mode` column.
+        
+        Arguments
+        ---------
+        nsamp : int
+            number of samples to draw from the posterior (optional).
+        ignore_index : bool
+            reset index rather than showing location in original samples
+            (def., `False`).
+        rng : numpy.random.Generator | int
+            random number generator or seed (optional).
+        **kws : dict
+            additional keyword arguments to pass to the `get_label` method of
+            :class:`qnms.ParameterLabel`.
+            
+        Returns
+        -------
+        df : pandas.DataFrame
+            DataFrame of parameter samples.
+        """
         # set labeling options (e.g., whether to show p index)
         fmt = self.default_label_format.copy()
         fmt.update(kws)
@@ -514,8 +581,22 @@ class Result(az.InferenceData):
     
     def get_single_mode_dataframe(self,
                                   mode : str | tuple | indexing.ModeIndex | bytes,
+                                  *args,
                                   **kws) -> pd.DataFrame:
-        df = self.get_mode_parameter_dataframe(**kws)
+        """Get a DataFrame of parameter samples drawn from the posterior for a
+        specific mode.
+        
+        Arguments
+        ---------
+        mode : str, tuple, ModeIndex, or bytes
+            mode to extract.
+        *args : list
+            additional arguments to pass to :meth:`get_mode_parameter_dataframe`.
+        **kws : dict
+            additional keyword arguments to pass to the `get_mode_label` method
+            of :class:`qnms.ParameterLabel`.
+        """
+        df = self.get_mode_parameter_dataframe(*args, **kws)
         return df[df['mode'] == indexing.get_mode_label(mode, **kws)]
         
     def get_strain_quantile(self, q : float, ifo : str = None,
