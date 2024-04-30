@@ -861,6 +861,7 @@ class ResultCollection(utils.MultiIndexCollection):
     
     def get_parameter_dataframe(self, ndraw : int | None = None,
                                 index_label : str = 'run',
+                                split_index : bool = False,
                                 t0 : bool = False,
                                 reference_mass : bool | float | None = None,
                                 draw_kws : dict | None = None,
@@ -876,6 +877,8 @@ class ResultCollection(utils.MultiIndexCollection):
             number of samples to draw from each result (optional)
         index_label : str
             name of provenance column (def., 'run')
+        split_index : bool
+            split tuple index into multiple columns (def., `False`)
         t0 : bool
             include reference time in DataFrame (def., `False`)
         reference_mass : bool or float
@@ -904,6 +907,9 @@ class ResultCollection(utils.MultiIndexCollection):
             df = result.get_parameter_dataframe(**kws)
             if key_size == 1:
                 df[index_label] = key[0]
+            elif split_index:
+                for j, k in enumerate(key):
+                    df[f'{index_label}_{j}'] = k
             else:
                 df[index_label] = [key] * len(df)
             if t0:
@@ -917,6 +923,7 @@ class ResultCollection(utils.MultiIndexCollection):
     
     def get_mode_parameter_dataframe(self, ndraw : int | None = None,
                                     index_label : str = 'run',
+                                    split_index : bool = False,
                                     t0 : bool = False,
                                     reference_mass : bool | float | None = None,
                                     draw_kws : dict | None = None,
@@ -932,6 +939,8 @@ class ResultCollection(utils.MultiIndexCollection):
             number of samples to draw from each result (optional)
         index_label : str
             name of provenance column (def., 'run')
+        split_index : bool
+            split tuple index into multiple columns (def., `False`)
         t0 : bool
             include reference time in DataFrame (def., `False`)
         reference_mass : bool or float
@@ -954,6 +963,9 @@ class ResultCollection(utils.MultiIndexCollection):
             df = result.get_mode_parameter_dataframe(**kws)
             if key_size == 1:
                 df[index_label] = key[0]
+            elif split_index:
+                for j, k in enumerate(key):
+                    df[f'{index_label}_{j}'] = k
             else:
                 df[index_label] = [key] * len(df)
             if t0:
