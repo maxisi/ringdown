@@ -1,8 +1,9 @@
-__all__ = ['make_model', 'get_arviz']
+__all__ = ['make_model', 'get_arviz', 'sYlm', 'calc_Yp', 'calc_Yc']
 
 import numpy as np
 import jax.numpy as jnp
 import jax.scipy as jsp
+from jax.scipy.special import factorial as fac
 import numpyro
 import numpyro.distributions as dist
 from . import qnms
@@ -12,8 +13,6 @@ import arviz as az
 import warnings
 from arviz.data.base import dict_to_dataset
 import logging
-import jaxlib.xla_extension
-import jax.random
 
 def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales):
     ts = jnp.array(ts)
@@ -34,6 +33,80 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales):
     return jnp.concatenate((Ascales*Fp*decay*ct, Ascales*Fp*decay*st,
                             Ascales*Fc*decay*ct, Ascales*Fc*decay*st), 
                             axis=1)
+
+def jax_binom_coeff(n, k):
+    """Returns binomial coefficient, `n choose k`.
+    
+    Arguments
+    ---------
+    n: int
+      number of possibilities
+    k: int
+      number of unordered outcomes to choose
+    """
+
+    coeff = fac(n) / (fac(k) * fac(n-k)) 
+
+    # binomial coefficient is zero if k>n, or generally if above formula returns an inf
+    check_nk = jnp.isinf(coeff) 
+    coeff = jnp.where(check_nk, 0, coeff)
+
+    return coeff
+
+def sYlm(s, l, m):
+    """Returns spin-weighted (l, m) spherical harmonic with spin weight s, as a function of cosi, 
+    to be used in aligned-spin models.
+     
+    Arguments
+    ---------
+    s: int
+        spin weight of the sYlm, -2 for GWs
+    l: JAX array
+        l index of each QNM to be included in the model
+    m: JAX array
+        l index of each QNM to be included in the model
+    """
+    
+    ## with phi = 0
+    ## th == np.arccos(cosi)
+    
+    r = l - s
+    
+    def _get_rs(r):
+        shape = len(r)
+        leng = jnp.max(r) + 1
+        coll = jnp.broadcast_to(jnp.arange(leng), (shape, leng)).swapaxes(0,1)
+
+        return coll
+    
+    rs = _get_rs(r)
+    
+    def sin_th_2(cosi):
+        return jnp.sqrt((1-cosi)/2)
+    
+    def cos_th_2(cosi):
+        return jnp.sqrt((1+cosi)/2)
+    
+    def cot_th_2(cosi):
+        return cos_th_2(cosi)/sin_th_2(cosi)
+
+    ## normalization constant is \sqrt{1/0.159)} ##
+    
+    return lambda cosi: ((-1)**(l+m-s) * jnp.sqrt(fac(l+m)*
+                                                  fac(l-m)*
+                                                  ((2*l)+1)/
+                                                  (4*jnp.pi)/
+                                                  fac(l+s)/
+                                                  fac(l-s)) * (sin_th_2(cosi))**(2*l) * jnp.sum(jnp.array([(-1)**n * jax_binom_coeff(l-s, n) * jax_binom_coeff(l+s, n+s-m) * (cot_th_2(cosi))**((2*n)+s-m) 
+                                                                                                           for n in rs]), axis=0)* jnp.sqrt(1/0.159))
+
+def calc_Yp(cosi, swsh):
+    """Returns (+) angular factor for aligned model"""
+    return (swsh(cosi) + swsh(-cosi)) * jnp.sqrt(5/jnp.pi) # sqrt(5/pi) to match normalization in Isi & Farr (2021)
+
+def calc_Yc(cosi, swsh):
+    """Returns (x) angular factor for aligned model"""
+    return (swsh(cosi) - swsh(-cosi)) * jnp.sqrt(5/jnp.pi)
 
 def chi_factors(chi, coeffs):
     log1mc = jnp.log1p(-chi)
@@ -58,28 +131,44 @@ def phiR_from_quadratures(Apx, Apy, Acx, Acy):
 def phiL_from_quadratures(Apx, Apy, Acx, Acy):
     return jnp.arctan2(-Acx - Apy, -Acy + Apx)
 
-def get_quad_derived_quantities(design_matrices, quads, a_scale, store_h_det, 
+def get_quad_derived_quantities(design_matrices, quads, a_scale, Y, store_h_det, 
                                 store_h_det_mode, compute_h_det=False):
-    nifo, nmodes4, ntimes = design_matrices.shape
-    nmodes = nmodes4 // 4
+    if Y:
+        nifo, nmodes2, ntimes = design_matrices.shape
+        nmodes = nmodes2 // 2
 
-    apx_unit = quads[:nmodes]
-    apy_unit = quads[nmodes:2*nmodes]
-    acx_unit = quads[2*nmodes:3*nmodes]
-    acy_unit = quads[3*nmodes:]
+        Yp, Yc = Y
 
-    apx = numpyro.deterministic('apx', apx_unit * a_scale)
-    apy = numpyro.deterministic('apy', apy_unit * a_scale)
-    acx = numpyro.deterministic('acx', acx_unit * a_scale)
-    acy = numpyro.deterministic('acy', acy_unit * a_scale)
+        ax_unit = quads[:nmodes]
+        ay_unit = quads[nmodes:2*nmodes]
 
-    a_norm, e = Aellip_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit)
-    a = numpyro.deterministic('a', a_scale * a_norm)
-    ellip = numpyro.deterministic('ellip', e)
-    phi_r = numpyro.deterministic('phi_r', phiR_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit))
-    phi_l = numpyro.deterministic('phi_l', phiL_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit))
-    theta = numpyro.deterministic('theta', -0.5*(phi_r + phi_l))
-    phi = numpyro.deterministic('phi', 0.5*(phi_r - phi_l))
+        a_norm = jnp.sqrt(jnp.square(ax_unit) + jnp.square(ay_unit))
+        a = numpyro.deterministic('a', a_scale * a_norm)
+        ellip = numpyro.deterministic('ellip', Yc/Yp)
+        phi = numpyro.deterministic('phi', jnp.arctan2(ay_unit, ax_unit))
+        # theta = 0 in the aligned model #
+
+    else:
+        nifo, nmodes4, ntimes = design_matrices.shape
+        nmodes = nmodes4 // 4
+
+        apx_unit = quads[:nmodes]
+        apy_unit = quads[nmodes:2*nmodes]
+        acx_unit = quads[2*nmodes:3*nmodes]
+        acy_unit = quads[3*nmodes:]
+
+        apx = numpyro.deterministic('apx', apx_unit * a_scale)
+        apy = numpyro.deterministic('apy', apy_unit * a_scale)
+        acx = numpyro.deterministic('acx', acx_unit * a_scale)
+        acy = numpyro.deterministic('acy', acy_unit * a_scale)
+
+        a_norm, e = Aellip_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit)
+        a = numpyro.deterministic('a', a_scale * a_norm)
+        ellip = numpyro.deterministic('ellip', e)
+        phi_r = numpyro.deterministic('phi_r', phiR_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit))
+        phi_l = numpyro.deterministic('phi_l', phiL_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit))
+        theta = numpyro.deterministic('theta', -0.5*(phi_r + phi_l))
+        phi = numpyro.deterministic('phi', 0.5*(phi_r - phi_l))
 
     if compute_h_det or store_h_det_mode or store_h_det:
         h_det_mode = jnp.zeros((nifo, nmodes, ntimes))
@@ -103,6 +192,8 @@ def make_model(modes : int | list[(int, int, int, int)],
                m_max : float | None = None,
                chi_min : float = 0.0,
                chi_max : float = 0.99,
+               cosi_min: float | None = None,
+               cosi_max: float | None =  None,
                df_min : None | float | list[None | float] = None,
                df_max : None | float | list[None | float] = None,
                dg_min : None | float | list[None | float] = None,
@@ -145,6 +236,12 @@ def make_model(modes : int | list[(int, int, int, int)],
 
     chi_max : float
         The maximum dimensionless spin of the black hole.
+
+    cosi_min : float or None
+        The minimum inclination angle to the angular orbital momentum of the black hole.
+
+    cosi_max : float or None
+        The maximum inclination angle to the angular orbital momentum of the black hole.
 
     df_min : None or float or list[None or float]
         The minimum fractional deviation from the GR frequency.  If a list, then
@@ -240,6 +337,17 @@ def make_model(modes : int | list[(int, int, int, int)],
         dg_min = [dg_min]*n_modes
     if dg_max is not None and np.isscalar(dg_max):
         dg_max = [dg_max]*n_modes
+
+    # if only one of cosi_min or cosi_max is set, set the other to its extremal value #
+    if cosi_min is None and cosi_max is not None:
+        cosi_min=-0.99
+    if cosi_min is not None and cosi_max is None:
+        cosi_max = 0.99
+
+    if cosi_min is not None:
+        y_ls = jnp.array(modes)[:,2]
+        y_ms = jnp.array(modes)[:,3]
+        swsh = sYlm(-2, y_ls, y_ms)
 
     def model(times, strains, ls, fps, fcs,
               predictive : bool = predictive, 
@@ -340,7 +448,7 @@ def make_model(modes : int | list[(int, int, int, int)],
             if df_min is None or df_max is None:
                 f = numpyro.deterministic('f', f_gr)
             else:
-                df_unit = numpyro.sample('df_unit', dist.Uniform(0, 1), sample_shape=(n_modes,1))
+                df_unit = numpyro.sample('df_unit', dist.Uniform(0, 1), sample_shape=(n_modes,))
                 # Don't want to shadow df_min and df_max
                 df_low = jnp.array([0.0 if x is None else x for x in df_min])
                 df_high = jnp.array([0.0 if x is None else x for x in df_max])
@@ -361,21 +469,34 @@ def make_model(modes : int | list[(int, int, int, int)],
         # modes should be established, and we can proceed with the rest of the
         # model.
 
-        tau = numpyro.deterministic('tau', 1/g)
-        omega = numpyro.deterministic('omega', 2*np.pi*f)
-        quality = numpyro.deterministic('quality', np.pi*f*tau)
+        if cosi_min is not None:
+            cosi = numpyro.sample("cosi", dist.Uniform(cosi_min, cosi_max))
+            Yp = calc_Yp(cosi, swsh)
+            Yc = calc_Yc(cosi, swsh)
 
         if marginalized:
             a_scale = numpyro.sample('a_scale', dist.Uniform(0, a_scale_max), 
-                                     sample_shape=(n_modes,))
-            design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scale)
+                                        sample_shape=(n_modes,))
+            if cosi_min is not None:
+                unc_dms = rd_design_matrix(times, f, g, fps, fcs, a_scale)
+                Yp_mat = jnp.reshape(calc_Yp(cosi, swsh), (1, n_modes, 1))
+                Yc_mat = jnp.reshape(calc_Yc(cosi, swsh), (1, n_modes, 1))
+                design_matrices = jnp.concatenate(((Yp_mat * unc_dms[:,:n_modes,:]) + (Yc_mat * unc_dms[:,2*n_modes:3*n_modes,:]), 
+                                              (Yp_mat * unc_dms[:,n_modes:2*n_modes,:]) + (Yc_mat * unc_dms[:,3*n_modes:,:])), axis=1)
+                # 2 quadratures in the aligned model #
+                mu = jnp.zeros(2*n_modes)
+                lambda_inv = jnp.eye(2*n_modes)
+                lambda_inv_chol = jnp.eye(2*n_modes)
+            else:
+                design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scale)
 
-            mu = jnp.zeros(4*n_modes)
-            lambda_inv = jnp.eye(4*n_modes)
-            lambda_inv_chol = jnp.eye(4*n_modes)
+                mu = jnp.zeros(4*n_modes)
+                lambda_inv = jnp.eye(4*n_modes)
+                lambda_inv_chol = jnp.eye(4*n_modes)
+
             if not prior:
                 for i in range(n_det):
-                    mm = design_matrices[i,:,:].T # (ndet, 4*nmode, ntime) => (i, ntime, 4*nmode)
+                    mm = design_matrices[i,:,:].T # (ndet, nquads*nmode, ntime) => (i, ntime, nquads*nmode)
                     l = ls[i,:,:]
                     s = strains[i,:]
 
@@ -410,34 +531,63 @@ def make_model(modes : int | list[(int, int, int, int)],
                 # covariance < y^T y > = (Lambda_inv_chol^{-1}).T < x^T x >
                 # Lambda_inv_chol^{-1} = (Lambda_inv_chol^{-1}).T I Lambda_inv_chol^{-1}
                 # = Lambda.
+                if cosi_min is not None:
+                    ax_unit = numpyro.sample('ax_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
+                    ay_unit = numpyro.sample('ay_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
+
+                    quads = mu + jsp.linalg.solve(lambda_inv_chol.T, jnp.concatenate((ax_unit, ay_unit)))
+
+                    get_quad_derived_quantities(design_matrices, quads, a_scale, (Yp, Yc), store_h_det, store_h_det_mode) # Y=(Yp, Yc)
+                else:
+                    apx_unit = numpyro.sample('apx_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
+                    apy_unit = numpyro.sample('apy_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
+                    acx_unit = numpyro.sample('acx_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
+                    acy_unit = numpyro.sample('acy_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
+
+                    quads = mu + jsp.linalg.solve(lambda_inv_chol.T, jnp.concatenate((apx_unit, apy_unit, acx_unit, acy_unit)))
+
+                    get_quad_derived_quantities(design_matrices, quads, a_scale, None, store_h_det, store_h_det_mode) # Y=None
+        else:
+            if cosi_min is not None:
+                a_scales = a_scale_max*jnp.ones(n_modes)
+                unc_dms = rd_design_matrix(times, f, g, fps, fcs, a_scales)
+                design_matrices = jnp.concatenate(((Yp_mat * unc_dms[:,:n_modes,:]) + (Yc_mat * unc_dms[:,2*n_modes:3*n_modes,:]), 
+                                              (Yp_mat * unc_dms[:,n_modes:2*n_modes,:]) + (Yc_mat * unc_dms[:,3*n_modes:,:])), axis=1)
+                ax_unit = numpyro.sample('ax_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
+                ay_unit = numpyro.sample('ay_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
+
+                quads = jnp.concatenate((ax_unit, ay_unit))
+                a, h_det = get_quad_derived_quantities(design_matrices, quads, a_scale_max, (Yp, Yc),
+                                                    store_h_det, store_h_det_mode, compute_h_det=(not prior))
+            
+                if flat_amplitude_prior:
+                    # We need a Jacobian that is A^-1
+                    numpyro.factor('flat_a_prior', -1*jnp.sum(jnp.log(a)) + \
+                                0.5*jnp.sum((jnp.square(ax_unit) + jnp.square(ay_unit))))
+                    
+                    if prior:
+                        raise ValueError('you did not want to impose a flat amplitude prior without a likelihood')
+
+            else:
+                a_scales = a_scale_max*jnp.ones(n_modes)
+                design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scales)
                 apx_unit = numpyro.sample('apx_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
                 apy_unit = numpyro.sample('apy_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
                 acx_unit = numpyro.sample('acx_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
                 acy_unit = numpyro.sample('acy_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
 
-                quads = mu + jsp.linalg.solve(lambda_inv_chol.T, jnp.concatenate((apx_unit, apy_unit, acx_unit, acy_unit)))
-
-                get_quad_derived_quantities(design_matrices, quads, a_scale, store_h_det, store_h_det_mode)
-        else:
-            a_scales = a_scale_max*jnp.ones(n_modes)
-            design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scales)
-            apx_unit = numpyro.sample('apx_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
-            apy_unit = numpyro.sample('apy_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
-            acx_unit = numpyro.sample('acx_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
-            acy_unit = numpyro.sample('acy_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
-
-            quads = jnp.concatenate((apx_unit, apy_unit, acx_unit, acy_unit))
-            a, h_det = get_quad_derived_quantities(design_matrices, quads, a_scale_max, 
-                                                   store_h_det, store_h_det_mode, compute_h_det=(not prior))
+                quads = jnp.concatenate((apx_unit, apy_unit, acx_unit, acy_unit))
+                a, h_det = get_quad_derived_quantities(design_matrices, quads, a_scale_max, None, 
+                                                    store_h_det, store_h_det_mode, compute_h_det=(not prior))
             
-            if flat_amplitude_prior:
-                # We need a Jacobian that is A^-3
-                numpyro.factor('flat_a_prior', -3*jnp.sum(jnp.log(a)) + \
-                               0.5*jnp.sum((jnp.square(apx_unit) + jnp.square(apy_unit) + \
-                               jnp.square(acx_unit) + jnp.square(acy_unit))))
-                
-                if prior:
-                    raise ValueError('you did not want to impose a flat amplitude prior without a likelihood')
+                if flat_amplitude_prior:
+                    # We need a Jacobian that is A^-3
+                    numpyro.factor('flat_a_prior', -3*jnp.sum(jnp.log(a)) + \
+                                0.5*jnp.sum((jnp.square(apx_unit) + jnp.square(apy_unit) + \
+                                jnp.square(acx_unit) + jnp.square(acy_unit))))
+                    
+                    if prior:
+                        raise ValueError('you did not want to impose a flat amplitude prior without a likelihood')
 
             if not prior:
                 for i, strain in enumerate(strains):
@@ -445,10 +595,10 @@ def make_model(modes : int | list[(int, int, int, int)],
 
     return model
 
-MODEL_VARIABLES_BY_MODE = ['a_scale', 'a', 'acx', 'acy', 'apx', 'apy', 
-                           'acx_unit', 'acy_unit', 'apx_unit', 'apy_unit',
+MODEL_VARIABLES_BY_MODE = ['a_scale', 'a', 'acx', 'acy', 'apx', 'apy',
+                           'acx_unit', 'acy_unit', 'apx_unit', 'apy_unit', 'ax_unit', 'ay_unit',
                            'ellip', 'f', 'g', 'omega', 'phi', 'phi_l',
-                           'phi_r', 'quality', 'tau', 'theta']
+                           'phi_r', 'quality', 'tau', 'theta', 'df', 'dg']
 MODEL_DIMENSIONS = {k: ['mode'] for k in MODEL_VARIABLES_BY_MODE}
 MODEL_DIMENSIONS['h_det'] = ['ifo', 'time_index']
 MODEL_DIMENSIONS['h_det_mode'] = ['ifo', 'mode', 'time_index']
