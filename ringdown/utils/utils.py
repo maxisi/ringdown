@@ -46,7 +46,7 @@ def np2(x):
         p = p << 1
     return p
 
-def get_dict_from_pattern(path, ifos=None):
+def get_dict_from_pattern(path, ifos=None, abspath=False):
         if isinstance(path, str):
             path_dict = try_parse(path)
             if isinstance(path_dict, str):
@@ -58,7 +58,8 @@ def get_dict_from_pattern(path, ifos=None):
                     path_dict[ifo] = try_parse(path).format(i=i, ifo=ifo)
         else:
             path_dict = path
-        path_dict = {k: os.path.abspath(v) for k,v in path_dict.items()}
+        if abspath:
+            path_dict = {k: os.path.abspath(v) for k,v in path_dict.items()}
         return path_dict
 
 def docstring_parameter(*args, **kwargs):

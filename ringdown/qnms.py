@@ -4,10 +4,35 @@ import numpy as np
 import qnm
 import lal
 from . import indexing
+from .utils import docstring_parameter
 
 T_MSUN = lal.GMSUN_SI / lal.C_SI**3
 
 def get_ftau(M, chi, n, l=2, m=2):
+    """Get the frequency and damping time of a Kerr quasinormal mode.
+    
+    This is a wrapper around the package `qnm`.
+    
+    Arguments
+    ---------
+    M : float
+        Black hole mass in solar masses.
+    chi : float
+        Dimensionless spin parameter.
+    n : int
+        Overtone number.
+    l : int
+        Spherical harmonic index (def. 2)
+    m : int
+        Azimuthal harmonic index (def. 2)
+        
+    Returns
+    -------
+    f : float
+        Frequency of the mode in Hz.
+    tau : float
+        Damping time of the mode in seconds.
+    """
     q22 = qnm.modes_cache(-2, l, m, n)
     omega, _, _ = q22(a=chi)
     f = np.real(omega)/(2*np.pi) / (T_MSUN*M)
@@ -15,13 +40,24 @@ def get_ftau(M, chi, n, l=2, m=2):
     return f, 1./gamma
 
 class KerrMode(object):
+    """A Kerr quasinormal mode.
+    """
 
     _cache = {}
 
+    @docstring_parameter(indexing.HarmonicIndex.construct.__doc__)
     def __init__(self, *args, **kwargs):
+        """All arguments are passed to `indexing.ModeIndex.construct`,
+        in order to identify the mode index (p, s, l, m, n) from
+        a string, tuple or some other input.
+        
+        Docs for `indexing.ModeIndex.construct`:
+        
+        {0}
+        """
         if len(args) == 1:
             args = args[0]
-        self.index = indexing.ModeIndex.construct(*args, **kwargs)
+        self.index = indexing.HarmonicIndex.construct(*args, **kwargs)
 
     @property
     def coefficients(self):
@@ -79,6 +115,8 @@ class ParameterLabel(object):
         'chi': '$\\chi$',
         'f': '$f_{{{mode}}} / \\mathrm{{Hz}}$',
         'g': '$\\gamma_{{{mode}}} / \\mathrm{{Hz}}$',
+        'df': '$\delta f_{{{mode}}}$',
+        'dg': '$\delta \gamma_{{{mode}}}$',
         'a': '$A_{{{mode}}}$',
         'phi': '$\\phi_{{{mode}}}$',
         'theta': '$\\theta_{{{mode}}}$',

@@ -96,21 +96,28 @@ class HarmonicIndex(ModeIndex):
         for k in self._keys:
             yield getattr(self, k)
     
-    def __getitem__(self, i):
+    def __getitem__(self, i) -> int:
         if isinstance(i, int):
             return getattr(self, self._keys[i])
         else:
             return getattr(self, i)
         
-    def as_dict(self):
+    def as_dict(self) -> bool:
         return {k: getattr(self, k) for k in self._keys}
     
     @property
-    def is_prograde(self):
+    def is_prograde(self) -> bool :
         return self.p == 1
 
     @classmethod
-    def from_string(cls, string):
+    def from_string(cls, string : str):
+        """Construct a mode index from a string.
+        
+        Arguments
+        ---------
+        string : str
+            string of the form 'p,s,l,m,n' or 'pslmn'.
+        """
         if ',' in string:
             p, s, l, m, n = map(int, string.split(','))
             return cls(p, s, l, m, n)
@@ -136,11 +143,25 @@ class HarmonicIndex(ModeIndex):
             return cls(p, s, l, m, n)
     
     @classmethod
-    def from_bytestring(cls, s):
+    def from_bytestring(cls, s : bytes):
         return cls.from_string(s.decode('utf-8'))
     
     @classmethod
     def construct(cls, *s):
+        """Construct an black hole mode index from a string, tuple, or other.
+        Can be called as:
+        
+        construct(p, s, l, m, n)
+        construct((p, s, l, m, n))
+        construct('p,s,l,m,n')
+        construct('pslmn')
+        construct(bytes('p,s,l,m,n', 'utf-8'))
+        
+        It also accepts the following deprecated forms:
+        
+        construct('lmn')
+        
+        """
         if len(s) == 1:
             s = s[0]
         if isinstance(s, cls):
@@ -153,13 +174,26 @@ class HarmonicIndex(ModeIndex):
             return cls(*s)
 
     def to_bytestring(self):
+        """Convert the mode index to a bytestring."""
         s = f'{self.p},{self.s},{self.l},{self.m},{self.n}'
         return bytes(s, 'utf-8')
     
     def get_coordinate(self):
+        """Get coordinate to use in InferenceData indexing."""
         return self.to_bytestring()
     
     def get_label(self, label_prograde=False, label_spinweight=False, **kws):
+        """Get a string label for the mode index.
+        
+        Arguments
+        ---------
+        label_prograde : bool
+            Include the prograde/retrograde label (default False).
+        label_spinweight : bool
+            Include the spin weight label (default False).
+        **kws : dict
+            Additional keyword arguments (ignored).
+        """
         s = f'{self.l}{self.m}{self.n}'
         if label_spinweight:
             s = f'{self.s}{s}'
@@ -168,6 +202,7 @@ class HarmonicIndex(ModeIndex):
         return s
     
     def get_kerr_mode(self, **kws):
+        """Get a KerrMode object for this mode index."""
         from . import qnms
         return qnms.KerrMode(self)
     

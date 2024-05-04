@@ -32,18 +32,26 @@ class IMRResult(pd.DataFrame):
         return IMRResult
     
     @property
-    def final_mass(self):
+    def final_mass(self) -> np.ndarray :
         for k in MASS_ALIASES:
             if k in self.columns:
                 return self[k]
             
     @property
-    def final_spin(self):
+    def final_spin(self) -> np.ndarray :
         for k in SPIN_ALIASES:
             if k in self.columns:
                 return self[k]
             
     def get_kerr_frequencies(self, modes, **kws):
+        """Get the Kerr QNM frequencies corresponding to the remnant mass and
+        spin for a list of modes.
+        
+        Arguments
+        ---------
+        modes : list of str | list of indexing.ModeIndex
+            any argument accepted by :class:`indexing.ModeIndexList`.
+        """
         modes = indexing.ModeIndexList(modes)
         m = self.final_mass
         c = self.final_spin
