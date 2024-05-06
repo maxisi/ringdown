@@ -13,7 +13,7 @@ class Ringdown(Signal):
 
     def __init__(self, *args, modes=None, **kwargs):
         super(Ringdown, self).__init__(*args, **kwargs)
-        self.modes = indexing.construct_mode_list(modes)
+        self.modes = modes
 
     @property
     def _constructor(self):
@@ -144,7 +144,7 @@ class Ringdown(Signal):
         # parse arguments
         all_kws = {k: v for k,v in locals().items() if k not in ['cls','time']}
         all_kws.update(all_kws.pop('kws'))
-        modes = all_kws.get('modes', None)
+        modes = all_kws.get('modes')
 
         # reshape arrays (to handle multiple modes)
         t = np.reshape(time, (len(time), 1))
