@@ -13,7 +13,7 @@ import os
 import warnings
 import inspect
 import jax
-import numpyro.infer
+import numpyro
 import jaxlib.xla_extension
 import xarray as xr
 import lal
@@ -672,6 +672,7 @@ class Fit(object):
             suppress_warnings : bool = True, 
             min_ess : int | None = None,
             prng : jaxlib.xla_extension.ArrayImpl | int | None = None,
+            validation_enabled: bool = True,
             **kwargs):
         """Fit model.
 
@@ -697,6 +698,9 @@ class Fit(object):
         min_ess: number
             if given, keep re-running the sampling with longer chains until the
             minimum effective sample size exceeds `min_ess` (def. `None`).
+
+        validation_enabled: bool
+            if True, run with numpyro.validation_enabled() to get verbose error messages
 
         \*\*kwargs :
             arguments passed to sampler.
@@ -785,7 +789,11 @@ class Fit(object):
                 # make kernel, sampler and run
                 kernel = KERNEL(model, **kernel_kws)
                 sampler = SAMPLER(kernel, **sampler_kws)
-                sampler.run(prng, *run_input, **run_kws)
+                if validation_enabled:
+                    with numpyro.validation_enabled():
+                        sampler.run(prng, *run_input, **run_kws)
+                else:
+                    sampler.run(prng, *run_input, **run_kws)
 
                 # turn sampler into Result object and store
                 # (recall that Result is a wrapper for arviz.InferenceData)
