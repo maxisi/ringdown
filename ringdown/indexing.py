@@ -6,6 +6,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from ast import literal_eval
+from copy import copy
 
 def get_mode_label(mode, **kws):
     return ModeIndex.construct(mode).get_label(**kws)
@@ -37,6 +38,8 @@ class ModeIndex(ABC):
     @classmethod
     def construct(cls, *mode):
         if len(mode) == 1:
+            if isinstance(mode[0], ModeIndex):
+                return copy(mode[0])
             try:
                 return GenericIndex(int(mode[0]))
             except (ValueError, TypeError):
