@@ -13,7 +13,7 @@ class Ringdown(Signal):
 
     def __init__(self, *args, modes=None, **kwargs):
         super(Ringdown, self).__init__(*args, **kwargs)
-        self.modes = modes
+        self.modes = indexing.ModeIndexList(modes)
 
     @property
     def _constructor(self):
