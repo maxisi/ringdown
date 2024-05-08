@@ -672,7 +672,7 @@ class Fit(object):
             suppress_warnings : bool = True, 
             min_ess : int | None = None,
             prng : jaxlib.xla_extension.ArrayImpl | int | None = None,
-            validation_enabled: bool = True,
+            validation_enabled: bool = False,
             **kwargs):
         """Fit model.
 
