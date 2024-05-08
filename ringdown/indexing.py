@@ -148,7 +148,7 @@ class HarmonicIndex(ModeIndex):
     
     @classmethod
     def construct(cls, *s):
-        """Construct an black hole mode index from a string, tuple, or other.
+        """Construct a black hole mode index from a string, tuple, or other.
         Can be called as:
         
         construct(p, s, l, m, n)
