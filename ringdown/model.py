@@ -12,7 +12,6 @@ from .result import Result
 from .utils.swsh import construct_sYlm, calc_YpYc
 
 import arviz as az
-import warnings
 from arviz.data.base import dict_to_dataset
 import logging
 
@@ -299,6 +298,9 @@ def make_model(modes : int | list[(int, int, int, int)],
         if cosi is not None:
             if cosi < -1 or cosi > 1:
                 raise ValueError('cosi must be between -1 and 1')
+            if cosi_min is not None or cosi_max is not None:
+                logging.warning('ignoring cosi_min and cosi_max since '
+                                'cosi is fixed')
             fixed_cosi = cosi
         mode_array = np.array(modes)
         swsh = construct_sYlm(-2, mode_array[:,2], mode_array[:,3])
@@ -590,7 +592,7 @@ def get_arviz(sampler,
     dims = {k: v for k,v in MODEL_DIMENSIONS.items() if k in params_in_model}
     for x in params_in_model:
         if x not in MODEL_DIMENSIONS and len(samples[x].shape) > 1:
-            warnings.warn(f'{x} not in model dimensions; please report issue')
+            logging.warning(f'{x} not in model dimensions; please report issue')
     
     # get coordinates
     # assume that all fits will have an 'f' parameter
