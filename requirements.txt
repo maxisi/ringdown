@@ -12,3 +12,4 @@ tqdm
 ipywidgets
 numpyro
 jax
+parse

@@ -1,4 +1,4 @@
-name: ringdown-pymc
+name: ringdown
 channels:
   - defaults
 dependencies:
@@ -17,8 +17,8 @@ dependencies:
   - ca-certificates
   - certifi
   - openssl
-  - aesara
-  - pymc=4
+  - jax
+  - numpyro
   - sphinx
   - nbsphinx
   - sphinx-gallery
