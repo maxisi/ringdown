@@ -16,38 +16,157 @@ from arviz.data.base import dict_to_dataset
 import logging
 
 def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales):
-    ts = jnp.array(ts)
-    nifo, nt = ts.shape
+    """Construct the design matrix for a generic ringdown model.
+    
+    For each detector, this is a matrix whose rows are 
+    the cosine and sine basis functions for the damped sinusoids
+    that make up the ringdown model; the columns are times.
+    
+    There are four quadratures per mode (Fp*cos, Fp*sin, Fc*cos, Fc*sin),
+    so that the design matrix has shape (nifo, nt, nquads*nmode), i.e.,
+    
+    [
+        [
+            # [0:nmode] are the plus cosine quadratures
+            Fp * exp(-gamma_0*t_0) * cos(omega_0*t_0),
+            Fp * exp(-gamma_1*t_0) * cos(omega_1*t_0),
+            ...,
+            # [nmode:2*nmode] are the plus sine quadratures
+            Fp * exp(-gamma_0*t_0) * sin(omega_0*t_0),
+            Fp * exp(-gamma_1*t_0) * sin(omega_1*t_0),
+            ...,
+            # [2*nmode:3*nmode] are the cross cosine quadratures
+            Fc * exp(-gamma_0*t_0) * cos(omega_0*t_0),
+            Fc * exp(-gamma_1*t_0) * cos(omega_1*t_0),
+            ...,
+            # [3*nmode:4*nmode] are the cross sine quadratures
+            Fc * exp(-gamma_0*t_0) * sin(omega_0*t_0),
+            Fc * exp(-gamma_1*t_0) * sin(omega_1*t_0),
+            ...
+        ],
+        [
+            Fp * exp(-gamma_0*t_1) * cos(omega_0*t_1),
+            Fp * exp(-gamma_1*t_1) * cos(omega_1*t_1),
+            ...,
+            Fp * exp(-gamma_0*t_1) * sin(omega_0*t_1),
+            Fp * exp(-gamma_1*t_1) * sin(omega_1*t_1),
+            ...,
+            Fc * exp(-gamma_0*t_1) * cos(omega_0*t_1),
+            Fc * exp(-gamma_1*t_1) * cos(omega_1*t_1),
+            ...,
+            Fc * exp(-gamma_0*t_1) * sin(omega_0*t_1),
+            Fc * exp(-gamma_1*t_1) * sin(omega_1*t_1),
+            ...
+        ],
+        ...
+    ]
+    
+    Arguments
+    ---------
+    ts : array_like
+        The times at which to evaluate the design matrix; shape (nifo, nt).
+    f : array_like
+        The frequencies of the damped sinusoids; shape (nmode,).
+    gamma : array_like
+        The damping rates of the damped sinusoids; shape (nmode,).
+    Fp : array_like
+        The plus polarization coefficients; shape (nifo,).
+    Fc : array_like
+        The cross polarization coefficients; shape (nifo,).
+    Ascales : array_like
+        The amplitude scales of the damped sinusoids; shape (nmode,).
+    
+    Returns
+    -------
+    design_matrix : array_like
+        The design matrix; shape (nifo, nt, nquads*nmode).
+    """
+    # times should be originally shaped (nifo, nt)
+    # take it to (nifo, nt, 1) where the last dimension is the mode
+    ts = jnp.atleast_2d(ts)[:,:,jnp.newaxis]
+    
+    # get number of detectors, times, and modes
+    nifo = ts.shape[0]
+    nmode = jnp.shape(f)[0]
 
-    nmode = f.shape[0]
-
-    ts = jnp.reshape(ts, (nifo, 1, nt))
-    f = jnp.reshape(f, (1, nmode, 1))
-    gamma = jnp.reshape(gamma, (1, nmode, 1))
+    f = jnp.reshape(f, (1, 1, nmode))
+    gamma = jnp.reshape(gamma, (1, 1, nmode))
     Fp = jnp.reshape(Fp, (nifo, 1, 1))
     Fc = jnp.reshape(Fc, (nifo, 1, 1))
-    Ascales = jnp.reshape(Ascales, (1, nmode, 1))
+    Ascales = jnp.reshape(Ascales, (1, 1, nmode))
 
-    ct = jnp.cos(2*np.pi*f*ts)
-    st = jnp.sin(2*np.pi*f*ts)
+    # ct and st will have shape (1, nt, nmode)
     decay = jnp.exp(-gamma*ts)
-    return jnp.concatenate((Ascales*Fp*decay*ct, Ascales*Fp*decay*st,
-                            Ascales*Fc*decay*ct, Ascales*Fc*decay*st), 
-                            axis=1)
+    ct = Ascales * decay * jnp.cos(2*np.pi*f*ts)
+    st = Ascales * decay * jnp.sin(2*np.pi*f*ts)
+    
+    return jnp.concatenate((Fp*ct, Fp*st, Fc*ct, Fc*st), axis=2)
     
 def get_aligned_design_matrix(design_matrices, YpYc, n_modes):
     """Get the design matrix for the aligned model by applying the YpYc factors
     and reducing dimensionality to two quadratures.
+    
+    For the aligned model we have that, for each :math:`(\\ell, m)` mode and
+    suppressing the exponential decay,
+    
+    .. math::
+        h_+ = A_{\\ell m} Y_{\ell m}^+ \\cos(\\omega_{\\ell m} t - \phi_{\ell m})t) \\\\
+
+        h_\\times = A_{\\ell m} Y_{\\ell m}^\\times \\sin(\\omega_{\\ell m} t -
+        \phi_{\\ell m})t)
+        
+    This means that the quadratures are: .. math::
+        x_+ = A_{\\ell m} Y_{\\ell m}^+ \\cos\\phi_{\\ell m} \\\\ y_+ = A_{\\ell
+        m} Y_{\\ell m}^+ \\sin\\phi_{\\ell m} \\\\ x_\\times = - A_{\\ell m}
+        Y_{\\ell m}^\\times \\sin\\phi_{\\ell m} \\\\ y_\\times = A_{\\ell m}
+        Y_{\\ell m}^\\times \\cos\\phi_{\\ell m}
+    
+    We want to combine these four quadratures into two. To do this, note that
+    the overall signal at a given detector looks like: .. math::
+        h = A_{\\ell m} \\left( F_+ Y_{\\ell m}^+ \\cos\\phi_{\\ell m} -
+        F_\\times Y_{\\ell m}^\\times \\sin\\phi_{\\ell m} \\right)
+        \\cos(\\omega_{\\ell m} t) +
+            A_{\\ell m} \\left( F_+ Y_{\\ell m}^+ \\sin\\phi_{\\ell m} +
+            F_\\times Y_{\\ell m}^\\times \\cos\\phi_{\\ell m} \\right)
+            \\sin(\\omega_{\\ell m} t)
+        
+    where :math:`F_+` and :math:`F_\\times` are the plus and cross polarization
+    antenna patterns.
+    
+    We want to sum the cosine and sine columns to get the right linear
+    combination per the equation above. The right linear combination becomes
+    apparent if we write the above as in inner product:
+    
+    .. math::
+        h = (x, y) \\cdot M
+        
+    where :math:`x = A_{\\ell m} \\cos \\phi_{\\ell m}` and :math:`y = _{\\ell
+    m} \\sin \\phi_{\\ell m}` while :math:`M` is the matrix
+    
+    .. math::
+        M = \\begin{pmatrix}
+            F_+ Y_{\\ell m}^+ \\cos\\omega t + F_\\times Y_{\\ell m}^\\times \\sin\\omega t \\\\
+            F_+ Y_{\\ell m}^+ \\sin\\omega t + F_\\times Y_{\\ell m}^\\times \\sin\\omega t \\\\
+        \\end{pmatrix}
+        
+    This function effects that summation to return a design matrix corresponding
+    to two quadratures.
     """
-    # TODO: check logic here: do we want another dof for theta/psi?
-    Yp_mat = jnp.reshape(YpYc[0], (1, n_modes, 1))
-    Yc_mat = jnp.reshape(YpYc[1], (1, n_modes, 1))
+    # NOTE: we could add a polarization dof here through the azimuthal angle
+    # argument of YpYc, restoring theta---but this is degenerate with psi
+    # (we might still want to add that option, if we don't want to fix psi)
+    Yp_mat = jnp.reshape(YpYc[0], (1, 1, n_modes))
+    Yc_mat = jnp.reshape(YpYc[1], (1, 1, n_modes))
     design_matrices = jnp.concatenate([
-        Yp_mat * design_matrices[:,:n_modes,:] +
-        Yc_mat * design_matrices[:,2*n_modes:3*n_modes,:],
-        Yp_mat * design_matrices[:,n_modes:2*n_modes,:] +
-        Yc_mat * design_matrices[:,3*n_modes:,:]
-    ], axis=1)
+        # Yp * Fp * cos
+        Yp_mat * design_matrices[:,:,:n_modes] +
+        # Yc * Fc * sin
+        Yc_mat * design_matrices[:,:,3*n_modes:],
+        # Yp * Fp * sin
+        Yp_mat * design_matrices[:,:,n_modes:2*n_modes] -
+        # Yc * Fc * cos
+        Yc_mat * design_matrices[:,:,2*n_modes:3*n_modes]
+    ], axis=2)
     return design_matrices
 
 def chi_factors(chi, coeffs):
@@ -73,9 +192,10 @@ def phiR_from_quadratures(Apx, Apy, Acx, Acy):
 def phiL_from_quadratures(Apx, Apy, Acx, Acy):
     return jnp.arctan2(-Acx - Apy, -Acy + Apx)
 
-def get_quad_derived_quantities(design_matrices, quads, a_scale, YpYc, store_h_det, 
-                                store_h_det_mode, compute_h_det=False):
-    nifo, nquads_nmodes, ntimes = design_matrices.shape
+def get_quad_derived_quantities(design_matrices, quads, a_scale, YpYc,
+                                store_h_det, store_h_det_mode, 
+                                compute_h_det=False):
+    nifo, ntimes, nquads_nmodes = design_matrices.shape
     
     if YpYc is not None:
         nmodes = nquads_nmodes // 2
@@ -85,8 +205,8 @@ def get_quad_derived_quantities(design_matrices, quads, a_scale, YpYc, store_h_d
 
         a_norm = jnp.sqrt(jnp.square(ax_unit) + jnp.square(ay_unit))
         a = numpyro.deterministic('a', a_scale * a_norm)
-        ellip = numpyro.deterministic('ellip', YpYc[1]/YpYc[0])
-        phi = numpyro.deterministic('phi', jnp.arctan2(ay_unit, ax_unit))
+        numpyro.deterministic('ellip', YpYc[1]/YpYc[0])
+        numpyro.deterministic('phi', jnp.arctan2(ay_unit, ax_unit))
         # theta = 0 in the aligned model
 
     else:
@@ -97,31 +217,42 @@ def get_quad_derived_quantities(design_matrices, quads, a_scale, YpYc, store_h_d
         acx_unit = quads[2*nmodes:3*nmodes]
         acy_unit = quads[3*nmodes:]
 
-        apx = numpyro.deterministic('apx', apx_unit * a_scale)
-        apy = numpyro.deterministic('apy', apy_unit * a_scale)
-        acx = numpyro.deterministic('acx', acx_unit * a_scale)
-        acy = numpyro.deterministic('acy', acy_unit * a_scale)
+        numpyro.deterministic('apx', apx_unit * a_scale)
+        numpyro.deterministic('apy', apy_unit * a_scale)
+        numpyro.deterministic('acx', acx_unit * a_scale)
+        numpyro.deterministic('acy', acy_unit * a_scale)
 
-        a_norm, e = Aellip_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit)
+        a_norm, e = Aellip_from_quadratures(apx_unit, apy_unit,
+                                            acx_unit, acy_unit)
         a = numpyro.deterministic('a', a_scale * a_norm)
-        ellip = numpyro.deterministic('ellip', e)
-        phi_r = numpyro.deterministic('phi_r', phiR_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit))
-        phi_l = numpyro.deterministic('phi_l', phiL_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit))
-        theta = numpyro.deterministic('theta', -0.5*(phi_r + phi_l))
-        phi = numpyro.deterministic('phi', 0.5*(phi_r - phi_l))
+        numpyro.deterministic('ellip', e)
+        
+        phi_r = numpyro.deterministic('phi_r',
+            phiR_from_quadratures(apx_unit, apy_unit, acx_unit,  acy_unit))
+        phi_l = numpyro.deterministic('phi_l',
+            phiL_from_quadratures(apx_unit, apy_unit, acx_unit, acy_unit))
+        
+        numpyro.deterministic('theta', -0.5*(phi_r + phi_l))
+        numpyro.deterministic('phi', 0.5*(phi_r - phi_l))
 
     if compute_h_det or store_h_det_mode or store_h_det:
+        # initialize strain array, note that now we will want times
+        # to be the last dimension (unlike in the design matrix)
         h_det_mode = jnp.zeros((nifo, nmodes, ntimes))
-        hh = design_matrices * quads[jnp.newaxis,:,jnp.newaxis]
+        
+        # multiply each quadrature by their respective amplitude
+        # (note that this is still of shape (nifo, ntimes, nquads))
+        hh = design_matrices * quads[jnp.newaxis,jnp.newaxis,:]
 
         for i in range(nmodes):
-            h_det_mode = h_det_mode.at[:,i,:].set(jnp.sum(hh[:,i::nmodes,:], axis=1))
+            h_det_mode = h_det_mode.at[:,i,:].set(jnp.sum(hh[:,:,i::nmodes],
+                                                          axis=2))
         h_det = jnp.sum(h_det_mode, axis=1)
 
         if store_h_det_mode:
-            _ = numpyro.deterministic('h_det_mode', h_det_mode)
+            numpyro.deterministic('h_det_mode', h_det_mode)
         if store_h_det:
-            _ = numpyro.deterministic('h_det', h_det)
+            numpyro.deterministic('h_det', h_det)
         
         return a, h_det
 
@@ -284,8 +415,7 @@ def make_model(modes : int | list[(int, int, int, int)],
     if dg_max is not None and np.isscalar(dg_max):
         dg_max = [dg_max]*n_modes
 
-    # if only one of cosi_min or cosi_max is set, set the other to its extremal
-    # value
+    # if only one of cosi_min or cosi_max is set, set the other to its extremum
     if cosi_min is None and cosi_max is not None:
         cosi_min = -1.
     if cosi_min is not None and cosi_max is None:
@@ -440,14 +570,14 @@ def make_model(modes : int | list[(int, int, int, int)],
             a_scale = numpyro.sample('a_scale', dist.Uniform(0, a_scale_max), 
                                         sample_shape=(n_modes,))
             # get design matrices which will have shape 
-            # (n_det, nquads*nmode, ntime)
+            # (n_det, ntime, nquads*nmode)
             design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scale)
             
             if swsh:
                 # need to reduce the design matrix to the 2 quadratures
                 design_matrices = get_aligned_design_matrix(design_matrices, 
                                                             YpYc, n_modes)
-            n_quad_n_modes = design_matrices.shape[1]
+            n_quad_n_modes = design_matrices.shape[2]
             
             mu = jnp.zeros(n_quad_n_modes)
             lambda_inv = jnp.eye(n_quad_n_modes)
@@ -455,8 +585,8 @@ def make_model(modes : int | list[(int, int, int, int)],
 
             if not prior:
                 for i in range(n_det):
-                    # (ndet, nquads*nmode, ntime) => (i, ntime, nquads*nmode)
-                    mm = design_matrices[i,:,:].T
+                    # (ndet, ntime, nquads*nmode) => (i, ntime, nquads*nmode)
+                    mm = design_matrices[i,:,:]
                     l = ls[i,:,:]
                     s = strains[i,:]
 
