@@ -549,6 +549,9 @@ class Fit(object):
         ACFs in fit after conditioning (default False).
 
         """
+        if self.info.get('condition'):
+            logging.warning("data has already been conditioned")
+            
         # record all arguments
         settings = {k: v for k,v in locals().items() if k != 'self'}
         for k, v in settings.pop('kwargs').items():
