@@ -21,13 +21,13 @@
 
 import sys
 import os
-from pylab import *
-import ringdown as rd
+import numpy as np
 import argparse
 import configparser
 import logging
 import time
-from ast import literal_eval
+from ringdown.target import TargetCollection
+from ringdown import __version__
 
 
 ##############################################################################
@@ -45,6 +45,15 @@ parser.add_argument('-s', '--submit', action='store_true', help="Submit slurm "
                     "job automatically.")
 parser.add_argument('--ntasks', default=-1, type=int,
                     help="Maximum number of tasks request through SLURM.")
+parser.add_argument('--device-count', type=int, default=None,
+                    help="Number of GPUs/CPUs to use for each task "
+                    "(default: 1 for GPUs and 4 for CPUs)")
+parser.add_argument('--platform', choices=['cpu', 'gpu'], default='cpu',
+                    help="Platform to run on (default 'cpu').")
+parser.add_argument('--omp-num-threads', type=int, default=1,
+                    help="Number of threads for numpy.")
+parser.add_argument('-C', '--constraints', help="SLURM constraints.")
+parser.add_argument('-t', '--time', help="SLURM time directive.")
 parser.add_argument('--seed', default=None, type=int, help="Random seed.")
 parser.add_argument('-v', '--verbose', action='store_true')
 
@@ -118,7 +127,7 @@ with open(PATHS['command'], 'w') as f:
         f.write("# {}: {}\n".format(k,v))
     f.write("\n# {}".format(os.path.realpath(__file__)))
     f.write("\n# GIT hash: {}".format(githash))
-    f.write("\n# ringdown v {}".format(getattr(rd, '__version__', 'unknown')))
+    f.write("\n# ringdown v {}".format(__version__))
 
 # Identify target analysis times. There will be three possibilities:
 #     1- listing the times explicitly
@@ -128,62 +137,10 @@ with open(PATHS['command'], 'w') as f:
 # Time steps/differences can be specified in seconds or M, if a reference mass
 # is provided (in solar masses).
 
-# Define valid options to specify the start times
-T0_SECT = "pipe"
-T0_KEYS = {
-    'ref': 't0-ref',
-    'list': 't0-list',
-    'delta': 't0-delta-list',
-    'step': 't0-step',
-    'start': 't0-start',
-    'stop': 't0-stop'
-}
-start_stop_step = [T0_KEYS[k] for k in ['start', 'stop', 'step']]
-
-# First make sure that only compatible t0 options were provided
-incompatible_sets = [['ref', 'list'], ['delta', 'list']]
-incompatible_sets += [[k, 'delta'] for k in ['start', 'stop', 'step']]
-for bad_set in incompatible_sets:
-    opt_names = [T0_KEYS[k] for k in bad_set]
-    if all([k in config[T0_SECT] for k in opt_names]):
-        raise ValueError("incompatible T0 options: {}".format(opt_names))
-
-# Look for a reference mass, to be used when stepping in time
-m_ref = config.getfloat(T0_SECT, 'M-ref', fallback=None)
-if m_ref:
-    # reference time translating from solar masses
-    tm_ref = m_ref * rd.qnms.T_MSUN
-    logging.info("Reference mass: {} Msun ({} s)".format(m_ref, tm_ref))
-else:
-    # no reference mass provided, so will default to seconds
-    tm_ref = 1
-
-# Look for reference time to be used to construct start times
-t0ref = config.getfloat(T0_SECT, T0_KEYS['ref'], fallback=0)
-
-# Now we can safely interpret the options assuming one of three cases
-if T0_KEYS['list'] in config[T0_SECT]:
-    t0s = array(literal_eval(config.get(T0_SECT, T0_KEYS['list'])))
-elif T0_KEYS['delta'] in config[T0_SECT]:
-    dt0s = array(literal_eval(config.get(T0_SECT, T0_KEYS['delta'])))
-    t0s = dt0s*tm_ref + t0ref
-elif any([k in config[T0_SECT] for k in start_stop_step]):
-    if not all([k in config[T0_SECT] for k in start_stop_step]):
-        missing = [k for k in start_stop_step if k not in config[T0_SECT]]
-        raise ValueError("missing start/stop/step options: {}".format(missing))
-    # add a safety check here, in case the user mistakenly requests stepping
-    # based on a GPS time and provides a reference GPS time
-    start, stop, step  = [config.getfloat(T0_SECT, k) for k in start_stop_step]
-    if start > 500 and t0ref > 1E8:
-        logging.warning("high reference time and stepping start---did you "
-                        "accidentally provide GPS times twice?")
-    t0s = arange(start, stop, step)*tm_ref + t0ref
-else:
-    raise ValueError("no timing instructions in [{}] section; valid options "
-                     "are: {}".format(T0_SECT, list(T0_KEYS.values())))
+t0s = TargetCollection.from_config(config).get('t0')
 
 # Record start times
-savetxt(PATHS["t0"], t0s)
+np.savetxt(PATHS["t0"], t0s)
 
 ##############################################################################
 # SET UP RUNS
@@ -192,8 +149,24 @@ savetxt(PATHS["t0"], t0s)
 if rerun and os.path.exists(PATHS['run_task']):
     os.remove(PATHS['run_task'])
 
-TASK = "mkdir -p {rundir}; cd {rundir}; ringdown_fit -o {result} {config} "\
-       "&> run.log\n"
+# determine how many devices to use, will default to 1 for GPUs and 4 for CPUs
+if args.device_count is not None:
+    NDEVICE = args.device_count
+elif args.platform == 'gpu':
+    NDEVICE = 1
+else:
+    NDEVICE = 4
+
+task_opts = [
+    "-o {result}",
+    f"--platform {args.platform}",
+    f"--device-count {NDEVICE}",
+    f"--omp-num-threads {args.omp_num_threads}",
+    "--verbose"
+]
+
+TASK = "mkdir -p {rundir}; cd {rundir}; ringdown_fit {config} %s"\
+       "&>> run.log\n" % ' '.join(task_opts)
 
 logging.info(f"Processing {len(t0s)} start times (recorded in {PATHS['t0']})")
 for i, t0 in enumerate(t0s):
@@ -231,20 +204,32 @@ if args.ntasks < 0:
     NTASK = len(t0s)
 else:
     NTASK = args.ntasks
-NCPU = 4
 
 # a user may allocate up to 1280 cores at one time in a center partition, so
 # issue a warning if this limit will be exceeded
-if NTASK*NCPU > 1280:
+if NTASK*NDEVICE > 1280:
     w = "Requested number of cores ({}) above 1280 user limit."
-    logging.warning(w.format(NTASK*NCPU))
+    logging.warning(w.format(NTASK*NDEVICE))
 
-EXE = [
-    '#! /usr/bin/env bash',
-    'cd {}'.format(outdir),
-    'sbatch -p cca -n {} -c {} disBatch {}'.format(NTASK, NCPU, PATHS['run_task']),
-    'cd -',
-]
+if args.platform == 'cpu':
+    EXE = [
+        '#! /usr/bin/env bash',
+        'cd {}'.format(outdir),
+        f"sbatch -p cca -n {NTASK} -c {NDEVICE} disBatch {PATHS['run_task']}",
+        'cd -',
+    ]
+else:
+    # see https://wiki.flatironinstitute.org/SCC/Software/UsingTheGPUNodes
+    NCPU = 16
+    EXE = [
+        '#! /usr/bin/env bash',
+        'cd {}'.format(outdir),
+        f"sbatch -p gpu -n {NTASK} --gpus-per-task={NDEVICE} --cpus-per-task={NCPU} --gpu-bind=closest disBatch {PATHS['run_task']}",
+        'cd -',
+    ]
+
+if args.constraints:
+    EXE[2] = EXE[2].replace('sbatch', f"sbatch -C {args.constraints}")
 
 epath = PATHS['exe']
 with open(epath, 'w') as f:

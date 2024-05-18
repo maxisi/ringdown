@@ -8,12 +8,14 @@ dependencies:
   - arviz
   - matplotlib
   - pandas
-  - pymc=4
   - scipy
   - lalsuite
   - qnm
   - seaborn
   - python=3
   - jupyterlab
-  - openblas
-  - aesara
+  - ipywidgets
+  - numpyro
+  - jax
+  - jaxlib
+  - parse

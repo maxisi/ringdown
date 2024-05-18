@@ -1,5 +1,3 @@
-pymc
-aesara
 numpy
 h5py
 arviz
@@ -12,3 +10,5 @@ seaborn
 jupyterlab
 tqdm
 ipywidgets
+numpyro
+jax
