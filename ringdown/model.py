@@ -37,6 +37,10 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales):
                             axis=1)
     
 def get_aligned_design_matrix(design_matrices, YpYc, n_modes):
+    """Get the design matrix for the aligned model by applying the YpYc factors
+    and reducing dimensionality to two quadratures.
+    """
+    # TODO: check logic here: do we want another dof for theta/psi?
     Yp_mat = jnp.reshape(YpYc[0], (1, n_modes, 1))
     Yc_mat = jnp.reshape(YpYc[1], (1, n_modes, 1))
     design_matrices = jnp.concatenate([
@@ -74,7 +78,7 @@ def get_quad_derived_quantities(design_matrices, quads, a_scale, YpYc, store_h_d
                                 store_h_det_mode, compute_h_det=False):
     nifo, nquads_nmodes, ntimes = design_matrices.shape
     
-    if YpYc:
+    if YpYc is not None:
         nmodes = nquads_nmodes // 2
 
         ax_unit = quads[:nmodes]
@@ -421,7 +425,7 @@ def make_model(modes : int | list[(int, int, int, int)],
         # modes should be established, and we can proceed with the rest of the
         # model.
 
-        if swsh is not None:
+        if swsh:
             if fixed_cosi is None:
                 cosi = numpyro.sample("cosi", dist.Uniform(cosi_min, cosi_max))
             else:
@@ -437,9 +441,8 @@ def make_model(modes : int | list[(int, int, int, int)],
             # (n_det, nquads*nmode, ntime)
             design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scale)
             
-            if swsh is not None:
+            if swsh:
                 # need to reduce the design matrix to the 2 quadratures
-                # TODO: check logic here: do we want another dof for theta/psi?
                 design_matrices = get_aligned_design_matrix(design_matrices, 
                                                             YpYc, n_modes)
             n_quad_n_modes = design_matrices.shape[1]
@@ -486,7 +489,7 @@ def make_model(modes : int | list[(int, int, int, int)],
                 # covariance < y^T y > = (Lambda_inv_chol^{-1}).T < x^T x >
                 # Lambda_inv_chol^{-1} = (Lambda_inv_chol^{-1}).T I Lambda_inv_chol^{-1}
                 # = Lambda.
-                if swsh is not None:
+                if swsh:
                     ax_unit = numpyro.sample('ax_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
                     ay_unit = numpyro.sample('ay_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
                     unit_quads = jnp.concatenate((ax_unit, ay_unit))
@@ -503,7 +506,7 @@ def make_model(modes : int | list[(int, int, int, int)],
         else:
             a_scales = a_scale_max*jnp.ones(n_modes)
             design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scales)
-            if swsh is not None:
+            if swsh:
                 design_matrices = get_aligned_design_matrix(design_matrices,
                                                             YpYc, n_modes)
                 ax_unit = numpyro.sample('ax_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
