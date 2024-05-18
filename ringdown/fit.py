@@ -98,7 +98,7 @@ class Fit(object):
         creating a configuration file through :meth:`Fit.to_config`.
     """
 
-    def __init__(self, modes=None, **kws):
+    def __init__(self, modes=None, strain_scale='auto', **kws):
         self.info = {}
         self.data = {}
         self.injections = {}
@@ -108,6 +108,12 @@ class Fit(object):
         self.prior = None
         self._n_analyze = None
         self._raw_data = None
+        # set strain scale
+        self._strain_scale = None
+        self.auto_scale = strain_scale == 'auto'
+        if self.auto_scale:
+            strain_scale = None
+        self.set_strain_scale(strain_scale or None)
         # set modes dynamically
         self.modes = None
         self.set_modes(modes)
@@ -127,6 +133,22 @@ class Fit(object):
             deep copy of `Fit`.
         """
         return cp.deepcopy(self)
+    
+    @property
+    def strain_scale(self):
+        if self._strain_scale:
+            scale = float(self._strain_scale)
+        elif self.auto_scale:
+            scale = max([np.std(d) for d in self.data.values()])
+        else:
+            scale = 1.0
+        return scale
+    
+    def set_strain_scale(self, scale):
+        if scale is None:
+            self._strain_scale = None
+        else:
+            self._strain_scale = float(scale)
     
     @property
     def has_target(self) -> bool:
@@ -255,10 +277,19 @@ class Fit(object):
         self.update_model(*args, **kwargs)
 
     @property
-    def run_input(self) -> dict:
+    def run_input(self) -> list:
         """Arguments to be passed to model function at runtime:
         [times, strains, ls, fp, fc].
         """
+        # check float precision and rescale strain if needed
+        if not jax.config.x64_enabled:
+            logging.warning("running with float32 precision")
+
+        # temporarily rescale strain if needed (this will just be by default
+        # if running on float64)
+        scale = self.strain_scale
+        logging.info(f"rescaled strain by {scale}")
+
         if not self.acfs:
             logging.warning("computing ACFs with default settings")
             self.compute_acfs()
@@ -277,8 +308,9 @@ class Fit(object):
         # [times, strains, ls, fp, fc]
         input = [
             times,
-            [s.values for s in data_dict.values()],
-            [a.iloc[:self.n_analyze].cholesky for a in self.acfs.values()],
+            [s.values / scale for s in data_dict.values()],
+            [(a.iloc[:self.n_analyze] / scale**2).cholesky
+             for a in self.acfs.values()],
             fp,
             fc
         ]
@@ -732,9 +764,11 @@ class Fit(object):
         filter = 'ignore' if suppress_warnings else 'default'
 
         # create model
+        ms = self.model_settings
+        if 'a_scale_max' in ms:
+            ms['a_scale_max'] = ms['a_scale_max'] / self.strain_scale
         model = make_model(self.modes.value, prior=prior, predictive=False,
-                           store_h_det=False, store_h_det_mode=False,
-                           **self.model_settings)
+                           store_h_det=False, store_h_det_mode=False, **ms)
         
         logging.info('running {} mode fit'.format(self.modes))
         logging.info('prior run: {}'.format(prior))
@@ -777,6 +811,7 @@ class Fit(object):
         run_input = self.run_input
         start_times  = self.start_times
         epoch = [start_times[i] for i in self.ifos]
+        scale = self.strain_scale
         if self.has_injections:
             inj = [self.analysis_injections[i] for i in self.ifos]
         else:
@@ -801,7 +836,7 @@ class Fit(object):
                 # turn sampler into Result object and store
                 # (recall that Result is a wrapper for arviz.InferenceData)
                 result = get_arviz(sampler, ifos=self.ifos, modes=self.modes,
-                                   injections=inj, epoch=epoch, 
+                                   injections=inj, epoch=epoch, scale=scale,
                                    attrs=self.attrs)
 
                 # check effective number of samples and rerun if necessary

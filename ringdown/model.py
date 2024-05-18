@@ -686,6 +686,7 @@ def get_arviz(sampler,
               ifos : list | None = None,
               injections : list | None = None,
               epoch : list | None = None,
+              scale : list | None = None,
               attrs : dict | None = None, 
               store_data : bool = True):
     """Convert a numpyro sampler to an arviz dataset.
@@ -704,7 +705,9 @@ def get_arviz(sampler,
         The injections to include in the dataset.  If `None`, then no injections
         are included.
     epoch : None or array_like
-        The epoch of each ifo.  If `None`, then all epochs are set to zero.
+        The epoch of each ifo. If `None`, then all epochs are set to zero.
+    scale : None or float
+        The scale of the strain. If `None`, then the scale is set to one.
     attrs : None or dict
         Attributes to include in the arviz dataset.
     record_data : bool
@@ -758,6 +761,7 @@ def get_arviz(sampler,
         }
         in_data = {k: np.array(v) for k,v in zip(in_dims.keys(),sampler._args)}
         in_data['epoch'] = np.array(epoch)
+        in_data['scale'] = scale or 1.0
         # get injections, if provided
         if injections is not None:
             in_data['injection'] = np.array(injections)

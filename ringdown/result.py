@@ -72,6 +72,12 @@ class Result(az.InferenceData):
             self.h_det
     
     @property
+    def strain_scale(self) -> float:
+        """Scale factor for strain data.
+        """
+        return float(self.constant_data.get('strain_scale', 1.0))
+    
+    @property
     def h_det(self):
         """Alias for `posterior.h_det`, in case this is not already present,
         it gets computed from individual modes."""
@@ -91,6 +97,19 @@ class Result(az.InferenceData):
             return self.posterior.h_det_mode
         else:
             return None
+        
+    def rescale_strain(self, scale=None) -> None:
+        """Autoscale the strain data in the result.
+        """
+        scale = scale or self.strain_scale
+        if 'h_det' in self.posterior:
+            self.posterior['h_det'] *= scale
+        if 'h_det_mode' in self.posterior:
+            self.posterior['h_det_mode'] *= scale
+        if 'a' in self.posterior:
+            self.posterior['a'] *= scale
+        if 'scale' in self.constant_data:
+            self.constant_data['scale'] /= scale
         
     @property
     def default_label_format(self) -> dict:

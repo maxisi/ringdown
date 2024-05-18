@@ -68,21 +68,6 @@ if __name__ == "__main__":
         logging.info("OMP_NUM_THREADS set to: {}".format(args.omp_num_threads))
         os.environ["OMP_NUM_THREADS"] = str(args.omp_num_threads)
 
-    from jax import config as jax_config
-    jax_config.update("jax_enable_x64", True)
-    import numpyro
-
-    numpyro.set_platform(args.platform)
-    if args.device_count is not None:
-        if args.platform == 'cpu' and args.device_count > cpu_count:
-            logging.warning(f"requested device count ({args.device_count}) "
-                            "greater than the number of available CPUs. "
-                            "Setting it to the maximum number of CPUs "
-                            f"({cpu_count}).")
-            args.device_count = cpu_count
-        else:
-            numpyro.set_host_device_count(args.device_count)
-
     print("Loading: {}".format(os.path.abspath(args.config)))
     
     config = configparser.ConfigParser()
@@ -94,13 +79,28 @@ if __name__ == "__main__":
             logging.warning("omp_num_threads is set in the configuration file, "
                             "but it will be ignored. Use the command line "
                             "option instead.")
+        if not run_kws.pop('float32', False):
+            from jax import config as jax_config
+            jax_config.update("jax_enable_x64", True)
     else:
         run_kws = {}
     run_kws['prior'] = args.prior or run_kws.get('prior', False)
-    
+
     if run_kws['prior']:
         DEFOUT = DEFOUT.replace('fit', 'prior')
     out = args.output or DEFOUT
+
+    import numpyro
+    numpyro.set_platform(args.platform)
+    if args.device_count is not None:
+        if args.platform == 'cpu' and args.device_count > cpu_count:
+            logging.warning(f"requested device count ({args.device_count}) "
+                            "greater than the number of available CPUs. "
+                            "Setting it to the maximum number of CPUs "
+                            f"({cpu_count}).")
+            args.device_count = cpu_count
+        else:
+            numpyro.set_host_device_count(args.device_count)
     
     if os.path.exists(out):
         if args.force:
