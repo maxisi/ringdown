@@ -138,7 +138,7 @@ class Fit(object):
     def strain_scale(self):
         if self._strain_scale:
             scale = float(self._strain_scale)
-        elif self.auto_scale:
+        elif self.auto_scale and not jax.config.x64_enabled:
             scale = max([np.std(d) for d in self.data.values()])
         else:
             scale = 1.0
@@ -704,6 +704,7 @@ class Fit(object):
             store_h_det : bool = False,
             store_h_det_mode : bool = True,
             store_residuals : bool = False,
+            rescale_strain: bool = True,
             suppress_warnings : bool = True, 
             min_ess : int | None = None,
             prng : jaxlib.xla_extension.ArrayImpl | int | None = None,
@@ -723,19 +724,35 @@ class Fit(object):
         ---------
         prior : bool
             whether to sample the prior (def. `False`).
+            
+        predictive : bool
+            draw secondary quantities from the posterior predictive after
+            runtime (def. `True`).
+            
+        store_h_det : bool
+            store detector templates in result (def. `False`).
+        
+        store_h_det_mode : bool
+            store individual-mode templates in result (def. `True`).
+            
+        store_residuals : bool
+            compute whitened residuals point-wise (def. `False`).
+            
+        rescale_strain : bool
+            rescale strain-like quantites by `strain_scale`, if strain was
+            rescaled before running, as could be the case when using float32
+            (def. `True`).
 
         suppress_warnings : bool
             suppress some sampler warnings (def. `True`).
-
-        store_residuals : bool
-            compute whitened residuals point-wise and store in ``Fit.result``.
 
         min_ess: number
             if given, keep re-running the sampling with longer chains until the
             minimum effective sample size exceeds `min_ess` (def. `None`).
 
         validation_enabled: bool
-            if True, run with numpyro.validation_enabled() to get verbose error messages
+            if True, run with numpyro.validation_enabled() to get verbose error
+            messages
 
         \*\*kwargs :
             arguments passed to sampler.
@@ -887,6 +904,9 @@ class Fit(object):
                     result.posterior[k] = xr.DataArray(v, coords=c, dims=d)
                     logging.info(f"added {k} to posterior")
 
+        if rescale_strain:
+            result.rescale_strain()
+            
         if prior:
             self.prior = result
         else:

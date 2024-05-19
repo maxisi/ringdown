@@ -265,6 +265,7 @@ def kdeplot_2d_clevels(xs, ys, levels=10, fill=False, n_grid=128, **kws):
     else:
         kws['colors'] = kws.get('colors', 
                                 [kws.pop('color', kws.pop('c', None)),])
+    kws.pop('label', None)
     if fill:
         ax.contourf(XS, YS, ZS, levels=l, **kws)
     else:

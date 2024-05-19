@@ -15,13 +15,13 @@ def binom_coeff(n, k):
       number of unordered outcomes to choose
     """
 
-    coeff = fac(n) / (fac(k) * fac(n-k)) 
+    num = fac(n)
+    denom = fac(k) * fac(n - k)
 
     # binomial coefficient is zero if k>n, or generally if above formula returns an inf
-    check_nk = jnp.isinf(coeff) 
-    coeff = jnp.where(check_nk, 0, coeff)
-
-    return coeff
+    num[denom == 0] = 0
+    denom[denom == 0] = 1
+    return num / denom
 
 def sin_th_2(cosi):
     # sin(iota/2)

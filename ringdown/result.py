@@ -56,12 +56,6 @@ class Result(az.InferenceData):
         self._modes = None
         # settings for formatting DataFrames
         self._default_label_format = {}
-        self._df_parameters = {}
-        for m in _DATAFRAME_PARAMETERS:
-            if m in getattr(self, 'posterior', {}):
-                self._df_parameters[m] = qnms.ParameterLabel(m)
-            elif m.upper() in getattr(self, 'posterior', {}):
-                self._df_parameters[m.upper()] = qnms.ParameterLabel(m)
         # try to load config
         if config is not None:
             self._config_dict = utils.load_config_dict(config)
@@ -70,12 +64,23 @@ class Result(az.InferenceData):
         # produce h_det (i.e., sum of all modes) if not already present
         if produce_h_det:
             self.h_det
+            
+    @property
+    def _df_parameters(self) -> dict[str, qnms.ParameterLabel]:
+        """Default parameters for DataFrames."""
+        df_parameters = {}
+        for m in _DATAFRAME_PARAMETERS:
+            if m in getattr(self, 'posterior', {}):
+                df_parameters[m] = qnms.ParameterLabel(m)
+            elif m.upper() in getattr(self, 'posterior', {}):
+                df_parameters[m.upper()] = qnms.ParameterLabel(m)
+        return df_parameters
     
     @property
     def strain_scale(self) -> float:
         """Scale factor for strain data.
         """
-        return float(self.constant_data.get('strain_scale', 1.0))
+        return float(self.constant_data.get('scale', 1.0))
     
     @property
     def h_det(self):
@@ -102,14 +107,22 @@ class Result(az.InferenceData):
         """Autoscale the strain data in the result.
         """
         scale = scale or self.strain_scale
+        logging.info(f"rescaling strain by {scale}")
         if 'h_det' in self.posterior:
-            self.posterior['h_det'] *= scale
+            self.posterior['h_det'] = scale * self.posterior['h_det']
         if 'h_det_mode' in self.posterior:
-            self.posterior['h_det_mode'] *= scale
+            self.posterior['h_det_mode'] = scale * self.posterior['h_det_mode']
         if 'a' in self.posterior:
-            self.posterior['a'] *= scale
+            self.posterior['a'] = scale * self.posterior['a']
         if 'scale' in self.constant_data:
-            self.constant_data['scale'] /= scale
+            self.constant_data['scale'] = self.constant_data['scale'] / scale
+        if 'strain' in self.observed_strain:
+            self.constant_data['strain'] = scale * self.constant_data['strain']
+        if 'injection' in self.constant_data:
+            self.constant_data['injection'] = scale * self.constant_data['injection']
+        if 'cholesky_factor' in self.constant_data:
+            self.constant_data['cholesky_factor'] = scale * self.constant_data['cholesky_factor']
+            
         
     @property
     def default_label_format(self) -> dict:
@@ -486,14 +499,14 @@ class Result(az.InferenceData):
     
     def get_parameter_key_map(self, modes : bool = True, **kws) -> dict:
         """Get a dictionary of parameter labels for the result."""
+        kws['latex'] = True
         if modes:
             l = {}
             for m in self.modes:
-                l.update({p: self._df_parameters[p].get_label(mode=m, **kws)
-                         for p in self._df_parameters})
+                l.update({p.get_label(mode=m, latex=False): p.get_label(mode=m, **kws)
+                         for p in self._df_parameters.values()})
         else:
-            l = {p: self._df_parameters[p].get_label(**kws)
-                 for p in self._df_parameters}
+            l = {k: p.get_label(**kws) for k, p in self._df_parameters.items()}
         return l
             
     
@@ -530,7 +543,7 @@ class Result(az.InferenceData):
         samples = self.stacked_samples
         if nsamp is not None:
             rng = rng or np.random.default_rng(rng)
-            idxs = rng.choice(samples.dims['sample'], nsamp, replace=False)
+            idxs = rng.choice(samples.sizes['sample'], nsamp, replace=False)
             samples = samples.isel(sample=idxs)
         else:
             idxs = None
@@ -582,7 +595,7 @@ class Result(az.InferenceData):
         samples = self.stacked_samples
         if nsamp is not None:
             rng = rng or np.random.default_rng(rng)
-            idxs = rng.choice(samples.dims['sample'], nsamp, replace=False)
+            idxs = rng.choice(samples.sizes['sample'], nsamp, replace=False)
             samples = samples.isel(sample=idxs)
         else:
             idxs = None
