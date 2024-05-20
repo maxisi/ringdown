@@ -134,6 +134,15 @@ class Fit(object):
         """
         return cp.deepcopy(self)
     
+    def reset(self, preserve_conditioning=False):
+        """Reset all priors and results, but keep data and target information.
+        """
+        if not preserve_conditioning:
+            self.data = self._raw_data
+            self.info.pop('condition', None)
+        self.result = None
+        self._model_settings = {}
+    
     @property
     def strain_scale(self):
         if self._strain_scale:
@@ -810,12 +819,6 @@ class Fit(object):
         run_kws = {k: v for k,v in kws.items() if k not in SAMPLER_ARGS and 
                    k not in KERNEL_ARGS}
         logging.info('run settings: {}'.format(run_kws))
-        
-        # create random number generator
-        if isinstance(prng, int):
-            prng = jax.random.PRNGKey(prng)
-        elif prng is None:
-            prng = jax.random.PRNGKey(np.random.randint(1<<31))
 
         # log some runtime information
         jax_device_count = jax.device_count()
@@ -833,6 +836,14 @@ class Fit(object):
             inj = [self.analysis_injections[i] for i in self.ifos]
         else:
             inj = None
+            
+        # split PRNG key for predictive
+        # create random number generator (it's BAD to reuse jax PRNG keys)
+        if isinstance(prng, int):
+            prng = jax.random.PRNGKey(prng)
+        elif prng is None:
+            prng = jax.random.PRNGKey(np.random.randint(1<<31))
+        prng, prng_pred = jax.random.split(prng)
 
         run_count = 1
         with warnings.catch_warnings():
@@ -840,10 +851,15 @@ class Fit(object):
             while ess_run < min_ess:
                 if not np.isscalar(min_ess):
                     raise ValueError("min_ess is not a number")
+                
+                # split keys again in case we are looping
+                prng, _ = jax.random.split(prng)
          
                 # make kernel, sampler and run
                 kernel = KERNEL(model, **kernel_kws)
                 sampler = SAMPLER(kernel, **sampler_kws)
+                
+                
                 if validation_enabled:
                     with numpyro.validation_enabled():
                         sampler.run(prng, *run_input, **run_kws)
@@ -882,7 +898,7 @@ class Fit(object):
         if predictive or store_h_det or store_h_det_mode:
             logging.info("obtaining predictive distribution")
             predictive = numpyro.infer.Predictive(model, sampler.get_samples())
-            pred = predictive(prng, *run_input, predictive=predictive, 
+            pred = predictive(prng_pred, *run_input, predictive=predictive, 
                               store_h_det=store_h_det,
                               store_h_det_mode=store_h_det_mode)
             
@@ -1005,6 +1021,14 @@ class Fit(object):
                 ifos = list(path.keys())
             else:
                 raise ValueError("no ifos provided")
+        
+        # if getting data via GWPY need [start, end] or [t0, seglen]
+        if kws.get('seglen'):
+            if 't0' not in kws:
+                if self.t0 is None:
+                    raise ValueError("no t0 provided")
+                kws['t0'] = self.t0
+                logging.info(f"using t0 = {self.t0} for segment selection")
         
         if path is None:
             path_dict = {k: None for k in ifos}
