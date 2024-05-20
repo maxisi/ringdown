@@ -15,7 +15,8 @@ import arviz as az
 from arviz.data.base import dict_to_dataset
 import logging
 
-def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales):
+def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, aligned=False,
+                     YpYc=None, single_polarization=False):
     """Construct the design matrix for a generic ringdown model.
     
     For each detector, this is a matrix whose rows are 
@@ -60,51 +61,6 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales):
         ],
         ...
     ]
-    
-    Arguments
-    ---------
-    ts : array_like
-        The times at which to evaluate the design matrix; shape (nifo, nt).
-    f : array_like
-        The frequencies of the damped sinusoids; shape (nmode,).
-    gamma : array_like
-        The damping rates of the damped sinusoids; shape (nmode,).
-    Fp : array_like
-        The plus polarization coefficients; shape (nifo,).
-    Fc : array_like
-        The cross polarization coefficients; shape (nifo,).
-    Ascales : array_like
-        The amplitude scales of the damped sinusoids; shape (nmode,).
-    
-    Returns
-    -------
-    design_matrix : array_like
-        The design matrix; shape (nifo, nt, nquads*nmode).
-    """
-    # times should be originally shaped (nifo, nt)
-    # take it to (nifo, nt, 1) where the last dimension is the mode
-    ts = jnp.atleast_2d(ts)[:,:,jnp.newaxis]
-    
-    # get number of detectors, times, and modes
-    nifo = ts.shape[0]
-    nmode = jnp.shape(f)[0]
-
-    f = jnp.reshape(f, (1, 1, nmode))
-    gamma = jnp.reshape(gamma, (1, 1, nmode))
-    Fp = jnp.reshape(Fp, (nifo, 1, 1))
-    Fc = jnp.reshape(Fc, (nifo, 1, 1))
-    Ascales = jnp.reshape(Ascales, (1, 1, nmode))
-
-    # ct and st will have shape (1, nt, nmode)
-    decay = jnp.exp(-gamma*ts)
-    ct = Ascales * decay * jnp.cos(2*np.pi*f*ts)
-    st = Ascales * decay * jnp.sin(2*np.pi*f*ts)
-    
-    return jnp.concatenate((Fp*ct, Fp*st, Fc*ct, Fc*st), axis=2)
-    
-def get_aligned_design_matrix(design_matrices, YpYc, n_modes):
-    """Get the design matrix for the aligned model by applying the YpYc factors
-    and reducing dimensionality to two quadratures.
     
     For the aligned model we have that, for each :math:`(\\ell, m)` mode and
     suppressing the exponential decay,
@@ -151,23 +107,66 @@ def get_aligned_design_matrix(design_matrices, YpYc, n_modes):
         
     This function effects that summation to return a design matrix corresponding
     to two quadratures.
+    
+    Arguments
+    ---------
+    ts : array_like
+        The times at which to evaluate the design matrix; shape (nifo, nt).
+    f : array_like
+        The frequencies of the damped sinusoids; shape (nmode,).
+    gamma : array_like
+        The damping rates of the damped sinusoids; shape (nmode,).
+    Fp : array_like
+        The plus polarization coefficients; shape (nifo,).
+    Fc : array_like
+        The cross polarization coefficients; shape (nifo,).
+    Ascales : array_like
+        The amplitude scales of the damped sinusoids; shape (nmode,).
+    
+    Returns
+    -------
+    design_matrix : array_like
+        The design matrix; shape (nifo, nt, nquads*nmode).
     """
-    # NOTE: we could add a polarization dof here through the azimuthal angle
-    # argument of YpYc, restoring theta---but this is degenerate with psi
-    # (we might still want to add that option, if we don't want to fix psi)
-    Yp_mat = jnp.reshape(YpYc[0], (1, 1, n_modes))
-    Yc_mat = jnp.reshape(YpYc[1], (1, 1, n_modes))
-    design_matrices = jnp.concatenate([
-        # Yp * Fp * cos
-        Yp_mat * design_matrices[:,:,:n_modes] +
-        # Yc * Fc * sin
-        Yc_mat * design_matrices[:,:,3*n_modes:],
-        # Yp * Fp * sin
-        Yp_mat * design_matrices[:,:,n_modes:2*n_modes] -
-        # Yc * Fc * cos
-        Yc_mat * design_matrices[:,:,2*n_modes:3*n_modes]
-    ], axis=2)
-    return design_matrices
+    # times should be originally shaped (nifo, nt)
+    # take it to (nifo, nt, 1) where the last dimension is the mode
+    ts = jnp.atleast_2d(ts)[:,:,jnp.newaxis]
+    
+    # get number of detectors, times, and modes
+    nifo = ts.shape[0]
+    nmode = jnp.shape(f)[0]
+
+    f = jnp.reshape(f, (1, 1, nmode))
+    gamma = jnp.reshape(gamma, (1, 1, nmode))
+    Fp = jnp.reshape(Fp, (nifo, 1, 1))
+    Fc = jnp.reshape(Fc, (nifo, 1, 1))
+    Ascales = jnp.reshape(Ascales, (1, 1, nmode))
+
+    # ct and st will have shape (1, nt, nmode)
+    decay = jnp.exp(-gamma*ts)
+    ct = Ascales * decay * jnp.cos(2*np.pi*f*ts)
+    st = Ascales * decay * jnp.sin(2*np.pi*f*ts)
+    
+    if single_polarization:
+        dm = jnp.concatenate((Fp*ct, Fp*st), axis=2)
+    else:
+        dm = jnp.concatenate((Fp*ct, Fp*st, Fc*ct, Fc*st), axis=2)
+    
+    if aligned and not single_polarization:
+        # NOTE: we could add a polarization dof here via the azimuthal angle
+        # argument of YpYc, restoring theta---but this is degenerate with psi
+        # (we might still want to add that option, if we don't want to fix psi)
+        Yp_mat = jnp.reshape(YpYc[0], (1, 1, nmode))
+        Yc_mat = jnp.reshape(YpYc[1], (1, 1, nmode))
+        dm = jnp.concatenate([
+            # Yp * Fp * cos + Yc * Fc * sin
+            Yp_mat * dm[:,:,:nmode] + Yc_mat * dm[:,:,3*nmode:],
+            # Yp * Fp * sin - Yc * Fc * cos
+            Yp_mat * dm[:,:,nmode:2*nmode] - Yc_mat * dm[:,:,2*nmode:3*nmode]
+        ], axis=2)
+    elif aligned:
+        raise ValueError("aligned model requires single_polarization=False")
+    return dm
 
 def chi_factors(chi, coeffs):
     log1mc = jnp.log1p(-chi)
@@ -192,26 +191,24 @@ def phiR_from_quadratures(Apx, Apy, Acx, Acy):
 def phiL_from_quadratures(Apx, Apy, Acx, Acy):
     return jnp.arctan2(-Acx - Apy, -Acy + Apx)
 
-def get_quad_derived_quantities(design_matrices, quads, a_scale, YpYc,
+def get_quad_derived_quantities(nmodes, design_matrices, quads, a_scale, YpYc,
                                 store_h_det, store_h_det_mode, 
                                 compute_h_det=False):
     nifo, ntimes, nquads_nmodes = design_matrices.shape
+    nquads = nquads_nmodes // nmodes
     
-    if YpYc is not None:
-        nmodes = nquads_nmodes // 2
-
+    if nquads == 2:
         ax_unit = quads[:nmodes]
-        ay_unit = quads[nmodes:2*nmodes]
+        ay_unit = quads[nmodes:]
 
         a_norm = jnp.sqrt(jnp.square(ax_unit) + jnp.square(ay_unit))
         a = numpyro.deterministic('a', a_scale * a_norm)
-        numpyro.deterministic('ellip', YpYc[1]/YpYc[0])
         numpyro.deterministic('phi', jnp.arctan2(ay_unit, ax_unit))
-        # theta = 0 in the aligned model
-
+        if YpYc is not None:
+            numpyro.deterministic('ellip', YpYc[1]/YpYc[0])
+        # theta = 0 for the aligned model
+        # ellip = 0 and theta = 0,pi/2 for the single polarization model
     else:
-        nmodes = nquads_nmodes // 4
-
         apx_unit = quads[:nmodes]
         apy_unit = quads[nmodes:2*nmodes]
         acx_unit = quads[2*nmodes:3*nmodes]
@@ -242,7 +239,7 @@ def get_quad_derived_quantities(design_matrices, quads, a_scale, YpYc,
         
         # multiply each quadrature by their respective amplitude
         # (note that this is still of shape (nifo, ntimes, nquads))
-        hh = design_matrices * quads[jnp.newaxis,jnp.newaxis,:]
+        hh = design_matrices * quads[jnp.newaxis, jnp.newaxis, :]
 
         for i in range(nmodes):
             h_det_mode = h_det_mode.at[:,i,:].set(jnp.sum(hh[:,:,i::nmodes],
@@ -276,6 +273,7 @@ def make_model(modes : int | list[(int, int, int, int)],
                g_max : None | float | list[float] = None,
                flat_amplitude_prior : bool = False,
                mode_ordering : None | str = None,
+               single_polarization : bool = False,
                prior : bool = False,               
                predictive : bool = True, 
                store_h_det : bool = True, 
@@ -347,6 +345,11 @@ def make_model(modes : int | list[(int, int, int, int)],
         `g_min`, and `g_max`.  If `'f'`, then the frequencies are constrained to
         be in increasing order; if `'g'`, then the damping rates are constrained
         to be in increasing order.
+        
+    single_polarization : bool
+        if true, assumes a single, linear polarization: either plus or cross, 
+        with `theta = 0`. This should only be used for testing in simulated data
+        for a single detector! (default: False)
 
     prior : bool
         Whether or not to compute the likelihood.  If `True`, then the
@@ -571,12 +574,10 @@ def make_model(modes : int | list[(int, int, int, int)],
                                         sample_shape=(n_modes,))
             # get design matrices which will have shape 
             # (n_det, ntime, nquads*nmode)
-            design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scale)
-            
-            if swsh:
-                # need to reduce the design matrix to the 2 quadratures
-                design_matrices = get_aligned_design_matrix(design_matrices, 
-                                                            YpYc, n_modes)
+            design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scale, 
+                                               aligned=swsh, YpYc=YpYc,
+                                               single_polarization=single_polarization)
+
             n_quad_n_modes = design_matrices.shape[2]
             
             mu = jnp.zeros(n_quad_n_modes)
@@ -610,7 +611,7 @@ def make_model(modes : int | list[(int, int, int, int)],
                     mu = a
                     lambda_inv = a_inv
                     lambda_inv_chol = a_inv_chol
-                
+            
             if predictive:
                 # Generate the actual quadrature amplitudes 
 
@@ -621,7 +622,7 @@ def make_model(modes : int | list[(int, int, int, int)],
                 # covariance < y^T y > = (Lambda_inv_chol^{-1}).T < x^T x >
                 # Lambda_inv_chol^{-1} = (Lambda_inv_chol^{-1}).T I Lambda_inv_chol^{-1}
                 # = Lambda.
-                if swsh:
+                if swsh or single_polarization:
                     ax_unit = numpyro.sample('ax_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
                     ay_unit = numpyro.sample('ay_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
                     unit_quads = jnp.concatenate((ax_unit, ay_unit))
@@ -633,14 +634,15 @@ def make_model(modes : int | list[(int, int, int, int)],
                     unit_quads = jnp.concatenate((apx_unit, apy_unit, acx_unit, acy_unit))
                     
                 quads = mu + jsp.linalg.solve(lambda_inv_chol.T, unit_quads)
-                get_quad_derived_quantities(design_matrices, quads, a_scale, YpYc, store_h_det,
+                get_quad_derived_quantities(n_modes, design_matrices, quads,
+                                            a_scale, YpYc, store_h_det,
                                             store_h_det_mode)
         else:
             a_scales = a_scale_max*jnp.ones(n_modes)
-            design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scales)
-            if swsh:
-                design_matrices = get_aligned_design_matrix(design_matrices,
-                                                            YpYc, n_modes)
+            design_matrices = rd_design_matrix(times, f, g, fps, fcs, a_scales,
+                                               aligned=swsh, YpYc=YpYc,
+                                               single_polarization=single_polarization)
+            if swsh or single_polarization:
                 ax_unit = numpyro.sample('ax_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
                 ay_unit = numpyro.sample('ay_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
                 quads = jnp.concatenate((ax_unit, ay_unit))
@@ -651,8 +653,8 @@ def make_model(modes : int | list[(int, int, int, int)],
                 acy_unit = numpyro.sample('acy_unit', dist.Normal(0, 1), sample_shape=(n_modes,))
                 quads = jnp.concatenate((apx_unit, apy_unit, acx_unit, acy_unit))
 
-            a, h_det = get_quad_derived_quantities(design_matrices, quads,
-                                                   a_scale_max, YpYc,
+            a, h_det = get_quad_derived_quantities(n_modes, design_matrices,
+                                                   quads, a_scale_max, YpYc,
                                                    store_h_det,
                                                    store_h_det_mode,
                                                    compute_h_det=(not prior))
@@ -665,7 +667,8 @@ def make_model(modes : int | list[(int, int, int, int)],
                                                0.5*jnp.sum(jnp.square(quads)))
                 
                 if prior:
-                    raise ValueError('you did not want to impose a flat amplitude prior without a likelihood')
+                    raise ValueError("you did not want to impose a flat "
+                                     "amplitude prior without a likelihood")
 
             if not prior:
                 for i, strain in enumerate(strains):
