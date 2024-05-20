@@ -80,7 +80,8 @@ class Result(az.InferenceData):
     def strain_scale(self) -> float:
         """Scale factor for strain data.
         """
-        return float(self.constant_data.get('scale', 1.0))
+        s = self.get('constant_data', {}).get('scale', 1.0)
+        return float(s)
     
     @property
     def h_det(self):
@@ -111,17 +112,23 @@ class Result(az.InferenceData):
         if 'h_det' in self.posterior:
             self.posterior['h_det'] = scale * self.posterior['h_det']
         if 'h_det_mode' in self.posterior:
-            self.posterior['h_det_mode'] = scale * self.posterior['h_det_mode']
+            self.posterior['h_det_mode'] = \
+                scale * self.posterior['h_det_mode']
         if 'a' in self.posterior:
             self.posterior['a'] = scale * self.posterior['a']
-        if 'scale' in self.constant_data:
-            self.constant_data['scale'] = self.constant_data['scale'] / scale
-        if 'strain' in self.observed_strain:
-            self.constant_data['strain'] = scale * self.constant_data['strain']
-        if 'injection' in self.constant_data:
-            self.constant_data['injection'] = scale * self.constant_data['injection']
-        if 'cholesky_factor' in self.constant_data:
-            self.constant_data['cholesky_factor'] = scale * self.constant_data['cholesky_factor']
+        if 'observed_strain' in self and 'strain' in self.observed_strain:
+            self.observed_strain['strain'] = \
+                scale * self.observed_strain['strain']
+        if 'constant_data' in self:
+            if 'scale' in self.constant_data:
+                self.constant_data['scale'] = \
+                    self.constant_data['scale'] / scale
+            if 'injection' in self.constant_data:
+                self.constant_data['injection'] = \
+                    scale * self.constant_data['injection']
+            if 'cholesky_factor' in self.constant_data:
+                self.constant_data['cholesky_factor'] = \
+                    scale * self.constant_data['cholesky_factor']
             
         
     @property

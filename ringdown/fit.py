@@ -854,7 +854,7 @@ class Fit(object):
                 # (recall that Result is a wrapper for arviz.InferenceData)
                 result = get_arviz(sampler, ifos=self.ifos, modes=self.modes,
                                    injections=inj, epoch=epoch, scale=scale,
-                                   attrs=self.attrs)
+                                   attrs=self.attrs, store_data=not prior)
 
                 # check effective number of samples and rerun if necessary
                 ess_run = result.ess
@@ -893,7 +893,8 @@ class Fit(object):
                          mode=self.modes.get_coordinates(),
                          time_index=np.arange(self.n_analyze, dtype=int))
             for k, v in pred.items():
-                if k not in result.posterior and k not in result.observed_data:
+                obsd = result.get('observed_data',  {})
+                if k not in result.posterior and k not in obsd:
                     # get dimension names
                     d = tuple(chain_draw + list(MODEL_DIMENSIONS.get(k, ())))
                     # get coordinates
