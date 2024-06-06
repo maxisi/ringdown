@@ -205,7 +205,7 @@ def get_quad_derived_quantities(nmodes, design_matrices, quads, a_scale, YpYc,
         a = numpyro.deterministic('a', a_scale * a_norm)
         numpyro.deterministic('phi', jnp.arctan2(ay_unit, ax_unit))
         if YpYc is not None:
-            numpyro.deterministic('ellip', YpYc[1]/YpYc[0])
+            numpyro.deterministic('ellip', YpYc[2])
         # theta = 0 for the aligned model
         # ellip = 0 and theta = 0,pi/2 for the single polarization model
     else:
