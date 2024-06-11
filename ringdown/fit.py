@@ -1039,16 +1039,16 @@ class Fit(object):
             channel_dict = {k: None for k in path_dict.keys()}
         else:
             channel_dict = utils.get_dict_from_pattern(channel, ifos)
-        
-        if frametype is None:
-            frametype_dict = {k: None for k in path_dict.keys()}
-        else:
-            frametype_dict = utils.get_dict_from_pattern(frametype, ifos)
             
         tslide = kws.pop('slide', {}) or {}
         for ifo, path in path_dict.items():
-            self.add_data(Data.load(path, ifo=ifo, channel=channel_dict[ifo],
-                                    frametype=frametype_dict[ifo], **kws))
+            if frametype is None:
+                self.add_data(Data.load(path, ifo=ifo, channel=channel_dict[ifo], **kws))
+                frametype_dict = {k: None for k in path_dict.keys()}
+            else:
+                frametype_dict = utils.get_dict_from_pattern(frametype, ifos)
+                self.add_data(Data.load(path, ifo=ifo, channel=channel_dict[ifo],
+                                        frametype=frametype_dict[ifo], **kws))
         # apply time slide if requested
         for i, dt in tslide.items():
             d = self.data[i]
