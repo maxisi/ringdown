@@ -6,14 +6,15 @@ from ..data import Data, TimeSeries
 from inspect import getfullargspec
 import logging
 
-def _ishift(hp_t : np.array, hc_t : np.array):
+
+def _ishift(hp_t: np.array, hc_t: np.array):
     """Quadratic sub-sample interpolation to estimate the peak of a waveform.
 
-    Identifies three points (a, b, c) where b is the sample peak and a and c are
-    the points immediately preceding and following it; if the peak is at the
-    beginning or end of the array, the points are wrapped around. The peak is
-    then estimated by fitting a quadratic to these three points and finding the
-    maximum of the parabola.
+    Identifies three points (a, b, c) where b is the sample peak and a and c
+    are the points immediately preceding and following it; if the peak is at
+    the beginning or end of the array, the points are wrapped around. The peak
+    is then estimated by fitting a quadratic to these three points and finding
+    the maximum of the parabola.
 
     Arguments
     ---------
@@ -52,7 +53,7 @@ def _ishift(hp_t : np.array, hc_t : np.array):
     # points and finding the maximum of the parabola, see e.g.
     # https://ccrma.stanford.edu/~jos/sasp/Quadratic_Interpolation_Spectral_Peaks.html
     ip = (ib + (3*a - 4*b + c)/(2*(a-2*b+c)) - 1)
-    
+
     # shift from end of array to peak
     shift = (len(hmag) - ip) % len(hmag)
 
@@ -99,24 +100,24 @@ class Signal(TimeSeries):
         for m in obj._MODELS:
             Signal._MODEL_REGISTER[m] = obj.from_parameters
 
-    def get_parameter(self, k : str, *args):
+    def get_parameter(self, k: str, *args):
         """Get parameter `k` from :attr:`Signal.parameters`.
-        
+
         Arguments
         ---------
         k : str
             parameter key.
-        
+
         Returns
         -------
         value : any
             parameter value.
         """
-        return self.parameters.get(k.lower(), *args) 
+        return self.parameters.get(k.lower(), *args)
 
     @property
     def _hp(self) -> np.array:
-        return np.real(self) 
+        return np.real(self)
 
     @property
     def hp(self) -> 'Signal':
@@ -125,7 +126,7 @@ class Signal(TimeSeries):
 
     @property
     def _hc(self) -> np.array:
-        return -np.imag(self) 
+        return -np.imag(self)
 
     @property
     def hc(self) -> 'Signal':
@@ -139,7 +140,7 @@ class Signal(TimeSeries):
     @property
     def peak_time(self):
         """Empirical estimate of the time of waveform envelope peak,
-        :math:`\max\left(h_+^2 + h_\\times^2\\right)`, obtained through
+        :math:`\\max\\left(h_+^2 + h_\\times^2\\right)`, obtained through
         quadratic sub-sample interpolation.
         """
         ipeak = len(self) - _ishift(self._hp, self._hc)
@@ -152,13 +153,14 @@ class Signal(TimeSeries):
         compact binary coalescence, or the ringdown alone.
 
         Input is passed to the corresponding constructor method, depending on
-        the `model` specified in arguments. Assumes signal is ringdown by default.
+        the `model` specified in arguments. Assumes signal is ringdown by
+        default.
 
         Arguments
         ---------
-        \*args :
+        *args :
             arguments passed to constructor.
-        \*\*kwargs:
+        **kwargs:
             keyword arguments passed to constructor.
 
         Returns
@@ -167,7 +169,8 @@ class Signal(TimeSeries):
             subclass of signal.
         """
         if not cls._MODEL_REGISTER:
-            raise ValueError("no models registered: reload or reinstall ringdown")
+            raise ValueError(
+                "no models registered: reload or reinstall ringdown")
         m = kwargs.get('model', 'ringdown')
         if m in cls._MODEL_REGISTER:
             return cls._MODEL_REGISTER[m](*args, **kwargs)
@@ -175,17 +178,17 @@ class Signal(TimeSeries):
             raise ValueError("unrecognized model: {}".format(m))
 
     def project(self,
-                ifo : str | None = None,
-                t0 : float | None =None,
-                antenna_patterns : tuple | None = None,
-                delay : float | str | None = None,
-                ra : float | None = None,
-                dec : float | None = None,
-                psi : float | None = None,
-                fd_shift : bool = False,
-                interpolate : bool = False):
-        """Project waveform onto detector, multiplying by antenna patterns and 
-        shifting by time-of-flight delay (if required).
+                ifo: str | None = None,
+                t0: float | None = None,
+                antenna_patterns: tuple | None = None,
+                delay: float | str | None = None,
+                ra: float | None = None,
+                dec: float | None = None,
+                psi: float | None = None,
+                fd_shift: bool = False,
+                interpolate: bool = False):
+        """Project waveform onto detector, multiplying by antenna patterns
+        and shifting by time-of-flight delay (if required).
 
         Arguments
         ---------
@@ -197,8 +200,8 @@ class Signal(TimeSeries):
             provided explicitly; if projecting from `ifo` name, assumes this is
             GPS time. Defaults to :attr:`Signal.t0`.
         antenna_patterns : tuple[float]
-            tuple of floats with plus and cross antenna pattern values (Fp, Fc);
-            computed based on `ifo` and sky location if not given.
+            tuple of floats with plus and cross antenna pattern values
+            (Fp, Fc); computed based on `ifo` and sky location if not given.
         delay : float, str
             numerical delay by which to shift signal, or ``'{from_geo}'`` to
             indicate delay is to be computed relative to geocenter for detector
@@ -240,7 +243,7 @@ class Signal(TimeSeries):
             det = None
         Fp, Fc = antenna_patterns
         h = Fp*self._hp + Fc*self._hc
-        
+
         if isinstance(delay, str):
             delay = get_delay(ifo, tgps or t0 or self.t0, ra, dec, delay)
         else:
@@ -266,11 +269,11 @@ class Signal(TimeSeries):
                                           'interpolate']})
         return Data(h, ifo=ifo, index=self.time, attrs=info)
     project.__doc__ = project.__doc__.format(from_geo=_FROM_GEO_KEY)
-    
-    def plot(self, ax=None, envelope : bool = False):
+
+    def plot(self, ax=None, envelope: bool = False):
         """Plot the series' plus and cross components.
         Remember that the value of this timeseries is ``h = hp - 1j*hc``.
-        
+
         Arguments
         ---------
         ax : matplotlib.pyplot.Axes, None
@@ -289,12 +292,12 @@ class Signal(TimeSeries):
         return ax
 
 
-def get_detector_signals(times : dict | np.ndarray | None = None,
-                         ifos : list | None = None,
-                         antenna_patterns : dict | None = None,
-                         trigger_times : dict | None = None,
-                         t0_default : float | None = None,
-                         fast_projection : bool = False,
+def get_detector_signals(times: dict | np.ndarray | None = None,
+                         ifos: list | None = None,
+                         antenna_patterns: dict | None = None,
+                         trigger_times: dict | None = None,
+                         t0_default: float | None = None,
+                         fast_projection: bool = False,
                          **kws):
     """Produce templates at each detector for a given set of parameters. Can be
     used to generate waveforms from model samples, or to obtain IMR injections.
@@ -317,25 +320,25 @@ def get_detector_signals(times : dict | np.ndarray | None = None,
         dictionary of arrival-times at each detector; computed from sky
         location and reference trigger time if not given.
     t0_default : float
-        optional default trigger time, to be used if no other valid trigger time
-        argument is provided in keyword arguments.
+        optional default trigger time, to be used if no other valid trigger
+        time argument is provided in keyword arguments.
     fast_projection : bool
         if true, evaluates polarization functions only once using the time
         array of the first interferometer and then projects onto each
         detector by time shifting; otherwise, evaluates polarizations for
         each detector, ensuring that there are no off-by-one alignment
         errors. (Def. False)
-    \*\*kws :
+    **kws :
         arguments passed to :meth:`Signal.from_parameters` and/or
         :meth:`Signal.project`.
-    
+
     Returns
     -------
     sdict : dict
         dictionary of :class:`Data` waveforms for each detector.
     """
     # parse GW and projection arguments
-    all_kws = {k: v for k,v in locals().items() if k not in ['times', 'ifos']}
+    all_kws = {k: v for k, v in locals().items() if k not in ['times', 'ifos']}
     all_kws.update(all_kws.pop('kws'))
 
     # arguments for signal generation
@@ -348,8 +351,8 @@ def get_detector_signals(times : dict | np.ndarray | None = None,
     if t0 is None:
         t0 = t0_default
     # get other arguments for signal projection
-    p_kws ={k: s_kws.pop(k) for k in kws.keys() if k in 
-            getfullargspec(Signal.project)[0][1:] and k != 't0'}
+    p_kws = {k: s_kws.pop(k) for k in kws.keys() if k in
+             getfullargspec(Signal.project)[0][1:] and k != 't0'}
 
     # parse detectors and time arrays
     if isinstance(times, dict):
@@ -371,8 +374,8 @@ def get_detector_signals(times : dict | np.ndarray | None = None,
     if not antenna_patterns and not sky_provided:
         raise ValueError("must provide antenna patterns or sky location")
 
-    # parse time options: first, could provide individual start times explicitly
-    # if so, this will take precedence over all other options
+    # parse time options: first, could provide individual start times
+    # explicitly if so, this will take precedence over all other options
     trigger_times = trigger_times or {}
 
     if all([i in trigger_times for i in ifos]):
@@ -393,7 +396,7 @@ def get_detector_signals(times : dict | np.ndarray | None = None,
                                                p_kws['dec']) for i in ifos}
     else:
         raise ValueError("must provide trigger times or sky location")
-        
+
     # some models allow for a `dts` parameter which shift t0 for detectors
     # other than the first (i.e., a relative shift wrt the first detector)
     # Note: this is not to be confused with the time-of-flight delay!
@@ -411,7 +414,7 @@ def get_detector_signals(times : dict | np.ndarray | None = None,
         # antenna patterns for the projection, or let them be computed from the
         # sky location and time.
         for i in ifos:
-            sdict[i] = h.project(antenna_patterns=antenna_patterns.get(i, None),
+            sdict[i] = h.project(antenna_patterns=antenna_patterns.get(i),
                                  delay=trigger_times[i] + dts.get(i, 0) - t0,
                                  ifo=i, **p_kws)
     else:
@@ -423,17 +426,18 @@ def get_detector_signals(times : dict | np.ndarray | None = None,
             # (potentially plus an arbitrary `dt` shift as above)
             s_kws['t0'] = trigger_times[i] + dts.get(i, 0)
             h = Signal.from_parameters(time, **s_kws)
-            sdict[i] = h.project(antenna_patterns=antenna_patterns.get(i, None),
+            sdict[i] = h.project(antenna_patterns=antenna_patterns.get(i),
                                  delay=0, ifo=i, **p_kws)
     return sdict
 
-def get_delay(ifo : str,
-              t0 : float | lal.LIGOTimeGPS,
-              ra : float, dec : float,
-              reference : str = Signal._FROM_GEO_KEY):
-    """Compute time-of-flight delay from geocenter to detector, or 
+
+def get_delay(ifo: str,
+              t0: float | lal.LIGOTimeGPS,
+              ra: float, dec: float,
+              reference: str = Signal._FROM_GEO_KEY):
+    """Compute time-of-flight delay from geocenter to detector, or
     between detectors.
-    
+
     Arguments
     ---------
     ifo : str
@@ -448,7 +452,7 @@ def get_delay(ifo : str,
         reference for time-of-flight delay; can be either ``'{from_geo}'`` to
         compute delay from geocenter to detector, or the prefix of another
         detector to compute delay between detectors.
-    
+
     Returns
     -------
     dt : float
@@ -465,4 +469,6 @@ def get_delay(ifo : str,
     else:
         raise ValueError("unrecognized reference: {}".format(reference))
     return dt
+
+
 get_delay.__doc__ = get_delay.__doc__.format(from_geo=Signal._FROM_GEO_KEY)

@@ -2,27 +2,29 @@ __all__ = ['Coalescence', 'Parameters']
 
 import numpy as np
 import lal
-from .core import *
+from .core import Signal, _ishift
 from ..utils import docstring_parameter
 try:
     from scipy.signal.windows import tukey
 except ImportError:
     from scipy.signal import tukey
-import lal
 import lalsimulation as ls
 from dataclasses import dataclass, asdict, fields
 import inspect
 import h5py
+
 
 def m1m2_from_mtotq(mtot, q):
     m1 = mtot / (1 + q)
     m2 = m1 * q
     return m1, m2
 
+
 def m1m2_from_mcq(mc, q):
     m1 = mc*(1 + q)**(1/5)/q**(3/5)
     m2 = m1 * q
     return m1, m2
+
 
 @dataclass
 class Parameters:
@@ -57,7 +59,8 @@ class Parameters:
 #    phase : float
 #        refrence phase
 #    long_asc_nodes : float
-#        longitude of ascending nodes (def., 0, following `LALSuite` convention)
+#        longitude of ascending nodes (def., 0, following
+#        `LALSuite` convention)
 #    eccentricity : float
 #        system eccentricity (def. 0)
 #    mean_per_ano : float
@@ -112,19 +115,19 @@ class Parameters:
 
     def __getitem__(self, *args, **kwargs):
         return getattr(self, *args, **kwargs)
-    
+
     def __setitem__(self, *args, **kwargs):
         return setattr(self, *args, **kwargs)
-    
+
     def to_dict(self) -> dict:
-            return asdict(self)
+        return asdict(self)
 
     def items(self, *args, **kwargs):
         return self.to_dict().items(*args, **kwargs)
-    
+
     def keys(self, *args, **kwargs):
         return self.to_dict().keys(*args, **kwargs)
-    
+
     def values(self, *args, **kwargs):
         return self.to_dict().values(*args, **kwargs)
 
@@ -132,10 +135,10 @@ class Parameters:
 
     _SPIN_KEYS_LALINF = ['theta_jn', 'phi_jl', 'tilt_1', 'tilt_2', 'phi_12',
                          'a_1', 'a_2']
-    
-    _SPIN_COMP_KEYS = ['spin_{}{}'.format(i,x) for i in [1,2] for x in 'xyz']
+
+    _SPIN_COMP_KEYS = ['spin_{}{}'.format(i, x) for i in [1, 2] for x in 'xyz']
     _SPIN_KEYS_LALSIM = ['iota'] + _SPIN_COMP_KEYS
-    
+
     _ALIASES = {
         'trigger_time': Signal._T0_ALIASES,
         'mass_1': ['m1'],
@@ -147,31 +150,31 @@ class Parameters:
         'iota': ['inclination', 'inc'],
         'f_ref': ['fref', 'reference_frequency'],
         'f_low': ['flow', 'fmin', 'f_min'],
-	'tilt_1': ['theta1'],
-	'tilt_2': ['theta2'],
+        'tilt_1': ['theta1'],
+        'tilt_2': ['theta2'],
     }
     _ALIASES_STR = ''
-    for _k,_v in _ALIASES.items():
+    for _k, _v in _ALIASES.items():
         _ALIASES_STR += f"* `{_k}`: ``{_v}\n``"
 
     for _k in _SPIN_KEYS_LALINF:
         _ALIASES[_k] = [_k.replace('_', '')]
     del _k, _v
-    
+
     @property
     def intrinsic(self):
         """Intrinsic parameters."""
-        return {k: v for k,v in self.items() if k not in self._EXTRINSIC}
+        return {k: v for k, v in self.items() if k not in self._EXTRINSIC}
 
     @property
     def extrinsic(self):
         """Extrinsic parameters."""
-        return {k: v for k,v in self.items() if k in self._EXTRINSIC}
+        return {k: v for k, v in self.items() if k in self._EXTRINSIC}
 
     @classmethod
-    def construct(cls, **kws):                                            
+    def construct(cls, **kws):
         """Construct :class:`Parameters` instance from keyword arguments.
-        
+
         Arguments will be treated as ``param_name = value``, and will attempt
         to match ``param_name`` to one of the known CBC parameters (or their
         aliases). As part of this process, the method will recognize spin
@@ -203,27 +206,28 @@ class Parameters:
                 if k in kws:
                     kws[par] = kws.pop(k)
         # compose component masses
-        if 'mass_1' not in kws or 'mass_2' not in kws:                                                               
-            if 'total_mass' in kws and 'mass_ratio' in kws:                   
-                kws['mass_1'], kws['mass_2'] = m1m2_from_mtotq(kws['total_mass'],
-                                                               kws['mass_ratio'])
+        if 'mass_1' not in kws or 'mass_2' not in kws:
+            if 'total_mass' in kws and 'mass_ratio' in kws:
+                kws['mass_1'], kws['mass_2'] = \
+                    m1m2_from_mtotq(kws['total_mass'], kws['mass_ratio'])
             elif 'chirp_mass' in kws and 'mass_ratio' in kws:
                 kws['mass_1'], kws['mass_2'] = m1m2_from_mcq(kws['chirp_mass'],
                                                              kws['mass_ratio'])
         # compose spins
-        lsim_given = [k in kws for k in cls._SPIN_KEYS_LALSIM if k!='iota']
-        linf_given = [k in kws for k in cls._SPIN_KEYS_LALINF if k!='theta_jn']
+        lsim_given = [k in kws for k in cls._SPIN_KEYS_LALSIM if k != 'iota']
+        linf_given = [
+            k in kws for k in cls._SPIN_KEYS_LALINF if k != 'theta_jn']
         if not all(lsim_given) and any(linf_given):
             try:
                 a = [kws[k] for k in cls._SPIN_KEYS_LALINF] + \
-                       [kws['mass_1']*lal.MSUN_SI, kws['mass_2']*lal.MSUN_SI,
+                    [kws['mass_1']*lal.MSUN_SI, kws['mass_2']*lal.MSUN_SI,
                         kws['f_ref'], kws['phase']]
             except KeyError as e:
                 raise ValueError(f"unable to parse spins, missing: {e}")
             b = ls.SimInspiralTransformPrecessingNewInitialConditions(*a)
             kws.update(dict(zip(cls._SPIN_KEYS_LALSIM, b)))
-            
-        return cls(**{k: v for k,v in kws.items() 
+
+        return cls(**{k: v for k, v in kws.items()
                       if k in inspect.signature(cls).parameters})
 
     @property
@@ -240,7 +244,8 @@ class Parameters:
 
     @property
     def chirp_mass(self):
-        """Chirp mass :math:`\\mathcal{M}_c = \\left(m_1 m_2\\right)^{3/5}/\\left(m_1 + m_2\\right)^{1/5}`.
+        """Chirp mass :math:`\\mathcal{M}_c = \\left(m_1 m_2\\right)^{3/5}/
+        \\left(m_1 + m_2\\right)^{1/5}`.
         """
         return (self.mass_1 * self.mass_2)**(3/5) / \
                (self.mass_1 + self.mass_2)**(1/5)
@@ -286,21 +291,21 @@ class Parameters:
         """First component mass in kg.
         """
         return self.mass_1 * lal.MSUN_SI
-    
+
     @property
     def mass_2_si(self):
         """Second component mass in kg.
         """
         return self.mass_2 * lal.MSUN_SI
-    
-    def compute_remnant_mchi(self, model : str ='NRSur7dq4Remnant') -> tuple:
+
+    def compute_remnant_mchi(self, model: str = 'NRSur7dq4Remnant') -> tuple:
         """Estimate remnant mass and spin using a remnant model.
-        
+
         Arguments
         ---------
         model : str
             name of remnant model to use (default: 'NRSur7dq4Remnant')
-            
+
         Returns
         -------
         mf : float
@@ -320,30 +325,30 @@ class Parameters:
         mf = remnant['FinalMass']
         chif = np.linalg.norm(remnant['FinalSpin'])
         return mf, chif
-    
+
     @property
     def final_mass(self):
         if self._final_mass is None:
             self._final_mass, self._final_spin = self.compute_remnant_mchi()
         return self._final_mass
-    
+
     @property
     def final_spin(self):
         if self._final_spin is None:
             self._final_mass, self._final_spin = self.compute_remnant_mchi()
         return self._final_spin
-    
+
     @property
     def final_mass_seconds(self):
         return self.final_mass * lal.GMSUN_SI / lal.C_SI**3
-    
+
     @property
     def final_mass_si(self):
         return self.final_mass * lal.MSUN_SI
 
     def get_choosetdwaveform_args(self, delta_t):
         """Construct input for :func:`ls.SimInspiralChooseTDWaveform`.
-        
+
         Arguments
         ---------
         delta_t: float
@@ -358,11 +363,11 @@ class Parameters:
                 self.luminosity_distance_si, self.iota, self.phase,
                 self.long_asc_nodes, self.eccentricity, self.mean_per_ano,
                 float(delta_t), self.f_low, self.f_ref]
-        return args 
+        return args
 
     def get_choosetdmodes_args(self, delta_t):
         """Construct input for :func:`ls.SimInspiralChooseTDModes`.
-        
+
         Arguments
         ---------
         delta_t: float
@@ -374,26 +379,61 @@ class Parameters:
             list of arguments ready for :func:`ls.SimInspiralChooseTDModes`
         """
         # Arguments taken by ChooseTDModes (from docstring):
-        # UNUSED REAL8 phiRef,                        /**< reference orbital phase (rad). This variable is not used and only kept here for backwards compatibility */
-        # REAL8 deltaT,                               /**< sampling interval (s) */
-        # REAL8 m1,                                   /**< mass of companion 1 (kg) */
-        # REAL8 m2,                                   /**< mass of companion 2 (kg) */
-        # REAL8 S1x,                                  /**< x-component of the dimensionless spin of object 1 */
-        # REAL8 S1y,                                  /**< y-component of the dimensionless spin of object 1 */
-        # REAL8 S1z,                                  /**< z-component of the dimensionless spin of object 1 */
-        # REAL8 S2x,                                  /**< x-component of the dimensionless spin of object 2 */
-        # REAL8 S2y,                                  /**< y-component of the dimensionless spin of object 2 */
-        # REAL8 S2z,                                  /**< z-component of the dimensionless spin of object 2 */
-        # REAL8 f_min,                                /**< starting GW frequency (Hz) */
-        # REAL8 f_ref,                                /**< reference GW frequency (Hz) */
-        # REAL8 r,                                    /**< distance of source (m) */
-        # LALDict *LALpars,                           /**< LAL dictionary containing accessory parameters */
-        # int lmax,                                   /**< generate all modes with l <= lmax */
-        # Approximant approximant                     /**< post-Newtonian approximant to use for waveform production */
+        # UNUSED REAL8 phiRef,
+        # /**< reference orbital phase (rad).
+        # This variable is not used and only kept here for backwards
+        # compatibility */
+        #
+        # REAL8 deltaT,
+        # /**< sampling interval (s) */
+        #
+        # REAL8 m1,
+        # /**< mass of companion 1 (kg) */
+        #
+        # REAL8 m2,
+        # /**< mass of companion 2 (kg) */
+        #
+        # REAL8 S1x,
+        # /**< x-component of the dimensionless spin of object 1 */
+        #
+        # REAL8 S1y,
+        # /**< y-component of the dimensionless spin of object 1 */
+        #
+        # REAL8 S1z,
+        # /**< z-component of the dimensionless spin of object 1 */
+        #
+        # REAL8 S2x,
+        # /**< x-component of the dimensionless spin of object 2 */
+        #
+        # REAL8 S2y,
+        # /**< y-component of the dimensionless spin of object 2 */
+        #
+        # REAL8 S2z,
+        # /**< z-component of the dimensionless spin of object 2 */
+        #
+        # REAL8 f_min,
+        # /**< starting GW frequency (Hz) */
+        #
+        # REAL8 f_ref,
+        # /**< reference GW frequency (Hz) */
+        #
+        # REAL8 r,
+        # /**< distance of source (m) */
+        #
+        # LALDict *LALpars,
+        # /**< LAL dictionary containing accessory parameters */
+        #
+        # int lmax,
+        # /**< generate all modes with l <= lmax */
+        #
+        # Approximant approximant
+        # /**< post-Newtonian approximant to use for waveform production */
+        #
         args = [0.0, float(delta_t), self.mass_1_si, self.mass_2_si,
                 *self.spin_1, *self.spin_2, self.f_low, self.f_ref,
                 self.luminosity_distance_si]
-        return args 
+        return args
+
 
 class Coalescence(Signal):
     """An inspiral-merger-ringdown signal from a compact binary coalescence.
@@ -487,7 +527,8 @@ class Coalescence(Signal):
         """
         approximant = model or approximant
 
-        all_kws = {k: v for k,v in locals().items() if k not in ['cls','time']}
+        all_kws = {k: v for k, v in locals().items() if k not in [
+            'cls', 'time']}
         all_kws.update(all_kws.pop('kws'))
 
         dt = time[1] - time[0]
@@ -531,7 +572,7 @@ class Coalescence(Signal):
             ma = ls.SimInspiralCreateModeArray()
             # add (l,m) and (l,-m) modes
             ls.SimInspiralModeArrayActivateMode(ma, l, m)
-            ls.SimInspiralModeArrayActivateMode(ma, l, -m)    
+            ls.SimInspiralModeArrayActivateMode(ma, l, -m)
             # then insert the ModeArray into the LALDict params
             ls.SimInspiralWaveformParamsInsertModeArray(param_dict, ma)
 
@@ -543,7 +584,7 @@ class Coalescence(Signal):
         # (keeping variable names the same to facilitate comparison)
         bufLength = len(time)
         tStart = time[0]
-        tEnd = tStart + dt * bufLength
+        # tEnd = tStart + dt * bufLength
 
         # /* The nearest sample in model buffer to the desired tc. */
         tcSample = round((pars['trigger_time'] - tStart)/dt)
@@ -551,7 +592,7 @@ class Coalescence(Signal):
         # /* The actual coalescence time that corresponds to the buffer
         #    sample on which the waveform's tC lands. */
         # i.e. the nearest time in the buffer
-        injTc = tStart + tcSample*dt
+        # injTc = tStart + tcSample*dt
 
         hp_d = hp.data.data
         hc_d = hc.data.data
@@ -584,9 +625,9 @@ class Coalescence(Signal):
             bufStartIndex = 0
 
         if tcSample + wavePostTc <= bufLength:
-            bufEndIndex= int(tcSample + wavePostTc)
+            bufEndIndex = int(tcSample + wavePostTc)
         else:
-            bufEndIndex= bufLength
+            bufEndIndex = bufLength
 
         bufWaveLength = bufEndIndex - bufStartIndex
 
@@ -604,8 +645,9 @@ class Coalescence(Signal):
             w = 1
 
         h = np.zeros(bufLength, dtype=complex)
-        h[bufStartIndex:bufEndIndex] = w*(hp_d[waveStartIndex:waveStartIndex+bufWaveLength] -\
-                                       1j*hc_d[waveStartIndex:waveStartIndex+bufWaveLength])
+        h[bufStartIndex:bufEndIndex] = \
+            w*(hp_d[waveStartIndex:waveStartIndex+bufWaveLength] -
+                1j*hc_d[waveStartIndex:waveStartIndex+bufWaveLength])
         all_kws.update(pars.to_dict())
         return cls(h, index=time, parameters=all_kws)
 
@@ -640,9 +682,12 @@ class Coalescence(Signal):
             peak time of the invariant strain
         """
 
-        #     LALDict *LALpars,                           /**< LAL dictionary containing accessory parameters */
-        #     int lmax,                                   /**< generate all modes with l <= lmax */
-        #     Approximant approximant                     /**< post-Newtonian approximant to use for waveform production */
+        #     LALDict *LALpars,
+        # /**< LAL dictionary containing accessory parameters */
+        #     int lmax,
+        # /**< generate all modes with l <= lmax */
+        #     Approximant approximant
+        # /**< post-Newtonian approximant to use for waveform production */
 
         if self._invariant_peak is None or ell_max or force:
             kws = self.parameters.copy()
@@ -656,7 +701,8 @@ class Coalescence(Signal):
                 ma = ls.SimInspiralCreateModeArray()
                 for ell in range(2, ell_max+1):
                     ls.SimInspiralModeArrayActivateAllModesAtL(ma, ell)
-                    ls.SimInspiralWaveformParamsInsertModeArray(dict_params, ma)
+                    ls.SimInspiralWaveformParamsInsertModeArray(
+                        dict_params, ma)
 
             pars = Parameters.construct(**kws)
             args = pars.get_choosetdmodes_args(self.delta_t)
@@ -671,7 +717,7 @@ class Coalescence(Signal):
                                         parameters=self.parameters)
             while hlms is not None:
                 sum_h_squared += np.real(hlms.mode.data.data)**2 + \
-                                 np.imag(hlms.mode.data.data)**2
+                    np.imag(hlms.mode.data.data)**2
                 hlms = hlms.next
             t_peak = sum_h_squared.peak_time
             if ell_max is not None:
@@ -679,4 +725,6 @@ class Coalescence(Signal):
                 return t_peak
             self._invariant_peak = t_peak
         return self._invariant_peak
+
+
 Signal._register_model(Coalescence)
