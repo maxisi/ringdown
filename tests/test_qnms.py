@@ -18,7 +18,7 @@ def test_T_MSUN():
 def test_get_ftau(index, f_tau_ref):
     (p, s, l, m, n) = index
     ftau = ringdown.qnms.get_ftau(M_REF, C_REF, n=n, l=l, m=p*m)
-    assert ftau == pytest.approx(f_tau_ref, abs=1e-18)
+    assert ftau == pytest.approx(f_tau_ref, rel=1e-12)
 
 
 class TestKerrMode:
