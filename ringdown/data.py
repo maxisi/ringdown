@@ -17,6 +17,7 @@ import os
 import logging
 import inspect
 
+
 class Series(pd.Series):
     """ A wrapper of :class:`pandas.Series` with some additional functionality.
     """
@@ -26,16 +27,16 @@ class Series(pd.Series):
         return Series
 
     @classmethod
-    def read(cls, path : str, kind : str | None = None, 
-             channel : str | None = None, **kws):
+    def read(cls, path: str, kind: str | None = None,
+             channel: str | None = None, **kws):
         """Load data from disk.
-        
+
         If ``kind`` is `gwosc` assumes input is an strain HDF5 file downloaded
         from `GWOSC <https://www.gw-openscience.org>`_.  If ``kind`` is `frame`
         and the keyword `channel` is given, then attempt to load the given
         path(s) using gwpy's frame file reading.  Otherwise, it is a wrapper
-        around :func:`pandas.read_hdf` or :func:`pandas.read_csv` functions, for
-        ``kind = 'hdf'`` or ``kind = 'csv'``.
+        around :func:`pandas.read_hdf` or :func:`pandas.read_csv` functions,
+        for ``kind = 'hdf'`` or ``kind = 'csv'``.
 
         If ``kind`` is ``None``, guesses filetype from extension.
 
@@ -55,7 +56,7 @@ class Series(pd.Series):
             series loaded from disk
         """
         kind = (kind or '').lower()
-        
+
         if not kind:
             # attempt to guess filetype
             ext = os.path.splitext(path)[1].lower().strip('.')
@@ -89,9 +90,10 @@ class Series(pd.Series):
                 from gwpy.timeseries import TimeSeries
             except ModuleNotFoundError:
                 raise ImportError("missing optional dependency 'gwpy'; "
-                    "use pip or conda to install it")
+                                  "use pip or conda to install it")
             ts = TimeSeries.read(path, channel)
-            # GWpy puts units on its times, we remove them by redefining the index
+            # GWpy puts units on its times, we remove them by redefining the
+            # index
             return cls(ts.value, index=np.array(ts.times), **kws)
         
         elif kind in ['hdf', 'csv']:
@@ -99,18 +101,19 @@ class Series(pd.Series):
             # get list of arguments accepted by pandas read function in order
             # to filter out extraneous arguments that should go to cls
             read_vars = inspect.signature(read_func).parameters.keys()
-            # define some defaults to ensure we get a Series and not a DataFrame
+            # define defaults to ensure we get a Series and not a DataFrame
             read_kws = dict(sep=None, index_col=0, squeeze=True)
             if 'sep' in kws:
                 # gymnastics to be able to support `sep = \t` (e.g., when
                 # reading a config file)
-                kws['sep'] = kws['sep'].encode('raw_unicode_escape').decode('unicode_escape')
-            read_kws.update({k: v for k,v in kws.items() if k in read_vars})
+                kws['sep'] = kws['sep'].encode(
+                    'raw_unicode_escape').decode('unicode_escape')
+            read_kws.update({k: v for k, v in kws.items() if k in read_vars})
             squeeze = read_kws.pop('squeeze', False)
-            cls_kws = {k: v for k,v in kws.items() if k not in read_vars}
+            cls_kws = {k: v for k, v in kws.items() if k not in read_vars}
             if kind == 'csv' and 'float_precision' not in read_kws:
-                logging.warning("specify `float_precision='round_trip'` or risk "
-                                "strange errors due to precision loss")
+                logging.warning("specify `float_precision='round_trip'` or "
+                                "risk strange errors due to precision loss")
             if kind == 'csv':
                 read_kws['header'] = kws.get('header', None)
             # squeeze if needed (since squeeze argument no longer accepted)
@@ -122,9 +125,9 @@ class Series(pd.Series):
             raise ValueError("unrecognized file kind: {}".format(kind))
     
     @classmethod
-    def fetch(cls, channel : str, start : float | None = None,
-              end : float | None = None, t0 : float | None = None,
-              seglen : float | None = None, frametype : str | None = None,
+    def fetch(cls, channel: str, start: float | None = None,
+              end: float | None = None, t0: float | None = None,
+              seglen: float | None = None, frametype: str | None = None,
               **kws):
         """Download open data or discover data using NDS2 (requires GWpy).
         
@@ -163,8 +166,8 @@ class Series(pd.Series):
                               "use pip or conda to install it")
         
         # validate time input
-        if start is None and end is None and\
-            t0 is not None and seglen is not None:
+        if start is None and end is None and \
+           t0 is not None and seglen is not None:
             start = t0 - seglen/2
             end = t0 + seglen/2
             logging.info(f"fetching {seglen} s long segment centered on {t0}"
@@ -191,7 +194,7 @@ class Series(pd.Series):
             return cls(d.value, index=np.array(d.times), **attrs)
 
     @classmethod
-    def load(cls, path : str | None = None, channel : str | None = None, **kws):
+    def load(cls, path: str | None = None, channel: str | None = None, **kws):
         """Universal load function to read data from disk or discover GWOSC/NDS
         data using GWpy.
         
@@ -210,7 +213,7 @@ class Series(pd.Series):
         elif path is not None:
             ts = cls.read(path, channel=channel, **kws)
         else:
-            raise ValueError("must provide either path or channel to load data")
+            raise ValueError("must provide either path or channel")
         # record data provenance in series attrs (note that attrs is a property
         # of pandas.Series, we don't need to re-create it)
         info = dict(path=path, channel=channel)
@@ -247,7 +250,8 @@ class Series(pd.Series):
             interp = interp_func(new_index)
         attrs = {a: getattr(self, a, None) for a in getattr(self, '_meta', [])}
         return self._constructor(interp, index=new_index, **attrs)
-    interpolate_to_index.__doc__ = interpolate_to_index.__doc__.format(_DEF_INTERP_KWS)
+    interpolate_to_index.__doc__ = \
+        interpolate_to_index.__doc__.format(_DEF_INTERP_KWS)
 
 
 class TimeSeries(Series):
@@ -392,11 +396,11 @@ class FrequencySeries(Series):
         time = np.arange(len(data)) * self.delta_t + epoch
         return TimeSeries(data, index=time, name=self.name)
 
-    def interpolate_to_index(self, freq : np.ndarray | None = None,
-                             delta_f : float | None = None,
-                             f_min : float | None = None,
-                             f_max : float | None = None,
-                             log : bool =False, **kws):
+    def interpolate_to_index(self, freq: np.ndarray | None = None,
+                             delta_f: float | None = None,
+                             f_min: float | None = None,
+                             f_max: float | None = None,
+                             log: bool = False, **kws):
         """Interpolate the :class:`FrequencySeries` to new index. Inherits
         from :func:`Series.interpolate_to_index`.
         
@@ -489,16 +493,16 @@ class Data(TimeSeries):
             d = None
         return d
 
-    def condition(self, t0 : float | None = None,
-                  ds : int | None = None,
-                  f_min : float | None = None,
-                  f_max : float | None = None,
-                  trim : float = 0.25,
-                  digital_filter : bool = True,
-                  remove_mean : bool = True,
-                  decimate_kws : dict | None = None,
-                  slice_left : float | None = None,
-                  slice_right : float | None = None):
+    def condition(self, t0: float | None = None,
+                  ds: int | None = None,
+                  f_min: float | None = None,
+                  f_max: float | None = None,
+                  trim: float = 0.25,
+                  digital_filter: bool = True,
+                  remove_mean: bool = True,
+                  decimate_kws: dict | None = None,
+                  slice_left: float | None = None,
+                  slice_right: float | None = None):
         """Condition data.
 
         Arguments
@@ -613,7 +617,7 @@ class Data(TimeSeries):
         return PowerSpectrum.from_data(self, **kws)
     
     @classmethod
-    def from_psd(cls, psd : 'PowerSpectrum', **kws):
+    def from_psd(cls, psd: 'PowerSpectrum', **kws):
         """Generate data from a given PSD.
 
         Arguments
@@ -655,9 +659,9 @@ class PowerSpectrum(FrequencySeries):
         return PowerSpectrum
 
     @classmethod
-    def from_data(cls, data : Data | np.ndarray,
-                  f_min : float | None = None, f_max : float | None = None,
-                  fill_value : float | tuple | None = None, **kws):
+    def from_data(cls, data: Data | np.ndarray,
+                  f_min: float | None = None, f_max: float | None = None,
+                  fill_value: float | tuple | None = None, **kws):
         """Estimate :class:`PowerSpectrum` from time domain data using Welch's
         method.
 
@@ -743,6 +747,7 @@ class PowerSpectrum(FrequencySeries):
             func = getattr(lalsim, func)
         f_ref = freq[np.argmin(abs(freq - f_min))]
         p_ref = func(f_ref) if fill_value is None else fill_value
+        
         def get_psd_bin(f):
             if f > f_min:
                 return func(f)
@@ -817,11 +822,11 @@ class PowerSpectrum(FrequencySeries):
         rho = 0.5*np.fft.irfft(self) / self.delta_t
         return AutoCovariance(rho, delta_t=self.delta_t)
     
-    def draw_noise_fd(self, freq : np.ndarray | None = None,
-                      delta_f : float | None = None,
-                      f_min : float | None = None,
-                      f_max : float | None = None,  
-                      rng : int | np.random.Generator | None = None,
+    def draw_noise_fd(self, freq: np.ndarray | None = None,
+                      delta_f: float | None = None,
+                      f_min: float | None = None,
+                      f_max: float | None = None,
+                      rng: int | np.random.Generator | None = None,
                       **kws):
         """Draw Fourier-domain noise from the PSD, with variance consistent
         with the LIGO definition of the PSD (cf. GW likelihood), namely
@@ -861,12 +866,12 @@ class PowerSpectrum(FrequencySeries):
         return FrequencySeries(noise_real + 1j*noise_imag, index=psd.freq,
                                name=self.name)
         
-    def draw_noise_td(self, duration : float | None = None,
-                      f_samp : float | None = None,
-                      delta_t : float | None = None,
-                      f_min : float | None = None,
-                      f_max : float | None = None,
-                      delta_f : float | None = None,
+    def draw_noise_td(self, duration: float | None = None,
+                      f_samp: float | None = None,
+                      delta_t: float | None = None,
+                      f_min: float | None = None,
+                      f_max: float | None = None,
+                      delta_f: float | None = None,
                       epoch=0., **kws):
         """Draw time-domain noise from the PSD.
         
@@ -950,7 +955,6 @@ class AutoCovariance(TimeSeries):
             args = [None]
         self.ifo = ifo or getattr(args[0], 'ifo', None)
         self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
-            
 
     @property
     def _constructor(self):
@@ -1013,24 +1017,25 @@ class AutoCovariance(TimeSeries):
         return PowerSpectrum(psd, index=freq)
 
     @property
-    def matrix(self) -> np.ndarray :
+    def matrix(self) -> np.ndarray:
         """Covariance matrix built from ACF, :math:`C_{ij} = \\rho(|i-j|)`.
         """
         return sl.toeplitz(self)
 
     @property
-    def cholesky(self) -> np.ndarray :
+    def cholesky(self) -> np.ndarray:
         """Cholesky factor :math:`L` of covariance matrix :math:`C = L^TL`.
         """
         if getattr(self, '_cholesky', None) is None:
             self._cholesky = np.linalg.cholesky(self.matrix)
         return self._cholesky
 
-    def compute_snr(self, x, y=None) -> float :
+    def compute_snr(self, x, y=None) -> float:
         """Efficiently compute the signal-to_noise ratio
         :math:`\\mathrm{SNR} = \left\langle x \mid y \\right\\rangle /
-        \\sqrt{\\left\langle x \mid x \\right\\rangle}`, where the inner product
-        is defined by :math:`\left\langle x \mid y \\right\\rangle \\equiv x_i
+        \\sqrt{\\left\langle x \mid x \\right\\rangle}`, where the inner
+        product is defined by
+        :math:`\left\langle x \mid y \\right\\rangle \\equiv x_i
         C^{-1}_{ij} y_j`. This is internally computed using Cholesky factors to
         speed up the computation.
 
@@ -1051,11 +1056,12 @@ class AutoCovariance(TimeSeries):
             signal-to-noise ratio
         """
 
-        if y is None: y = x
+        if y is None:
+            y = x
         ow_x = sl.solve_toeplitz(self.iloc[:len(x)], x)
         return np.dot(ow_x, y)/np.sqrt(np.dot(x, ow_x))
 
-    def whiten(self, data) -> Data | TimeSeries | np.ndarray :
+    def whiten(self, data) -> Data | TimeSeries | np.ndarray:
         """Whiten stretch of data using ACF.
 
         Arguments

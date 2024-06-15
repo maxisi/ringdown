@@ -18,7 +18,7 @@ import jaxlib.xla_extension
 import xarray as xr
 import lal
 import logging
-from .data import *
+from .data import Data, AutoCovariance, PowerSpectrum
 from . import utils
 from .target import Target
 from .result import Result
@@ -38,10 +38,12 @@ for k in SAMPLER_ARGS:
         logging.warning(f"overlapping keys in {KERNEL} and {SAMPLER}: {k}")
 
 MODEL_ARGS = inspect.signature(make_model).parameters.keys()
-RUNTIME_MODEL_ARGS = ['modes', 'prior', 'predictive', 'store_h_det', 'store_h_det_mode']
+RUNTIME_MODEL_ARGS = ['modes', 'prior', 'predictive', 'store_h_det',
+                      'store_h_det_mode']
 
 DEF_RUN_KWS = dict(dense_mass=True, num_warmup=1000, num_samples=1000,
-                    num_chains=4)
+                   num_chains=4)
+
 
 class Fit(object):
     """ A ringdown fit. Contains all the information required to setup and run
@@ -51,8 +53,10 @@ class Fit(object):
 
         import ringdown as rd
         fit = rd.Fit(modes=[(1,-2,2,2,0), (1,-2,2,2,1)])
-        fit.load_data('{i}-{i}1_GWOSC_16KHZ_R1-1126259447-32.hdf5', ifos=['H1', 'L1'], kind='gwosc')
-        fit.set_target(1126259462.4083147, ra=1.95, dec=-1.27, psi=0.82, duration=0.05)
+        fit.load_data('{i}-{i}1_GWOSC_16KHZ_R1-1126259447-32.hdf5', 
+                      ifos=['H1', 'L1'], kind='gwosc')
+        fit.set_target(1126259462.4083147, ra=1.95, dec=-1.27, psi=0.82, 
+                       duration=0.05)
         fit.condition_data(ds=8)
         fit.update_model(A_scale=1e-21, M_min=50, M_max=150)
         fit.run()
@@ -120,10 +124,10 @@ class Fit(object):
         # assume rest of kwargs are to be passed to make_model
         self._model_settings = {}
         self.update_model(**kws)
-        
+
     def __repr__(self):
         return f"Fit({self.modes}, ifos={self.ifos})"
-    
+
     def copy(self):
         """Produce a deep copy of this `Fit` object.
 
@@ -133,7 +137,7 @@ class Fit(object):
             deep copy of `Fit`.
         """
         return cp.deepcopy(self)
-    
+
     def reset(self, preserve_conditioning=False):
         """Reset all priors and results, but keep data and target information.
         """
@@ -142,7 +146,7 @@ class Fit(object):
             self.info.pop('condition', None)
         self.result = None
         self._model_settings = {}
-    
+
     @property
     def strain_scale(self):
         if self._strain_scale:
@@ -152,20 +156,20 @@ class Fit(object):
         else:
             scale = 1.0
         return scale
-    
+
     def set_strain_scale(self, scale):
         if scale is None:
             self._strain_scale = None
         else:
             self._strain_scale = float(scale)
-    
+
     @property
     def has_target(self) -> bool:
         """Whether an analysis target has been set with
         :meth:`Fit.set_target`.
         """
         return self.target is not None
-    
+
     @property
     def has_injections(self) -> bool:
         """Whether injections have been added with :meth:`Fit.inject`.
@@ -235,7 +239,7 @@ class Fit(object):
     def analysis_times(self) -> dict:
         """Time arrays for analysis data.
         """
-        return {i: d.time.values for i,d in self.analysis_data.items()}
+        return {i: d.time.values for i, d in self.analysis_data.items()}
 
     @property
     def raw_data(self) -> dict:
@@ -268,7 +272,7 @@ class Fit(object):
         if self.result is not None:
             logging.warning("updating prior of Fit with preexisting results!")
         if self.prior is not None:
-            logging.warning("updating prior of Fit with preexisting prior results!")
+            logging.warning("updating prior of Fit with preexisting prior!")
 
         # check whether the option is valid, regardless of case
         for k, v in kws.items():
@@ -310,7 +314,7 @@ class Fit(object):
         fc = [x[1] for x in fpfc]
 
         times = [np.array(d.time) - self.start_times[i] 
-                 for i,d in data_dict.items()]
+                 for i, d in data_dict.items()]
 
         # arguments to be passed to function returned by model_function
         # make sure this agrees with that function call!
@@ -326,8 +330,8 @@ class Fit(object):
         return input
 
     @classmethod
-    def from_config(cls, config_input : str | configparser.ConfigParser,
-                    no_cond: bool = False, result : str | None = None):
+    def from_config(cls, config_input: str | configparser.ConfigParser,
+                    no_cond: bool = False, result: str | None = None):
         """Creates a :class:`Fit` instance from a configuration file.
         
         Has the ability to load and condition data, as well as to inject a
@@ -350,17 +354,20 @@ class Fit(object):
         config = utils.load_config(config_input)
                     
         # parse model options
-        model_opts = {k: utils.try_parse(v) for k,v in config['model'].items()}
+        model_opts = {k: utils.try_parse(v)
+                      for k, v in config['model'].items()}
         if 'name' in model_opts:
-            warnings.warn("model name is deprecated, use explicit mode options instead")
-            logging.info("trying to guess mode configuration based on model name")
+            warnings.warn("model name is deprecated, use explicit"
+                          "mode options instead")
+            logging.info("trying to guess mode configuration based "
+                         "on model name")
             name = model_opts.pop('name')
             if 'aligned' in name:
                 raise NotImplementedError("aligned model not yet supported")
             model_opts['marginalized'] = 'marginal' in name
 
         if config.has_section('prior'):
-            prior = {k: utils.try_parse(v) for k,v in config['prior'].items()}
+            prior = {k: utils.try_parse(v) for k, v in config['prior'].items()}
             model_opts.update(prior)
 
         # look for some legacy options and replace them with current arguments
@@ -374,31 +381,33 @@ class Fit(object):
         for new, old in legacy.items():
             for k in old:
                 if k in model_opts:
-                    warnings.warn(f"replacing deprecated option {k} with {new}")
+                    warnings.warn(f"'{k}' depreacted, replacing with {new}")
                     model_opts[new] = model_opts.pop(k)
         
         if 'perturb_f' in model_opts:
-            warnings.warn("perturb_f is deprecated, just use df_min/max instead")
+            warnings.warn("perturb_f is deprecated, use df_min/max instead")
             perturb_f = model_opts.pop('perturb_f')
             for k in ['df_min', 'df_max']:
                 if k in model_opts:
                     model_opts[k] *= perturb_f
         
         if 'perturb_tau' in model_opts:
-            warnings.warn("perturb_tau is deprecated, just use dg_min/max instead")
+            warnings.warn("perturb_tau is deprecated, use dg_min/max instead")
             perturb_tau = model_opts.pop('perturb_tau')
             if 'dtau_max' in model_opts:
-                model_opts['dg_min'] = - model_opts.pop('dtau_max') * perturb_tau
+                model_opts['dg_min'] = - model_opts.pop('dtau_max')*perturb_tau
             if 'dtau_min' in model_opts:
-                model_opts['dg_max'] = - model_opts.pop('dtau_min') * perturb_tau
+                model_opts['dg_max'] = - model_opts.pop('dtau_min')*perturb_tau
                 
         if 'order_fs' in model_opts:
-            warnings.warn("order_fs is deprecated, use `mode_ordering = 'f'` instead")
+            warnings.warn("order_fs is deprecated, "
+                          "use `mode_ordering = 'f'` instead")
             if bool(model_opts.pop('order_fs')):
                 model_opts['mode_ordering'] = 'f'
             
         if 'order_gammas' in model_opts:
-            warnings.warn("order_gammas is deprecated, use `mode_ordering = 'g'` instead")
+            warnings.warn("order_gammas is deprecated, "
+                          "use `mode_ordering = 'g'` instead")
             if bool(model_opts.pop('order_gammas')):
                 model_opts['mode_ordering'] = 'g'
             
@@ -414,22 +423,24 @@ class Fit(object):
         ifo_input = config.get('data', 'ifos', fallback='')
         try:
             ifos = literal_eval(ifo_input)
-        except (ValueError,SyntaxError):
+        except (ValueError, SyntaxError):
             ifos = [i.strip() for i in ifo_input.split(',')]
         path_input = config['data']['path']
         
         # TODO: add ability to generate synthetic data here
         # NOTE: not popping in order to preserve original ConfigParser
-        kws = {k: utils.try_parse(v) for k,v in config['data'].items()
-                  if k not in ['ifos', 'path']}
+        kws = {k: utils.try_parse(v) for k, v in config['data'].items()
+               if k not in ['ifos', 'path']}
         fit.load_data(path_input, ifos, **kws)
 
         # add target
-        fit.set_target(**{k: utils.try_parse(v) for k,v in config['target'].items()})
+        fit.set_target(**{k: utils.try_parse(v)
+                          for k, v in config['target'].items()})
         
         # inject signal if requested
         if config.has_section('injection'):
-            inj_kws = {k: utils.try_parse(v) for k,v in config['injection'].items()}
+            inj_kws = {k: utils.try_parse(v) 
+                       for k, v in config['injection'].items()}
             if 'path' in inj_kws:
                 # attempt to read injection parameters from JSON file
                 injpath = os.path.abspath(inj_kws.pop('path'))
@@ -465,17 +476,19 @@ class Fit(object):
         
         # condition data if requested
         if config.has_section('condition') and not no_cond:
-            cond_kws = {k: utils.try_parse(v) for k,v in config['condition'].items()}
+            cond_kws = {k: utils.try_parse(v) 
+                        for k, v in config['condition'].items()}
             fit.condition_data(**cond_kws)
         
         # load or produce ACFs
         if config.get('acf', 'path', fallback=False):
-            kws = {k: utils.try_parse(v) for k,v in config['acf'].items()
+            kws = {k: utils.try_parse(v) for k, v in config['acf'].items()
                    if k not in ['path']}
             fit.load_acfs(config['acf']['path'], **kws)
         else:
             acf_kws = {} if 'acf' not in config else config['acf']
-            fit.compute_acfs(**{k: utils.try_parse(v) for k,v in acf_kws.items()})
+            fit.compute_acfs(**{k: utils.try_parse(v)
+                                for k, v in acf_kws.items()})
         
         if no_noise:
             # no-noise injection, so replace data by simulated signal
@@ -486,7 +499,7 @@ class Fit(object):
                 # fit.inject(), thus adding the injection to a bunch of zeros
                 # while guaranteeing that the injection gets produced on the
                 # right time array
-                fit.data = {i: 0*v for i,v in fit.data.items()}
+                fit.data = {i: 0*v for i, v in fit.data.items()}
                 fit.inject(**inj_kws)
             else:
                 # the injection must be conditioned, so replace the data with
@@ -542,15 +555,15 @@ class Fit(object):
         config['model'] = {}
         config['model']['modes'] = str(self.modes)
         # prior options
-        config['model'].update({k: utils.form_opt(v) for k,v 
+        config['model'].update({k: utils.form_opt(v) for k, v 
                                 in self.model_settings.items()})
         # rest of options require data, so exit of none were added
         if not self.ifos:
             return config
         # data, injection, conditioning and acf options
         for sec, opts in self.info.items():
-            config[sec] = {k: utils.form_opt(v) for k,v in opts.items()}
-        config['target'] = {k: str(v) for k,v in self.info['target'].items()}
+            config[sec] = {k: utils.form_opt(v) for k, v in opts.items()}
+        config['target'] = {k: str(v) for k, v in self.info['target'].items()}
         # write file to disk if requested
         if path is not None:
             with open(path, 'w') as f:
@@ -581,7 +594,7 @@ class Fit(object):
         self.info[section] = self.info.get(section, {})
         self.info[section].update(**kws)
 
-    def condition_data(self, preserve_acfs : bool = False, **kwargs):
+    def condition_data(self, preserve_acfs: bool = False, **kwargs):
         """Condition data for all detectors by calling
         :meth:`ringdown.data.Data.condition`. Docstring for that function
         below.
@@ -594,7 +607,7 @@ class Fit(object):
             logging.warning("data has already been conditioned")
             
         # record all arguments
-        settings = {k: v for k,v in locals().items() if k != 'self'}
+        settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kwargs').items():
             settings[k] = v
             
@@ -605,7 +618,7 @@ class Fit(object):
         self._raw_data = self.data
         self.data = new_data
         if not preserve_acfs:
-            self.acfs = {} # Just to be sure that these stay consistent
+            self.acfs = {}  # Just to be sure that these stay consistent
         elif self.acfs:
             logging.warning("preserving existing ACFs after conditioning")
         # record conditioning settings
@@ -630,8 +643,9 @@ class Fit(object):
             signal_buffer.  (see docs for
             :meth:`ringdown.waveforms.Ringdown.from_parameters`; this option
             has no effect for coalescence signals)
-        \*\*kws :
-            arguments passed to :func:`ringdown.waveforms.get_detector_signals`.
+        **kws :
+            arguments passed to
+            :func:`ringdown.waveforms.get_detector_signals`.
         
         Returns
         -------
@@ -652,7 +666,7 @@ class Fit(object):
         for k in sky_keys:
             kws[k] = kws.get(k, getattr(self.target, k, None))
 
-        kws['times'] = {ifo: d.time.values for ifo,d in self.data.items()}
+        kws['times'] = {i: d.time.values for i, d in self.data.items()}
         kws['t0_default'] = self.t0
         kws['modes'] = self.modes
         return waveforms.get_detector_signals(**kws)
@@ -674,7 +688,7 @@ class Fit(object):
 
         """
         # record all arguments
-        settings = {k: v for k,v in locals().items() if k != 'self'}
+        settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kws').items():
             settings[k] = v
             
@@ -698,9 +712,9 @@ class Fit(object):
             if 'condition' in self.info:
                 # inspect h.condition to get valid arguments
                 x = inspect.signature(Data.condition).parameters.keys()
-                c = {k: v for k,v in self.info['condition'].items() if k in x}
-                hdict = {i: h.condition(t0=self.start_times[i], **c) 
-                        for i, h in self.injections.items()}
+                c = {k: v for k, v in self.info['condition'].items() if k in x}
+                hdict = {i: h.condition(t0=self.start_times[i], **c)
+                         for i, h in self.injections.items()}
             else:
                 hdict = self.injections
         else:
@@ -708,15 +722,15 @@ class Fit(object):
         return hdict
     
     def run(self,
-            prior : bool = False,
-            predictive : bool = True,
-            store_h_det : bool = False,
-            store_h_det_mode : bool = True,
-            store_residuals : bool = False,
+            prior: bool = False,
+            predictive: bool = True,
+            store_h_det: bool = False,
+            store_h_det_mode: bool = True,
+            store_residuals: bool = False,
             rescale_strain: bool = True,
-            suppress_warnings : bool = True, 
-            min_ess : int | None = None,
-            prng : jaxlib.xla_extension.ArrayImpl | int | None = None,
+            suppress_warnings: bool = True, 
+            min_ess: int | None = None,
+            prng: jaxlib.xla_extension.ArrayImpl | int | None = None,
             validation_enabled: bool = False,
             return_model: bool = False,
             **kwargs):
@@ -771,12 +785,12 @@ class Fit(object):
             arguments passed to sampler.
         """
         # record all arguments
-        settings = {k: v for k,v in locals().items() if k != 'self'}
+        settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kwargs').items():
             settings[k] = v
         self.update_info('run', **settings)
         
-        ess_run = -1.0 # ess after sampling finishes, to be set by loop below
+        ess_run = -1.0  # ess after sampling finishes, to be set by loop below
         min_ess = 0.0 if min_ess is None else min_ess
 
         if not self.acfs:
@@ -788,7 +802,7 @@ class Fit(object):
             if not np.isclose(self.acfs[ifo].delta_t, self.data[ifo].delta_t):
                 e = "{} ACF delta_t ({:.1e}) does not match data ({:.1e})."
                 raise AssertionError(e.format(ifo, self.acfs[ifo].delta_t,
-                                          self.data[ifo].delta_t))
+                                              self.data[ifo].delta_t))
 
         # parse keyword arguments
         filter = 'ignore' if suppress_warnings else 'default'
@@ -813,16 +827,16 @@ class Fit(object):
 
         # tease out kernel options dynamically
         kernel_kws = kws.pop('kernel', {})
-        kernel_kws.update({k: v for k,v in kws.items() if k in KERNEL_ARGS})
+        kernel_kws.update({k: v for k, v in kws.items() if k in KERNEL_ARGS})
         logging.info('kernel settings: {}'.format(kernel_kws))
 
         # tease out sampler options dynamically
         sampler_kws = kws.pop('sampler', {})
-        sampler_kws.update({k: v for k,v in kws.items() if k in SAMPLER_ARGS})
+        sampler_kws.update({k: v for k, v in kws.items() if k in SAMPLER_ARGS})
         logging.info('sampler settings: {}'.format(sampler_kws))
         
         # assume leftover arguments will be passed to run method
-        run_kws = {k: v for k,v in kws.items() if k not in SAMPLER_ARGS and 
+        run_kws = {k: v for k, v in kws.items() if k not in SAMPLER_ARGS and
                    k not in KERNEL_ARGS}
         logging.info('run settings: {}'.format(run_kws))
 
@@ -835,7 +849,7 @@ class Fit(object):
 
         # get run input and run
         run_input = self.run_input
-        start_times  = self.start_times
+        start_times = self.start_times
         epoch = [start_times[i] for i in self.ifos]
         scale = self.strain_scale
         if self.has_injections:
@@ -848,7 +862,7 @@ class Fit(object):
         if isinstance(prng, int):
             prng = jax.random.PRNGKey(prng)
         elif prng is None:
-            prng = jax.random.PRNGKey(np.random.randint(1<<31))
+            prng = jax.random.PRNGKey(np.random.randint(1 << 31))
         prng, prng_pred = jax.random.split(prng)
 
         run_count = 1
@@ -857,15 +871,14 @@ class Fit(object):
             while ess_run < min_ess:
                 if not np.isscalar(min_ess):
                     raise ValueError("min_ess is not a number")
-                
+
                 # split keys again in case we are looping
                 prng, _ = jax.random.split(prng)
-         
+
                 # make kernel, sampler and run
                 kernel = KERNEL(model, **kernel_kws)
                 sampler = SAMPLER(kernel, **sampler_kws)
-                
-                
+
                 if validation_enabled:
                     with numpyro.validation_enabled():
                         sampler.run(prng, *run_input, **run_kws)
@@ -885,11 +898,11 @@ class Fit(object):
                 if ess_run < min_ess:
                     run_count += 1
                     
-                    # if we need to run again, double the number of tuning steps
-                    # and samples
+                    # if we need to run again, double the number of tuning
+                    # steps and samples
                     new_kws = dict(
-                        num_warmup = 2*sampler_kws.get('num_warmup', 1000),
-                        num_samples = 2*sampler_kws.get('num_samples', 1000)
+                        num_warmup=2*sampler_kws.get('num_warmup', 1000),
+                        num_samples=2*sampler_kws.get('num_samples', 1000)
                     )
                     sampler_kws.update(new_kws)
                         
@@ -942,7 +955,8 @@ class Fit(object):
     @property
     def settings(self):
         config = self.to_config()
-        return {section: dict(config[section]) for section in config.sections()}
+        return {section: dict(config[section]) 
+                for section in config.sections()}
 
     def to_json(self, indent=4, **kws):
         return json.dumps(self.settings, indent=indent, **kws)
@@ -1018,7 +1032,7 @@ class Fit(object):
             `kind = 'discover'`.
         """
         # record all arguments
-        settings = {k: v for k,v in locals().items() if k != 'self'}
+        settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kws').items():
             settings[k] = v
         
@@ -1046,15 +1060,13 @@ class Fit(object):
         else:
             channel_dict = utils.get_dict_from_pattern(channel, ifos)
             
+        if frametype is not None:
+            kws['frametype'] = utils.get_dict_from_pattern(frametype, ifos)
+            
         tslide = kws.pop('slide', {}) or {}
         for ifo, path in path_dict.items():
-            if frametype is None:
-                self.add_data(Data.load(path, ifo=ifo, channel=channel_dict[ifo], **kws))
-                frametype_dict = {k: None for k in path_dict.keys()}
-            else:
-                frametype_dict = utils.get_dict_from_pattern(frametype, ifos)
-                self.add_data(Data.load(path, ifo=ifo, channel=channel_dict[ifo],
-                                        frametype=frametype_dict[ifo], **kws))
+            self.add_data(Data.load(path, ifo=ifo, channel=channel_dict[ifo],
+                                    **kws))
         # apply time slide if requested
         for i, dt in tslide.items():
             d = self.data[i]
@@ -1082,7 +1094,7 @@ class Fit(object):
         extra kwargs are passed to ACF constructor
         """
         # record all arguments
-        settings = {k: v for k,v in locals().items() if k != 'self'}
+        settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kws').items():
             settings[k] = v
         
@@ -1129,7 +1141,7 @@ class Fit(object):
             read in a PSD and convert to ACF.
         """
         # record all arguments
-        settings = {k: v for k,v in locals().items() if k != 'self'}
+        settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kws').items():
             settings[k] = v
         
@@ -1145,7 +1157,7 @@ class Fit(object):
         settings['path'] = path_dict
         self.update_info('acf', **settings)
 
-    def set_tone_sequence(self, nmode, p=1, s=-2, l=2, m=2):
+    def set_tone_sequence(self, nmode, p=1, s=-2, l=2, m=2):  # noqa: E741
         """Set template modes to be a sequence of overtones with a given
         angular structure.
 
@@ -1167,7 +1179,7 @@ class Fit(object):
         indexes = [(p, s, l, m, n) for n in range(nmode)]
         self.set_modes(indexes)
 
-    def set_modes(self, modes : int | list[tuple[int, int, int, int, int]]):
+    def set_modes(self, modes: int | list[tuple[int, int, int, int, int]]):
         """Establish list of modes to include in analysis template.
 
         Modes can be an integer, in which case `n` arbitrary damped sinusoids
@@ -1189,18 +1201,18 @@ class Fit(object):
         """
         self.modes = indexing.ModeIndexList(modes)
 
-    def set_target(self, t0 : float | dict, ra : float | None = None,
-                   dec : float | None = None, psi : float | None = None,
-                   duration : float | None = None,
-                   reference_ifo : str | None = None,
+    def set_target(self, t0: float | dict, ra: float | None = None,
+                   dec: float | None = None, psi: float | None = None,
+                   duration: float | None = None,
+                   reference_ifo: str | None = None,
                    antenna_patterns: dict | None = None,
-                   n_analyze : int | None = None):
+                   n_analyze: int | None = None):
         """ Establish truncation target, stored to `self.target`.
 
-        Provide a targetted analysis start time `t0` to serve as beginning of
-        truncated analysis segment; this will be compared against timestamps
-        in `fit.data` objects so that the closest sample to `t0` is preserved
-        after conditioning and taken as the first sample of the analysis 
+        Provide a targeted analysis start time `t0` to serve as beginning of
+        truncated analysis segment; this will be compared against timestamps in
+        `fit.data` objects so that the closest sample to `t0` is preserved
+        after conditioning and taken as the first sample of the analysis
         segment.
 
         .. important::
@@ -1215,10 +1227,10 @@ class Fit(object):
         required if the model can handle data from multiple detectors.
 
         The argument `duration` specifies the length of the analysis segment in
-        the unit of time used to index the data (e.g., s). Based on the sampling
-        rate, this argument is used to compute the number of samples to be
-        included in the segment, beginning from the first sample identified from
-        `t0`.
+        the unit of time used to index the data (e.g., s). Based on the
+        sampling rate, this argument is used to compute the number of samples
+        to be included in the segment, beginning from the first sample
+        identified from `t0`.
 
         Alternatively, the `n_analyze` argument can be specified directly. If
         neither `duration` nor `n_analyze` are provided, the duration will be
@@ -1233,8 +1245,7 @@ class Fit(object):
         ---------
         t0 : float, dict
             target time (at geocenter for a detector network, if no
-            `reference_ifo` is specified), or a dictionary of start
-            times.
+            `reference_ifo` is specified), or a dictionary of start times.
         ra : float
             source right ascension (rad).
         dec : float
@@ -1245,18 +1256,18 @@ class Fit(object):
             analysis segment length in seconds, or time unit indexing data
             (overrides `n_analyze`).
         antenna_patterns : dict
-            dictionary with tuples for plus and cross antenna patterns for
-            each detector `{ifo: (Fp, Fc)}` (optional)
+            dictionary with tuples for plus and cross antenna patterns for each
+            detector `{ifo: (Fp, Fc)}` (optional)
         reference_ifo : str
-            if specified, use this detector as reference for delays and
-            antenna patterns, otherwise assume t0 defined at geocenter.
+            if specified, use this detector as reference for delays and antenna
+            patterns, otherwise assume t0 defined at geocenter.
         """
         # turn float into LIGOTimeGPS object to ensure we get the right 
         # number of digits when converting to string
         t0 = lal.LIGOTimeGPS(t0) if isinstance(t0, float) else t0
         
         # record all arguments for provenance
-        settings = {k: v for k,v in locals().items() if k != 'self'}
+        settings = {k: v for k, v in locals().items() if k != 'self'}
         
         if self.result is not None:
             raise ValueError("cannot set target with preexisting results")

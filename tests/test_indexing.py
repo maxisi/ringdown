@@ -25,14 +25,14 @@ ALL_INDICES = TUPLE_INDICES + STR_INDICES_LONG +\
 @pytest.mark.parametrize("index", ALL_INDICES)
 def test_get_mode_label(index):
     assert isinstance(ringdown.indexing.get_mode_label(index), str)
-    
-    
+
+
 @pytest.mark.parametrize("index", ALL_INDICES)
 def test_get_mode_coordinate(index):
     assert isinstance(ringdown.indexing.get_mode_coordinate(index),
                       (bytes, int))
-    
-    
+
+
 def _test_index_base(mode):
     assert isinstance(mode, ringdown.indexing.ModeIndex)
     assert isinstance(mode.get_label(), str)
