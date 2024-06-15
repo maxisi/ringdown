@@ -6,6 +6,7 @@ import scipy.stats as ss
 import seaborn as sns
 import pandas as pd
 
+
 class Bounded_1d_kde(ss.gaussian_kde):
     """ Represents a one-dimensional Gaussian kernel density estimator
     for a probability distribution function that exists on a bounded
@@ -187,7 +188,7 @@ def kdeplot_2d_clevels(xs, ys, levels=10, fill=False, n_grid=128, **kws):
     ys: array
         samples of the second variable, drawn jointly with `xs`.
     levels: float, array
-        if float, interpreted as number of credible levels to be equally 
+        if float, interpreted as number of credible levels to be equally
         spaced between (0, 1); if array, interpreted as list of credible
         levels.
     x_min: float
@@ -211,7 +212,7 @@ def kdeplot_2d_clevels(xs, ys, levels=10, fill=False, n_grid=128, **kws):
 
     if np.all(~np.isfinite(xs)) or np.all(~np.isfinite(ys)):
         return None
-    
+
     # construct credible levels
     try:
         len(levels)
@@ -221,7 +222,7 @@ def kdeplot_2d_clevels(xs, ys, levels=10, fill=False, n_grid=128, **kws):
     if fill:
         # f = np.concatenate([f, [1]])
         kws['extend'] = 'max'
-    
+
     # estimate bounded KDE from samples
     if kws.get('auto_bound', False):
         kws['x_min'] = min(xs)
@@ -231,22 +232,23 @@ def kdeplot_2d_clevels(xs, ys, levels=10, fill=False, n_grid=128, **kws):
     ks = ['x_min', 'x_max', 'y_min', 'y_max', 'bw_method', 'weights']
     kde_kws = {k: kws.pop(k, None) for k in ks}
     k = Bounded_2d_kde(np.column_stack((xs, ys)), **kde_kws)
-    
+
     # evaluate KDE on all points
     p = k(np.column_stack((xs, ys)))
-    
+
     # the levels passed to the contour function have to be the
     # values of the KDE at corresponding to the quantiles
     # first get the order of the samples sorted by KDE value
     # then find the values that correspond to the thresholds
     i = np.argsort(p)
-    l = np.array([p[i[min(int(np.round(ff*len(p))), len(i)-1)]] for ff in f])
-    
+    lev = np.array([p[i[min(int(np.round(ff*len(p))), len(i)-1)]]
+                    for ff in f])
+
     # construct grid of x and y values based on the
     # range of the samples
     x_hi, x_lo = np.percentile(xs, 99), np.percentile(xs, 1)
     y_hi, y_lo = np.percentile(ys, 99), np.percentile(ys, 1)
-    
+
     Dx = x_hi - x_lo
     Dy = y_hi - y_lo
 
@@ -263,25 +265,25 @@ def kdeplot_2d_clevels(xs, ys, levels=10, fill=False, n_grid=128, **kws):
         kws['colors'] = None
         kws['cmap'] = p
     else:
-        kws['colors'] = kws.get('colors', 
+        kws['colors'] = kws.get('colors',
                                 [kws.pop('color', kws.pop('c', None)),])
     kws.pop('label', None)
     if fill:
-        ax.contourf(XS, YS, ZS, levels=l, **kws)
+        ax.contourf(XS, YS, ZS, levels=lev, **kws)
     else:
-        ax.contour(XS, YS, ZS, levels=l, **kws)
+        ax.contour(XS, YS, ZS, levels=lev, **kws)
 
 
 def kdeplot(xs, ys=None, **kws):
-    
+
     if np.all(~np.isfinite(xs)):
         return None
-    
+
     if 'hue' in kws:
         hues = kws.pop('hue')
         hues_unique = sorted(hues.unique())
         n_hues = len(hues_unique)
-        
+
         if 'palette' in kws:
             palette = sns.color_palette(kws.pop('palette'), n_colors=n_hues)
         else:
@@ -296,7 +298,7 @@ def kdeplot(xs, ys=None, **kws):
                 else:
                     v = dict(x='x', y='y', hue='hue')
                 dp = _DistributionPlotter(data=df, variables=v)
-                palette = [dp._hue_map(l) for l in dp._hue_map.levels]
+                palette = [dp._hue_map(lev) for lev in dp._hue_map.levels]
             except Exception:
                 if pd.api.types.is_numeric_dtype(hues_unique):
                     # Numeric: Use a sequential palette
@@ -313,27 +315,26 @@ def kdeplot(xs, ys=None, **kws):
                 ys_hue = ys[hues == hue]
             kdeplot(xs_hue, ys_hue, **kws, color=color)
             plt.plot([], [], c=color, label=hue)
-        plt.legend();
+        plt.legend()
         return
-    
+
     if ys is not None:
         return kdeplot_2d_clevels(xs, ys, **kws)
-    
+
     if kws.pop('auto_bound', False):
         kws['x_min'] = min(xs)
         kws['x_max'] = max(xs)
-    kde_kws = {k: kws.pop(k, None) for k in 
+    kde_kws = {k: kws.pop(k, None) for k in
                ['x_min', 'x_max', 'bw_method', 'weights']}
     k = Bounded_1d_kde(xs, **kde_kws)
-    
+
     x_hi, x_lo = np.percentile(xs, 99), np.percentile(xs, 1)
     Dx = x_hi - x_lo
     xgrid = np.linspace(x_lo-0.1*Dx, x_hi+0.1*Dx, kws.pop('n_grid', 128))
     ygrid = k(xgrid)
     ax = kws.pop('ax', plt.gca())
     ax.plot(xgrid, ygrid, **kws)
-    
+
     if kws.get('fill', False):
         alpha = kws.get('alpha', 0.5)
         ax.fill_between(xgrid, 0, ygrid, alpha=alpha, **kws)
-    
