@@ -1,27 +1,40 @@
 ringdown package
 ================
 
-Submodules
-----------
-
-ringdown.fit module
--------------------
-
-.. automodule:: ringdown.fit
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-ringdown.data module
---------------------
+Data module
+-----------
 
 .. automodule:: ringdown.data
    :members:
    :undoc-members:
    :show-inheritance:
 
-ringdown.waveforms module
--------------------------
+Fit module
+----------
+
+.. automodule:: ringdown.fit
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Model module
+------------
+
+.. automodule:: ringdown.model
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Result module
+-------------
+
+.. automodule:: ringdown.result
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Waveforms module
+----------------
 
 .. automodule:: ringdown.waveforms
    :members:
@@ -29,27 +42,26 @@ ringdown.waveforms module
    :show-inheritance:
    :imported-members:
 
-ringdown.qnms module
---------------------
+QNMs module
+-----------
 
 .. automodule:: ringdown.qnms
    :members:
    :undoc-members:
    :show-inheritance:
 
-ringdown.kde\_contour module
-----------------------------
+Indexing module
+---------------
 
-.. automodule:: ringdown.kde_contour
+.. automodule:: ringdown.indexing
    :members:
    :undoc-members:
    :show-inheritance:
 
+Target module
+-------------
 
-Module contents
----------------
-
-.. automodule:: ringdown
+.. automodule:: ringdown.target
    :members:
    :undoc-members:
    :show-inheritance:
