@@ -16,10 +16,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Set up Python 3.10
+    - name: Set up Python 3.12
       uses: actions/setup-python@v2
       with:
-        python-version: "3.10"
+        python-version: "3.12"
         cache: 'pip'
     - name: Install dependencies
       run: |
@@ -34,11 +34,15 @@ jobs:
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    - name: Unit tests
+      run: |
+        # Run the unit tests
+        pytest -n=auto --cov=ringdown --cov-report=xml
     - name: Test configs
       run: |
         # test config file interface
         bash tests/test_fit_config.sh
-    - name: Test with pytest
+    - name: Test examples
       run: |
         # test notebooks
         pytest -n=auto --nbmake "docs/examples"
