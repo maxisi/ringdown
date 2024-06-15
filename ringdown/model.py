@@ -886,6 +886,7 @@ def get_neff_from_numpyro(sampler):
     # Get the content from the buffer
     output = buffer.getvalue()
 
-    neff = pd.read_csv(io.StringIO(output), sep='\s+')['n_eff'].drop('Number')
+    neff = pd.read_csv(io.StringIO(output),
+                       sep=r'\s+')['n_eff'].drop('Number')
 
     return neff
