@@ -17,6 +17,7 @@ import os
 import logging
 import inspect
 
+
 class Series(pd.Series):
     """ A wrapper of :class:`pandas.Series` with some additional functionality.
     """
@@ -26,16 +27,16 @@ class Series(pd.Series):
         return Series
 
     @classmethod
-    def read(cls, path : str, kind : str | None = None, 
-             channel : str | None = None, **kws):
+    def read(cls, path: str, kind: str | None = None,
+             channel: str | None = None, **kws):
         """Load data from disk.
-        
+
         If ``kind`` is `gwosc` assumes input is an strain HDF5 file downloaded
         from `GWOSC <https://www.gw-openscience.org>`_.  If ``kind`` is `frame`
         and the keyword `channel` is given, then attempt to load the given
         path(s) using gwpy's frame file reading.  Otherwise, it is a wrapper
-        around :func:`pandas.read_hdf` or :func:`pandas.read_csv` functions, for
-        ``kind = 'hdf'`` or ``kind = 'csv'``.
+        around :func:`pandas.read_hdf` or :func:`pandas.read_csv` functions,
+        for ``kind = 'hdf'`` or ``kind = 'csv'``.
 
         If ``kind`` is ``None``, guesses filetype from extension.
 
@@ -55,7 +56,7 @@ class Series(pd.Series):
             series loaded from disk
         """
         kind = (kind or '').lower()
-        
+
         if not kind:
             # attempt to guess filetype
             ext = os.path.splitext(path)[1].lower().strip('.')
@@ -81,7 +82,7 @@ class Series(pd.Series):
                 return cls(h, index=time, **meta)
             else:
                 raise FileNotFoundError("file not found: {}".format(path))
-            
+
         elif kind == 'frame':
             if channel is None:
                 raise KeyError('channel must be specified for frame files')
@@ -89,28 +90,30 @@ class Series(pd.Series):
                 from gwpy.timeseries import TimeSeries
             except ModuleNotFoundError:
                 raise ImportError("missing optional dependency 'gwpy'; "
-                    "use pip or conda to install it")
+                                  "use pip or conda to install it")
             ts = TimeSeries.read(path, channel)
-            # GWpy puts units on its times, we remove them by redefining the index
+            # GWpy puts units on its times, we remove them by redefining the
+            # index
             return cls(ts.value, index=np.array(ts.times), **kws)
-        
+
         elif kind in ['hdf', 'csv']:
             read_func = getattr(pd, 'read_{}'.format(kind))
             # get list of arguments accepted by pandas read function in order
             # to filter out extraneous arguments that should go to cls
             read_vars = inspect.signature(read_func).parameters.keys()
-            # define some defaults to ensure we get a Series and not a DataFrame
+            # define defaults to ensure we get a Series and not a DataFrame
             read_kws = dict(sep=None, index_col=0, squeeze=True)
             if 'sep' in kws:
                 # gymnastics to be able to support `sep = \t` (e.g., when
                 # reading a config file)
-                kws['sep'] = kws['sep'].encode('raw_unicode_escape').decode('unicode_escape')
-            read_kws.update({k: v for k,v in kws.items() if k in read_vars})
+                kws['sep'] = kws['sep'].encode(
+                    'raw_unicode_escape').decode('unicode_escape')
+            read_kws.update({k: v for k, v in kws.items() if k in read_vars})
             squeeze = read_kws.pop('squeeze', False)
-            cls_kws = {k: v for k,v in kws.items() if k not in read_vars}
+            cls_kws = {k: v for k, v in kws.items() if k not in read_vars}
             if kind == 'csv' and 'float_precision' not in read_kws:
-                logging.warning("specify `float_precision='round_trip'` or risk "
-                                "strange errors due to precision loss")
+                logging.warning("specify `float_precision='round_trip'` or "
+                                "risk strange errors due to precision loss")
             if kind == 'csv':
                 read_kws['header'] = kws.get('header', None)
             # squeeze if needed (since squeeze argument no longer accepted)
@@ -120,19 +123,19 @@ class Series(pd.Series):
             return cls(d, **cls_kws)
         else:
             raise ValueError("unrecognized file kind: {}".format(kind))
-    
+
     @classmethod
-    def fetch(cls, channel : str, start : float | None = None,
-              end : float | None = None, t0 : float | None = None,
-              seglen : float | None = None, frametype : str | None = None,
+    def fetch(cls, channel: str, start: float | None = None,
+              end: float | None = None, t0: float | None = None,
+              seglen: float | None = None, frametype: str | None = None,
               **kws):
         """Download open data or discover data using NDS2 (requires GWpy).
-        
+
         Uses GWpy's :meth:`gwpy.timeseries.TimeSeries.fetch_open_data` or
         :meth:`gwpy.timeseries.TimeSeries.get` to download data. If `channel`
         is 'GWOSC', then it will download open data from GWOSC; otherwise, it
         will attempt to discover remote or local data using NDS2.
-        
+
         Arguments
         ---------
         channel : str
@@ -147,9 +150,9 @@ class Series(pd.Series):
             length of segment to fetch (alternative to start and end).
         frametype : str
             specify frame type to facilitate NDS frame discovery.
-        \*\*kws :
+        **kws :
             additional keyword arguments passed to GWpy's fetch function.
-            
+
         Returns
         -------
         series : Series
@@ -161,10 +164,10 @@ class Series(pd.Series):
         except ModuleNotFoundError:
             raise ImportError("missing optional dependency 'gwpy'; "
                               "use pip or conda to install it")
-        
+
         # validate time input
-        if start is None and end is None and\
-            t0 is not None and seglen is not None:
+        if start is None and end is None and \
+           t0 is not None and seglen is not None:
             start = t0 - seglen/2
             end = t0 + seglen/2
             logging.info(f"fetching {seglen} s long segment centered on {t0}"
@@ -191,17 +194,17 @@ class Series(pd.Series):
             return cls(d.value, index=np.array(d.times), **attrs)
 
     @classmethod
-    def load(cls, path : str | None = None, channel : str | None = None, **kws):
+    def load(cls, path: str | None = None, channel: str | None = None, **kws):
         """Universal load function to read data from disk or discover GWOSC/NDS
         data using GWpy.
-        
+
         Arguments
         ---------
         path : str
             path to file, or None if fetching remote data
         channel : str
             channel name or 'GWOSC' for public data (case insensitive)
-        \*\*kws :
+        **kws :
             additional keyword arguments passed to :meth:`Series.read` or
             :meth:`Series.fetch`.
         """
@@ -210,7 +213,7 @@ class Series(pd.Series):
         elif path is not None:
             ts = cls.read(path, channel=channel, **kws)
         else:
-            raise ValueError("must provide either path or channel to load data")
+            raise ValueError("must provide either path or channel")
         # record data provenance in series attrs (note that attrs is a property
         # of pandas.Series, we don't need to re-create it)
         info = dict(path=path, channel=channel)
@@ -247,7 +250,8 @@ class Series(pd.Series):
             interp = interp_func(new_index)
         attrs = {a: getattr(self, a, None) for a in getattr(self, '_meta', [])}
         return self._constructor(interp, index=new_index, **attrs)
-    interpolate_to_index.__doc__ = interpolate_to_index.__doc__.format(_DEF_INTERP_KWS)
+    interpolate_to_index.__doc__ = \
+        interpolate_to_index.__doc__.format(_DEF_INTERP_KWS)
 
 
 class TimeSeries(Series):
@@ -284,7 +288,7 @@ class TimeSeries(Series):
     def time(self) -> pd.Index:
         """Time stamps."""
         return self.index
-    
+
     def to_frequency_series(self):
         """Fourier transform time series to frequency series.
 
@@ -326,7 +330,7 @@ class TimeSeries(Series):
                 fsamp = 1/delta_t
             elif fsamp is None:
                 raise ValueError("must provide only one of delta_t or fsamp")
-                
+
             t0 = t0 or self.time.min()
             duration = duration or (self.time.max() - t0)
             fsamp = fsamp or self.f_samp
@@ -338,7 +342,7 @@ class TimeSeries(Series):
             if time.max() > self.time.max():
                 time = time[time <= self.time.max()]
         elif t0 is not None:
-            # Use the time array for the delta_t and duration, but set 
+            # Use the time array for the delta_t and duration, but set
             # the t0 provided
             time = time - time[0] + t0
         return super().interpolate_to_index(time, **kws)
@@ -379,7 +383,7 @@ class FrequencySeries(Series):
     def freq(self) -> pd.Index:
         """Frequency stamps."""
         return self.index
-    
+
     def to_time_series(self, epoch=0.):
         """Inverse Fourier transform frequency series to time series.
 
@@ -392,14 +396,14 @@ class FrequencySeries(Series):
         time = np.arange(len(data)) * self.delta_t + epoch
         return TimeSeries(data, index=time, name=self.name)
 
-    def interpolate_to_index(self, freq : np.ndarray | None = None,
-                             delta_f : float | None = None,
-                             f_min : float | None = None,
-                             f_max : float | None = None,
-                             log : bool =False, **kws):
+    def interpolate_to_index(self, freq: np.ndarray | None = None,
+                             delta_f: float | None = None,
+                             f_min: float | None = None,
+                             f_max: float | None = None,
+                             log: bool = False, **kws):
         """Interpolate the :class:`FrequencySeries` to new index. Inherits
         from :func:`Series.interpolate_to_index`.
-        
+
         If no frequency arguments are specified, it will interpolate to a a
         frequency array with the same span as the original, but enforcing
         uniform spacing based on the difference between the first two frequency
@@ -414,7 +418,7 @@ class FrequencySeries(Series):
         f_min : float
             instead of an array of frequencies, one can provide the starting
             frequency ``f_min``, the highest frequency ``f_max`` and the
-            frequency spacing ``delta_f``. 
+            frequency spacing ``delta_f``.
         f_max : float
             max frequency of the new interpolated signal
         log : bool
@@ -434,12 +438,12 @@ class FrequencySeries(Series):
             delta_f = delta_f or self.delta_f
             n = int((f_max - f_min) / delta_f) + 1
             freq = np.arange(n)*delta_f + f_min
-            
+
         if min(freq) < f_min_orig or max(freq) > f_max_orig:
             logging.warning("extrapolating frequencies "
                             f"[{f_min_orig}, {f_max_orig}] -> "
                             f"[{min(freq)}, {max(freq)}]")
-            
+
         if log:
             # construct loglog representation of self
             y = np.log(self)
@@ -489,16 +493,16 @@ class Data(TimeSeries):
             d = None
         return d
 
-    def condition(self, t0 : float | None = None,
-                  ds : int | None = None,
-                  f_min : float | None = None,
-                  f_max : float | None = None,
-                  trim : float = 0.25,
-                  digital_filter : bool = True,
-                  remove_mean : bool = True,
-                  decimate_kws : dict | None = None,
-                  slice_left : float | None = None,
-                  slice_right : float | None = None):
+    def condition(self, t0: float | None = None,
+                  ds: int | None = None,
+                  f_min: float | None = None,
+                  f_max: float | None = None,
+                  trim: float = 0.25,
+                  digital_filter: bool = True,
+                  remove_mean: bool = True,
+                  decimate_kws: dict | None = None,
+                  slice_left: float | None = None,
+                  slice_right: float | None = None):
         """Condition data.
 
         Arguments
@@ -611,9 +615,9 @@ class Data(TimeSeries):
         """Estimate PSD from data, see :meth:`PowerSpectrum.from_data`.
         """
         return PowerSpectrum.from_data(self, **kws)
-    
+
     @classmethod
-    def from_psd(cls, psd : 'PowerSpectrum', **kws):
+    def from_psd(cls, psd: 'PowerSpectrum', **kws):
         """Generate data from a given PSD.
 
         Arguments
@@ -628,15 +632,15 @@ class Data(TimeSeries):
         """
         noise_td = PowerSpectrum(psd).draw_noise_td(**kws)
         return Data(noise_td)
-        
+
 
 class PowerSpectrum(FrequencySeries):
     """Contains and manipulates power spectral densities, a special kind of
     :class:`FrequencySeries`.
     """
-    
+
     _meta = ['ifo', 'attrs']
-            
+
     def __init__(self, *args, delta_f=None, ifo=None, attrs=None,
                  **kwargs):
         if ifo is not None:
@@ -655,9 +659,9 @@ class PowerSpectrum(FrequencySeries):
         return PowerSpectrum
 
     @classmethod
-    def from_data(cls, data : Data | np.ndarray,
-                  f_min : float | None = None, f_max : float | None = None,
-                  fill_value : float | tuple | None = None, **kws):
+    def from_data(cls, data: Data | np.ndarray,
+                  f_min: float | None = None, f_max: float | None = None,
+                  fill_value: float | tuple | None = None, **kws):
         """Estimate :class:`PowerSpectrum` from time domain data using Welch's
         method.
 
@@ -679,7 +683,7 @@ class PowerSpectrum(FrequencySeries):
             if a float, the same value is used in both ends; if `None`, will
             patch with 10x the maximum PSD value in the respective patched
             region.
-        \*\*kws :
+        **kws :
             additional keyword arguments passed to :func:`scipy.signal.Welch`.
 
         Returns
@@ -704,9 +708,9 @@ class PowerSpectrum(FrequencySeries):
         # get sampling rate if not provided
         fs = kws.pop('fs', kws.pop('f_samp', 1/getattr(data, 'delta_t', 1)))
         # default to 1s segments
-        kws['nperseg'] = kws.get('nperseg', fs)  
+        kws['nperseg'] = kws.get('nperseg', fs)
         # default to median-averaged, not mean-averaged to handle outliers.
-        kws['average'] = kws.get('average', 'median') 
+        kws['average'] = kws.get('average', 'median')
         freq, psd = sig.welch(data, fs=fs, **kws)
         _meta = {a: getattr(data, a, None) for a in getattr(data, '_meta', [])}
         p = cls(psd, index=freq, **_meta)
@@ -729,7 +733,7 @@ class PowerSpectrum(FrequencySeries):
         f_min : float
             lower frequency threshold for padding: PSD will be patched below
             this value.
-        \*\*kw : 
+        **kw :
             additional arguments passed to padding function
             :meth:`PowerSpectrum.patch`.
 
@@ -743,13 +747,14 @@ class PowerSpectrum(FrequencySeries):
             func = getattr(lalsim, func)
         f_ref = freq[np.argmin(abs(freq - f_min))]
         p_ref = func(f_ref) if fill_value is None else fill_value
+
         def get_psd_bin(f):
             if f > f_min:
                 return func(f)
             else:
                 return cls._patch_low_freqs(f, f_ref, p_ref)
         return cls(np.vectorize(get_psd_bin)(freq), index=freq, **kws)
-        
+
     @staticmethod
     def _patch_low_freqs(f, f_ref, psd_ref):
         # made up function to taper smoothly
@@ -816,25 +821,25 @@ class PowerSpectrum(FrequencySeries):
         """
         rho = 0.5*np.fft.irfft(self) / self.delta_t
         return AutoCovariance(rho, delta_t=self.delta_t)
-    
-    def draw_noise_fd(self, freq : np.ndarray | None = None,
-                      delta_f : float | None = None,
-                      f_min : float | None = None,
-                      f_max : float | None = None,  
-                      rng : int | np.random.Generator | None = None,
+
+    def draw_noise_fd(self, freq: np.ndarray | None = None,
+                      delta_f: float | None = None,
+                      f_min: float | None = None,
+                      f_max: float | None = None,
+                      rng: int | np.random.Generator | None = None,
                       **kws):
         """Draw Fourier-domain noise from the PSD, with variance consistent
         with the LIGO definition of the PSD (cf. GW likelihood), namely
-        
+
         .. math::
             \\tilde{h}(f) \\sim \\mathcal{N}(0, \\sqrt{\\frac{S(f)}{4\\Delta f}
-            
+
         where the covariance matrix is diagonal, and :math:`\\Delta f = 1/T` is
         the PSD.
-        
+
         Can specify a frequency array or frequency range and spacing to which
         interpolate or extrapolate the PSD.
-        
+
         All keyword arguments except for `rng` are passed to the interpolation
         routing :meth:`PowerSpectrum.interpolate_to_index`.
 
@@ -850,40 +855,40 @@ class PowerSpectrum(FrequencySeries):
 
         psd = self.interpolate_to_index(freq=freq, delta_f=delta_f,
                                         f_min=f_min, f_max=f_max, **kws)
-        
+
         # draw noise with the correct variance corresponding to the LIGO
         # definition of the PSD (cf. GW likelihood)
         n = len(psd)
         std = np.sqrt(psd / (4*psd.delta_f))
         noise_real = np.random.normal(size=n, loc=0, scale=std)
         noise_imag = np.random.normal(size=n, loc=0, scale=std)
-        
+
         return FrequencySeries(noise_real + 1j*noise_imag, index=psd.freq,
                                name=self.name)
-        
-    def draw_noise_td(self, duration : float | None = None,
-                      f_samp : float | None = None,
-                      delta_t : float | None = None,
-                      f_min : float | None = None,
-                      f_max : float | None = None,
-                      delta_f : float | None = None,
+
+    def draw_noise_td(self, duration: float | None = None,
+                      f_samp: float | None = None,
+                      delta_t: float | None = None,
+                      f_min: float | None = None,
+                      f_max: float | None = None,
+                      delta_f: float | None = None,
                       epoch=0., **kws):
         """Draw time-domain noise from the PSD.
-        
+
         Duration and sampling rate are determined from the PSD if not provided.
         If a frequency range is provided, the PSD is interpolated/extrapolated
         to that range before drawing the noise.
-        
+
         Additional keyword arguments are passed to
         :meth:`PowerSpectrum.draw_noise_fd`.
-        
+
         Arguments
         ---------
         duration : float
             duration of the time series (provide this argument or `delta_f`).
         f_samp : float
             sampling frequency (provide this argument or `f_high` which will be
-            half of `f_samp`; alternatively, `f_samp` will be determined from 
+            half of `f_samp`; alternatively, `f_samp` will be determined from
             `delta_t`).
         delta_t : float
             time step (provide this argument or `f_samp` or `f_high`).
@@ -895,7 +900,7 @@ class PowerSpectrum(FrequencySeries):
             frequency step (provide this argument or `duration`)
         epoch : float
             initial time of the time series.
-            
+
         Returns
         -------
         noise : Data
@@ -907,7 +912,7 @@ class PowerSpectrum(FrequencySeries):
             duration = 1 / delta_f
         elif delta_f is not None and duration is not None:
             raise ValueError("cannot specify both duration and delta_f")
-        
+
         if f_samp is None and f_max is not None:
             f_samp = 2 * f_max
         elif f_samp is not None and f_max is not None:
@@ -918,26 +923,26 @@ class PowerSpectrum(FrequencySeries):
             delta_t = 1 / f_samp
         elif delta_t is not None and f_samp is not None:
             raise ValueError("cannot specify both delta_t and f_samp/max")
-        
+
         # we must have a well formed frequency array to draw TD noise
         t_len = int(duration / delta_t)
         freq = np.fft.rfftfreq(t_len, delta_t)
-        
+
         psd = self.copy()
         if f_min is not None or f_max is not None:
             psd.patch(inplace=True, f_min=f_min, f_max=f_max,
                       fill_value=kws.get('fill_value', 0.))
         noise_fd = psd.draw_noise_fd(freq=freq, **kws)
-        return noise_fd.to_time_series(epoch=epoch)        
+        return noise_fd.to_time_series(epoch=epoch)
 
 
 class AutoCovariance(TimeSeries):
     """Contains and manipulates autocovariance functions, a special kind of
     :class:`TimeSeries`.
     """
-    
+
     _meta = ['ifo', 'attrs']
-            
+
     def __init__(self, *args, delta_t=None, ifo=None, attrs=None,
                  **kwargs):
         if ifo is not None:
@@ -950,7 +955,6 @@ class AutoCovariance(TimeSeries):
             args = [None]
         self.ifo = ifo or getattr(args[0], 'ifo', None)
         self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
-            
 
     @property
     def _constructor(self):
@@ -975,7 +979,7 @@ class AutoCovariance(TimeSeries):
             whether to use Welch's method (``'fd'``), or simply auto-correlate
             the data (``'td'``). The latter is highly discouraged and will
             result in a warning. Defaults to `fd`.
-        \*\*kws :
+        **kws :
             additional keyword arguments passed to
             :meth:`PowerSpectrum.fom_data`.
 
@@ -1013,24 +1017,25 @@ class AutoCovariance(TimeSeries):
         return PowerSpectrum(psd, index=freq)
 
     @property
-    def matrix(self) -> np.ndarray :
+    def matrix(self) -> np.ndarray:
         """Covariance matrix built from ACF, :math:`C_{ij} = \\rho(|i-j|)`.
         """
         return sl.toeplitz(self)
 
     @property
-    def cholesky(self) -> np.ndarray :
+    def cholesky(self) -> np.ndarray:
         """Cholesky factor :math:`L` of covariance matrix :math:`C = L^TL`.
         """
         if getattr(self, '_cholesky', None) is None:
             self._cholesky = np.linalg.cholesky(self.matrix)
         return self._cholesky
 
-    def compute_snr(self, x, y=None) -> float :
+    def compute_snr(self, x, y=None) -> float:
         """Efficiently compute the signal-to_noise ratio
-        :math:`\\mathrm{SNR} = \left\langle x \mid y \\right\\rangle /
-        \\sqrt{\\left\langle x \mid x \\right\\rangle}`, where the inner product
-        is defined by :math:`\left\langle x \mid y \\right\\rangle \\equiv x_i
+        :math:`\\mathrm{SNR} = \\left\\langle x \\mid y \\right\\rangle /
+        \\sqrt{\\left\\langle x \\mid x \\right\\rangle}`, where the inner
+        product is defined by
+        :math:`\\left\\langle x \\mid y \\right\\rangle \\equiv x_i
         C^{-1}_{ij} y_j`. This is internally computed using Cholesky factors to
         speed up the computation.
 
@@ -1051,11 +1056,12 @@ class AutoCovariance(TimeSeries):
             signal-to-noise ratio
         """
 
-        if y is None: y = x
+        if y is None:
+            y = x
         ow_x = sl.solve_toeplitz(self.iloc[:len(x)], x)
         return np.dot(ow_x, y)/np.sqrt(np.dot(x, ow_x))
 
-    def whiten(self, data) -> Data | TimeSeries | np.ndarray :
+    def whiten(self, data) -> Data | TimeSeries | np.ndarray:
         """Whiten stretch of data using ACF.
 
         Arguments

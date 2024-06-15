@@ -18,7 +18,7 @@ import jaxlib.xla_extension
 import xarray as xr
 import lal
 import logging
-from .data import *
+from .data import Data, AutoCovariance, PowerSpectrum
 from . import utils
 from .target import Target
 from .result import Result
@@ -38,10 +38,12 @@ for k in SAMPLER_ARGS:
         logging.warning(f"overlapping keys in {KERNEL} and {SAMPLER}: {k}")
 
 MODEL_ARGS = inspect.signature(make_model).parameters.keys()
-RUNTIME_MODEL_ARGS = ['modes', 'prior', 'predictive', 'store_h_det', 'store_h_det_mode']
+RUNTIME_MODEL_ARGS = ['modes', 'prior', 'predictive', 'store_h_det',
+                      'store_h_det_mode']
 
 DEF_RUN_KWS = dict(dense_mass=True, num_warmup=1000, num_samples=1000,
-                    num_chains=4)
+                   num_chains=4)
+
 
 class Fit(object):
     """ A ringdown fit. Contains all the information required to setup and run
@@ -51,8 +53,10 @@ class Fit(object):
 
         import ringdown as rd
         fit = rd.Fit(modes=[(1,-2,2,2,0), (1,-2,2,2,1)])
-        fit.load_data('{i}-{i}1_GWOSC_16KHZ_R1-1126259447-32.hdf5', ifos=['H1', 'L1'], kind='gwosc')
-        fit.set_target(1126259462.4083147, ra=1.95, dec=-1.27, psi=0.82, duration=0.05)
+        fit.load_data('{i}-{i}1_GWOSC_16KHZ_R1-1126259447-32.hdf5',
+                      ifos=['H1', 'L1'], kind='gwosc')
+        fit.set_target(1126259462.4083147, ra=1.95, dec=-1.27, psi=0.82,
+                       duration=0.05)
         fit.condition_data(ds=8)
         fit.update_model(A_scale=1e-21, M_min=50, M_max=150)
         fit.run()
@@ -120,10 +124,10 @@ class Fit(object):
         # assume rest of kwargs are to be passed to make_model
         self._model_settings = {}
         self.update_model(**kws)
-        
+
     def __repr__(self):
         return f"Fit({self.modes}, ifos={self.ifos})"
-    
+
     def copy(self):
         """Produce a deep copy of this `Fit` object.
 
@@ -133,7 +137,7 @@ class Fit(object):
             deep copy of `Fit`.
         """
         return cp.deepcopy(self)
-    
+
     def reset(self, preserve_conditioning=False):
         """Reset all priors and results, but keep data and target information.
         """
@@ -142,7 +146,7 @@ class Fit(object):
             self.info.pop('condition', None)
         self.result = None
         self._model_settings = {}
-    
+
     @property
     def strain_scale(self):
         if self._strain_scale:
@@ -152,26 +156,26 @@ class Fit(object):
         else:
             scale = 1.0
         return scale
-    
+
     def set_strain_scale(self, scale):
         if scale is None:
             self._strain_scale = None
         else:
             self._strain_scale = float(scale)
-    
+
     @property
     def has_target(self) -> bool:
         """Whether an analysis target has been set with
         :meth:`Fit.set_target`.
         """
         return self.target is not None
-    
+
     @property
     def has_injections(self) -> bool:
         """Whether injections have been added with :meth:`Fit.inject`.
         """
         return bool(self.injections)
-    
+
     @property
     def start_times(self):
         if self.has_target:
@@ -179,7 +183,7 @@ class Fit(object):
         else:
             start_times = {}
         return start_times
-    
+
     @property
     def antenna_patterns(self):
         if self.has_target:
@@ -218,7 +222,7 @@ class Fit(object):
         for i, d in self.data.items():
             data[i] = d.iloc[i0s[i]:i0s[i] + self.n_analyze]
         return data
-    
+
     @property
     def analysis_injections(self) -> dict:
         """Slice of injection to be analyzed for each detector. Extracted from
@@ -230,12 +234,12 @@ class Fit(object):
         for i, d in self.conditioned_injections.items():
             data[i] = d.iloc[i0s[i]:i0s[i] + self.n_analyze]
         return data
-    
+
     @property
     def analysis_times(self) -> dict:
         """Time arrays for analysis data.
         """
-        return {i: d.time.values for i,d in self.analysis_data.items()}
+        return {i: d.time.values for i, d in self.analysis_data.items()}
 
     @property
     def raw_data(self) -> dict:
@@ -243,7 +247,7 @@ class Fit(object):
             return self.data
         else:
             return self._raw_data
-        
+
     @property
     def model_settings(self) -> dict:
         """Prior options as currently set.
@@ -268,7 +272,7 @@ class Fit(object):
         if self.result is not None:
             logging.warning("updating prior of Fit with preexisting results!")
         if self.prior is not None:
-            logging.warning("updating prior of Fit with preexisting prior results!")
+            logging.warning("updating prior of Fit with preexisting prior!")
 
         # check whether the option is valid, regardless of case
         for k, v in kws.items():
@@ -280,7 +284,7 @@ class Fit(object):
                 self._model_settings[k] = v
             else:
                 logging.warning(f"unknown model argument: {k}")
-    
+
     def update_prior(self, *args, **kwargs):
         warnings.warn("update_prior is deprecated, use update_model instead")
         self.update_model(*args, **kwargs)
@@ -309,8 +313,8 @@ class Fit(object):
         fp = [x[0] for x in fpfc]
         fc = [x[1] for x in fpfc]
 
-        times = [np.array(d.time) - self.start_times[i] 
-                 for i,d in data_dict.items()]
+        times = [np.array(d.time) - self.start_times[i]
+                 for i, d in data_dict.items()]
 
         # arguments to be passed to function returned by model_function
         # make sure this agrees with that function call!
@@ -326,10 +330,10 @@ class Fit(object):
         return input
 
     @classmethod
-    def from_config(cls, config_input : str | configparser.ConfigParser,
-                    no_cond: bool = False, result : str | None = None):
+    def from_config(cls, config_input: str | configparser.ConfigParser,
+                    no_cond: bool = False, result: str | None = None):
         """Creates a :class:`Fit` instance from a configuration file.
-        
+
         Has the ability to load and condition data, as well as to inject a
         simulated signal and to compute or load ACFs. Does not run the fit
         automatically.
@@ -348,19 +352,22 @@ class Fit(object):
             Ringdown :class:`Fit` object.
         """
         config = utils.load_config(config_input)
-                    
+
         # parse model options
-        model_opts = {k: utils.try_parse(v) for k,v in config['model'].items()}
+        model_opts = {k: utils.try_parse(v)
+                      for k, v in config['model'].items()}
         if 'name' in model_opts:
-            warnings.warn("model name is deprecated, use explicit mode options instead")
-            logging.info("trying to guess mode configuration based on model name")
+            warnings.warn("model name is deprecated, use explicit"
+                          "mode options instead")
+            logging.info("trying to guess mode configuration based "
+                         "on model name")
             name = model_opts.pop('name')
             if 'aligned' in name:
                 raise NotImplementedError("aligned model not yet supported")
             model_opts['marginalized'] = 'marginal' in name
 
         if config.has_section('prior'):
-            prior = {k: utils.try_parse(v) for k,v in config['prior'].items()}
+            prior = {k: utils.try_parse(v) for k, v in config['prior'].items()}
             model_opts.update(prior)
 
         # look for some legacy options and replace them with current arguments
@@ -374,62 +381,66 @@ class Fit(object):
         for new, old in legacy.items():
             for k in old:
                 if k in model_opts:
-                    warnings.warn(f"replacing deprecated option {k} with {new}")
+                    warnings.warn(f"'{k}' depreacted, replacing with {new}")
                     model_opts[new] = model_opts.pop(k)
-        
+
         if 'perturb_f' in model_opts:
-            warnings.warn("perturb_f is deprecated, just use df_min/max instead")
+            warnings.warn("perturb_f is deprecated, use df_min/max instead")
             perturb_f = model_opts.pop('perturb_f')
             for k in ['df_min', 'df_max']:
                 if k in model_opts:
                     model_opts[k] *= perturb_f
-        
+
         if 'perturb_tau' in model_opts:
-            warnings.warn("perturb_tau is deprecated, just use dg_min/max instead")
+            warnings.warn("perturb_tau is deprecated, use dg_min/max instead")
             perturb_tau = model_opts.pop('perturb_tau')
             if 'dtau_max' in model_opts:
-                model_opts['dg_min'] = - model_opts.pop('dtau_max') * perturb_tau
+                model_opts['dg_min'] = - model_opts.pop('dtau_max')*perturb_tau
             if 'dtau_min' in model_opts:
-                model_opts['dg_max'] = - model_opts.pop('dtau_min') * perturb_tau
-                
+                model_opts['dg_max'] = - model_opts.pop('dtau_min')*perturb_tau
+
         if 'order_fs' in model_opts:
-            warnings.warn("order_fs is deprecated, use `mode_ordering = 'f'` instead")
+            warnings.warn("order_fs is deprecated, "
+                          "use `mode_ordering = 'f'` instead")
             if bool(model_opts.pop('order_fs')):
                 model_opts['mode_ordering'] = 'f'
-            
+
         if 'order_gammas' in model_opts:
-            warnings.warn("order_gammas is deprecated, use `mode_ordering = 'g'` instead")
+            warnings.warn("order_gammas is deprecated, "
+                          "use `mode_ordering = 'g'` instead")
             if bool(model_opts.pop('order_gammas')):
                 model_opts['mode_ordering'] = 'g'
-            
+
         # create fit object
         fit = cls(**model_opts)
-        
+
         if 'data' not in config:
             # the rest of the options require loading data, so if no pointer to
             # data was provided, just exit
             return fit
-        
+
         # load data
         ifo_input = config.get('data', 'ifos', fallback='')
         try:
             ifos = literal_eval(ifo_input)
-        except (ValueError,SyntaxError):
+        except (ValueError, SyntaxError):
             ifos = [i.strip() for i in ifo_input.split(',')]
         path_input = config['data']['path']
-        
+
         # TODO: add ability to generate synthetic data here
         # NOTE: not popping in order to preserve original ConfigParser
-        kws = {k: utils.try_parse(v) for k,v in config['data'].items()
-                  if k not in ['ifos', 'path']}
+        kws = {k: utils.try_parse(v) for k, v in config['data'].items()
+               if k not in ['ifos', 'path']}
         fit.load_data(path_input, ifos, **kws)
 
         # add target
-        fit.set_target(**{k: utils.try_parse(v) for k,v in config['target'].items()})
-        
+        fit.set_target(**{k: utils.try_parse(v)
+                          for k, v in config['target'].items()})
+
         # inject signal if requested
         if config.has_section('injection'):
-            inj_kws = {k: utils.try_parse(v) for k,v in config['injection'].items()}
+            inj_kws = {k: utils.try_parse(v)
+                       for k, v in config['injection'].items()}
             if 'path' in inj_kws:
                 # attempt to read injection parameters from JSON file
                 injpath = os.path.abspath(inj_kws.pop('path'))
@@ -462,21 +473,23 @@ class Fit(object):
             # no injection requested, so set some dummy defaults
             no_noise = False
             post_cond = False
-        
+
         # condition data if requested
         if config.has_section('condition') and not no_cond:
-            cond_kws = {k: utils.try_parse(v) for k,v in config['condition'].items()}
+            cond_kws = {k: utils.try_parse(v)
+                        for k, v in config['condition'].items()}
             fit.condition_data(**cond_kws)
-        
+
         # load or produce ACFs
         if config.get('acf', 'path', fallback=False):
-            kws = {k: utils.try_parse(v) for k,v in config['acf'].items()
+            kws = {k: utils.try_parse(v) for k, v in config['acf'].items()
                    if k not in ['path']}
             fit.load_acfs(config['acf']['path'], **kws)
         else:
             acf_kws = {} if 'acf' not in config else config['acf']
-            fit.compute_acfs(**{k: utils.try_parse(v) for k,v in acf_kws.items()})
-        
+            fit.compute_acfs(**{k: utils.try_parse(v)
+                                for k, v in acf_kws.items()})
+
         if no_noise:
             # no-noise injection, so replace data by simulated signal
             if post_cond:
@@ -486,7 +499,7 @@ class Fit(object):
                 # fit.inject(), thus adding the injection to a bunch of zeros
                 # while guaranteeing that the injection gets produced on the
                 # right time array
-                fit.data = {i: 0*v for i,v in fit.data.items()}
+                fit.data = {i: 0*v for i, v in fit.data.items()}
                 fit.inject(**inj_kws)
             else:
                 # the injection must be conditioned, so replace the data with
@@ -495,9 +508,9 @@ class Fit(object):
                 if config.has_section('condition') and not post_cond:
                     fit.condition_data(preserve_acfs=True, **cond_kws)
         elif post_cond:
-            # now that we are done conditioning, inject the requested signal 
+            # now that we are done conditioning, inject the requested signal
             fit.inject(**inj_kws)
-        
+
         if result:
             if isinstance(result, az.InferenceData):
                 fit.result = Result(result)
@@ -522,7 +535,7 @@ class Fit(object):
         :meth:`Fit.from_config`.
 
         .. note::
-            This will only result in a working configuration file if all 
+            This will only result in a working configuration file if all
             data provenance information is available in :attr:`Fit.info`.
             This field is automatically populated if the :meth:`Fit.load_data`
             method is used to add data to fit.
@@ -542,15 +555,15 @@ class Fit(object):
         config['model'] = {}
         config['model']['modes'] = str(self.modes)
         # prior options
-        config['model'].update({k: utils.form_opt(v) for k,v 
+        config['model'].update({k: utils.form_opt(v) for k, v
                                 in self.model_settings.items()})
         # rest of options require data, so exit of none were added
         if not self.ifos:
             return config
         # data, injection, conditioning and acf options
         for sec, opts in self.info.items():
-            config[sec] = {k: utils.form_opt(v) for k,v in opts.items()}
-        config['target'] = {k: str(v) for k,v in self.info['target'].items()}
+            config[sec] = {k: utils.form_opt(v) for k, v in opts.items()}
+        config['target'] = {k: str(v) for k, v in self.info['target'].items()}
         # write file to disk if requested
         if path is not None:
             with open(path, 'w') as f:
@@ -569,19 +582,19 @@ class Fit(object):
             fit.update_info('data', path='path/to/{ifo}-data.h5')
 
         adds an entry to ``fit.info`` like::
-        
+
             {'data': {'path': 'path/to/{ifo}-data.h5')}}
 
         Arguments
         ---------
         section : str
             name of information category, e.g., `data`, `injection`,
-            `condition`. 
+            `condition`.
         """
         self.info[section] = self.info.get(section, {})
         self.info[section].update(**kws)
 
-    def condition_data(self, preserve_acfs : bool = False, **kwargs):
+    def condition_data(self, preserve_acfs: bool = False, **kwargs):
         """Condition data for all detectors by calling
         :meth:`ringdown.data.Data.condition`. Docstring for that function
         below.
@@ -592,12 +605,12 @@ class Fit(object):
         """
         if self.info.get('condition'):
             logging.warning("data has already been conditioned")
-            
+
         # record all arguments
-        settings = {k: v for k,v in locals().items() if k != 'self'}
+        settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kwargs').items():
             settings[k] = v
-            
+
         new_data = {}
         for k, d in self.data.items():
             t0 = self.start_times[k]
@@ -605,7 +618,7 @@ class Fit(object):
         self._raw_data = self.data
         self.data = new_data
         if not preserve_acfs:
-            self.acfs = {} # Just to be sure that these stay consistent
+            self.acfs = {}  # Just to be sure that these stay consistent
         elif self.acfs:
             logging.warning("preserving existing ACFs after conditioning")
         # record conditioning settings
@@ -630,9 +643,10 @@ class Fit(object):
             signal_buffer.  (see docs for
             :meth:`ringdown.waveforms.Ringdown.from_parameters`; this option
             has no effect for coalescence signals)
-        \*\*kws :
-            arguments passed to :func:`ringdown.waveforms.get_detector_signals`.
-        
+        **kws :
+            arguments passed to
+            :func:`ringdown.waveforms.get_detector_signals`.
+
         Returns
         -------
         waveforms : dict
@@ -648,11 +662,11 @@ class Fit(object):
         sky_keys = ['ra', 'dec', 'psi']
         if not all([k in kws for k in sky_keys]):
             kws['antenna_patterns'] = kws.pop('antenna_patterns', None) or \
-                                      self.antenna_patterns
+                self.antenna_patterns
         for k in sky_keys:
             kws[k] = kws.get(k, getattr(self.target, k, None))
 
-        kws['times'] = {ifo: d.time.values for ifo,d in self.data.items()}
+        kws['times'] = {i: d.time.values for i, d in self.data.items()}
         kws['t0_default'] = self.t0
         kws['modes'] = self.modes
         return waveforms.get_detector_signals(**kws)
@@ -674,10 +688,10 @@ class Fit(object):
 
         """
         # record all arguments
-        settings = {k: v for k,v in locals().items() if k != 'self'}
+        settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kws').items():
             settings[k] = v
-            
+
         self.injections = self.get_templates(**kws)
         for i, h in self.injections.items():
             if no_noise:
@@ -685,11 +699,11 @@ class Fit(object):
             else:
                 self.data[i] = self.data[i] + h
         self.update_info('injection', **settings)
-    
+
     @property
     def injection_parameters(self) -> dict:
         return self.info.get('injection', {})
-        
+
     @property
     def conditioned_injections(self) -> dict:
         """Conditioned injections, if available.
@@ -698,25 +712,25 @@ class Fit(object):
             if 'condition' in self.info:
                 # inspect h.condition to get valid arguments
                 x = inspect.signature(Data.condition).parameters.keys()
-                c = {k: v for k,v in self.info['condition'].items() if k in x}
-                hdict = {i: h.condition(t0=self.start_times[i], **c) 
-                        for i, h in self.injections.items()}
+                c = {k: v for k, v in self.info['condition'].items() if k in x}
+                hdict = {i: h.condition(t0=self.start_times[i], **c)
+                         for i, h in self.injections.items()}
             else:
                 hdict = self.injections
         else:
             hdict = {}
         return hdict
-    
+
     def run(self,
-            prior : bool = False,
-            predictive : bool = True,
-            store_h_det : bool = False,
-            store_h_det_mode : bool = True,
-            store_residuals : bool = False,
+            prior: bool = False,
+            predictive: bool = True,
+            store_h_det: bool = False,
+            store_h_det_mode: bool = True,
+            store_residuals: bool = False,
             rescale_strain: bool = True,
-            suppress_warnings : bool = True, 
-            min_ess : int | None = None,
-            prng : jaxlib.xla_extension.ArrayImpl | int | None = None,
+            suppress_warnings: bool = True,
+            min_ess: int | None = None,
+            prng: jaxlib.xla_extension.ArrayImpl | int | None = None,
             validation_enabled: bool = False,
             return_model: bool = False,
             **kwargs):
@@ -734,20 +748,20 @@ class Fit(object):
         ---------
         prior : bool
             whether to sample the prior (def. `False`).
-            
+
         predictive : bool
             draw secondary quantities from the posterior predictive after
             runtime (def. `True`).
-            
+
         store_h_det : bool
             store detector templates in result (def. `False`).
-        
+
         store_h_det_mode : bool
             store individual-mode templates in result (def. `True`).
-            
+
         store_residuals : bool
             compute whitened residuals point-wise (def. `False`).
-            
+
         rescale_strain : bool
             rescale strain-like quantites by `strain_scale`, if strain was
             rescaled before running, as could be the case when using float32
@@ -763,20 +777,20 @@ class Fit(object):
         validation_enabled: bool
             if True, run with numpyro.validation_enabled() to get verbose error
             messages
-            
+
         return_model: bool
             returns numpyro model instead of running it (def. `False`).
 
-        \*\*kwargs :
+        **kwargs :
             arguments passed to sampler.
         """
         # record all arguments
-        settings = {k: v for k,v in locals().items() if k != 'self'}
+        settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kwargs').items():
             settings[k] = v
         self.update_info('run', **settings)
-        
-        ess_run = -1.0 # ess after sampling finishes, to be set by loop below
+
+        ess_run = -1.0  # ess after sampling finishes, to be set by loop below
         min_ess = 0.0 if min_ess is None else min_ess
 
         if not self.acfs:
@@ -788,7 +802,7 @@ class Fit(object):
             if not np.isclose(self.acfs[ifo].delta_t, self.data[ifo].delta_t):
                 e = "{} ACF delta_t ({:.1e}) does not match data ({:.1e})."
                 raise AssertionError(e.format(ifo, self.acfs[ifo].delta_t,
-                                          self.data[ifo].delta_t))
+                                              self.data[ifo].delta_t))
 
         # parse keyword arguments
         filter = 'ignore' if suppress_warnings else 'default'
@@ -801,7 +815,7 @@ class Fit(object):
                            store_h_det=False, store_h_det_mode=False, **ms)
         if return_model:
             return model
-        
+
         logging.info('running {} mode fit'.format(self.modes))
         logging.info('prior run: {}'.format(prior))
         logging.info('model settings: {}'.format(self._model_settings))
@@ -813,16 +827,16 @@ class Fit(object):
 
         # tease out kernel options dynamically
         kernel_kws = kws.pop('kernel', {})
-        kernel_kws.update({k: v for k,v in kws.items() if k in KERNEL_ARGS})
+        kernel_kws.update({k: v for k, v in kws.items() if k in KERNEL_ARGS})
         logging.info('kernel settings: {}'.format(kernel_kws))
 
         # tease out sampler options dynamically
         sampler_kws = kws.pop('sampler', {})
-        sampler_kws.update({k: v for k,v in kws.items() if k in SAMPLER_ARGS})
+        sampler_kws.update({k: v for k, v in kws.items() if k in SAMPLER_ARGS})
         logging.info('sampler settings: {}'.format(sampler_kws))
-        
+
         # assume leftover arguments will be passed to run method
-        run_kws = {k: v for k,v in kws.items() if k not in SAMPLER_ARGS and 
+        run_kws = {k: v for k, v in kws.items() if k not in SAMPLER_ARGS and
                    k not in KERNEL_ARGS}
         logging.info('run settings: {}'.format(run_kws))
 
@@ -835,20 +849,20 @@ class Fit(object):
 
         # get run input and run
         run_input = self.run_input
-        start_times  = self.start_times
+        start_times = self.start_times
         epoch = [start_times[i] for i in self.ifos]
         scale = self.strain_scale
         if self.has_injections:
             inj = [self.analysis_injections[i] for i in self.ifos]
         else:
             inj = None
-            
+
         # split PRNG key for predictive
         # create random number generator (it's BAD to reuse jax PRNG keys)
         if isinstance(prng, int):
             prng = jax.random.PRNGKey(prng)
         elif prng is None:
-            prng = jax.random.PRNGKey(np.random.randint(1<<31))
+            prng = jax.random.PRNGKey(np.random.randint(1 << 31))
         prng, prng_pred = jax.random.split(prng)
 
         run_count = 1
@@ -857,15 +871,14 @@ class Fit(object):
             while ess_run < min_ess:
                 if not np.isscalar(min_ess):
                     raise ValueError("min_ess is not a number")
-                
+
                 # split keys again in case we are looping
                 prng, _ = jax.random.split(prng)
-         
+
                 # make kernel, sampler and run
                 kernel = KERNEL(model, **kernel_kws)
                 sampler = SAMPLER(kernel, **sampler_kws)
-                
-                
+
                 if validation_enabled:
                     with numpyro.validation_enabled():
                         sampler.run(prng, *run_input, **run_kws)
@@ -884,30 +897,30 @@ class Fit(object):
 
                 if ess_run < min_ess:
                     run_count += 1
-                    
-                    # if we need to run again, double the number of tuning steps
-                    # and samples
+
+                    # if we need to run again, double the number of tuning
+                    # steps and samples
                     new_kws = dict(
-                        num_warmup = 2*sampler_kws.get('num_warmup', 1000),
-                        num_samples = 2*sampler_kws.get('num_samples', 1000)
+                        num_warmup=2*sampler_kws.get('num_warmup', 1000),
+                        num_samples=2*sampler_kws.get('num_samples', 1000)
                     )
                     sampler_kws.update(new_kws)
-                        
+
                     logging.warning(
-                        f"""ess = {ess_run:.1f} below threshold {min_ess}; 
+                        f"""ess = {ess_run:.1f} below threshold {min_ess};
                         fitting again with "{new_kws['num_warmup']} tuning
                         steps and {new_kws['num_samples']} samples"""
                     )
 
                     kwargs.update(kws)
-                
+
         if predictive or store_h_det or store_h_det_mode:
             logging.info("obtaining predictive distribution")
             predictive = numpyro.infer.Predictive(model, sampler.get_samples())
-            pred = predictive(prng_pred, *run_input, predictive=predictive, 
+            pred = predictive(prng_pred, *run_input, predictive=predictive,
                               store_h_det=store_h_det,
                               store_h_det_mode=store_h_det_mode)
-            
+
             # adduct posterior predictive to result
             chain_draw = ['chain', 'draw']
             shape = [result.posterior.sizes[k] for k in chain_draw]
@@ -929,7 +942,7 @@ class Fit(object):
 
         if rescale_strain:
             result.rescale_strain()
-            
+
         if prior:
             self.prior = result
         else:
@@ -942,11 +955,12 @@ class Fit(object):
     @property
     def settings(self):
         config = self.to_config()
-        return {section: dict(config[section]) for section in config.sections()}
+        return {section: dict(config[section])
+                for section in config.sections()}
 
     def to_json(self, indent=4, **kws):
         return json.dumps(self.settings, indent=indent, **kws)
-    
+
     @property
     def attrs(self):
         from . import __version__
@@ -972,7 +986,7 @@ class Fit(object):
         self.data[data.ifo] = data
         if acf is not None:
             self.acfs[data.ifo] = acf
-        
+
         # check compatibility with target
         if self.has_target:
             try:
@@ -982,7 +996,7 @@ class Fit(object):
                 logging.warning("data incompatible with target! "
                                 "removing target (please reset)")
                 self.target = None
-    
+
     def load_data(self, path=None, ifos=None, channel=None,
                   frametype=None, **kws):
         """Load data from disk.
@@ -1002,7 +1016,7 @@ class Fit(object):
         ifos : list
             list of detector keys (e.g., ``['H1', 'L1']``), not required if
             `path_input` is a dictionary.
-        
+
         channel : dict, str
             dictionary of channel names indexed by interferometer keys, or
             channel name string replacement pattern, e.g.,
@@ -1010,24 +1024,24 @@ class Fit(object):
             respectively replaced by the first letter and key for each detector
             listed in `ifos` (e.g., `H` and `H1` for LIGO Hanford).  Only used
             when `kind = 'frame'`.
-            
+
         frametype : dict, str
             dictionary of frame types indexed by interferometer keys, or frame
-            type string replacement pattern, e.g., `'H1_HOFT_C00'`, with 
+            type string replacement pattern, e.g., `'H1_HOFT_C00'`, with
             same replacement rules as for `channel` and `path`. Only used when
             `kind = 'discover'`.
         """
         # record all arguments
-        settings = {k: v for k,v in locals().items() if k != 'self'}
+        settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kws').items():
             settings[k] = v
-        
+
         if ifos is None:
             if hasattr(path, 'keys'):
                 ifos = list(path.keys())
             else:
                 raise ValueError("no ifos provided")
-        
+
         # if getting data via GWPY need [start, end] or [t0, seglen]
         if kws.get('seglen'):
             if 't0' not in kws:
@@ -1035,26 +1049,24 @@ class Fit(object):
                     raise ValueError("no t0 provided")
                 kws['t0'] = self.t0
                 logging.info(f"using t0 = {self.t0} for segment selection")
-        
+
         if path is None:
             path_dict = {k: None for k in ifos}
         else:
             path_dict = utils.get_dict_from_pattern(path, ifos, abspath=True)
-        
+
         if channel is None:
             channel_dict = {k: None for k in path_dict.keys()}
         else:
             channel_dict = utils.get_dict_from_pattern(channel, ifos)
-        
-        if frametype is None:
-            frametype_dict = {k: None for k in path_dict.keys()}
-        else:
-            frametype_dict = utils.get_dict_from_pattern(frametype, ifos)
-            
+
+        if frametype is not None:
+            kws['frametype'] = utils.get_dict_from_pattern(frametype, ifos)
+
         tslide = kws.pop('slide', {}) or {}
         for ifo, path in path_dict.items():
             self.add_data(Data.load(path, ifo=ifo, channel=channel_dict[ifo],
-                                    frametype=frametype_dict[ifo], **kws))
+                                    **kws))
         # apply time slide if requested
         for i, dt in tslide.items():
             d = self.data[i]
@@ -1064,7 +1076,7 @@ class Fit(object):
         # record data provenance
         settings['path'] = path_dict
         self.update_info('data', **settings)
-    
+
     def compute_acfs(self, shared=False, ifos=None, **kws):
         """Compute ACFs for all data sets in `Fit.data`.
 
@@ -1082,10 +1094,10 @@ class Fit(object):
         extra kwargs are passed to ACF constructor
         """
         # record all arguments
-        settings = {k: v for k,v in locals().items() if k != 'self'}
+        settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kws').items():
             settings[k] = v
-        
+
         ifos = self.ifos if ifos is None else ifos
         if len(ifos) == 0:
             raise ValueError("first add data")
@@ -1096,7 +1108,7 @@ class Fit(object):
             if kws.get('method', 'fd') == 'fd':
                 if not ('nperseg' in kws):
                     kws['nperseg'] = nperseg_safe
-        
+
         # if shared, compute a single ACF
         acf = self.data[ifos[0]].get_acf(**kws) if shared else None
         for ifo in ifos:
@@ -1122,17 +1134,17 @@ class Fit(object):
             listed in `ifos` (e.g., `H` and `H1` for LIGO Hanford).
 
         ifos : list
-            list of detector keys (e.g., ``['H1', 'L1']``), not required 
+            list of detector keys (e.g., ``['H1', 'L1']``), not required
             if `path_input` is a dictionary.
 
         from_psd : bool
             read in a PSD and convert to ACF.
         """
         # record all arguments
-        settings = {k: v for k,v in locals().items() if k != 'self'}
+        settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kws').items():
             settings[k] = v
-        
+
         if isinstance(path, str) and ifos is None:
             ifos = self.ifos
         path_dict = utils.get_dict_from_pattern(path, ifos, abspath=True)
@@ -1145,7 +1157,7 @@ class Fit(object):
         settings['path'] = path_dict
         self.update_info('acf', **settings)
 
-    def set_tone_sequence(self, nmode, p=1, s=-2, l=2, m=2):
+    def set_tone_sequence(self, nmode, p=1, s=-2, l=2, m=2):  # noqa: E741
         """Set template modes to be a sequence of overtones with a given
         angular structure.
 
@@ -1167,7 +1179,7 @@ class Fit(object):
         indexes = [(p, s, l, m, n) for n in range(nmode)]
         self.set_modes(indexes)
 
-    def set_modes(self, modes : int | list[tuple[int, int, int, int, int]]):
+    def set_modes(self, modes: int | list[tuple[int, int, int, int, int]]):
         """Establish list of modes to include in analysis template.
 
         Modes can be an integer, in which case `n` arbitrary damped sinusoids
@@ -1189,18 +1201,18 @@ class Fit(object):
         """
         self.modes = indexing.ModeIndexList(modes)
 
-    def set_target(self, t0 : float | dict, ra : float | None = None,
-                   dec : float | None = None, psi : float | None = None,
-                   duration : float | None = None,
-                   reference_ifo : str | None = None,
+    def set_target(self, t0: float | dict, ra: float | None = None,
+                   dec: float | None = None, psi: float | None = None,
+                   duration: float | None = None,
+                   reference_ifo: str | None = None,
                    antenna_patterns: dict | None = None,
-                   n_analyze : int | None = None):
+                   n_analyze: int | None = None):
         """ Establish truncation target, stored to `self.target`.
 
-        Provide a targetted analysis start time `t0` to serve as beginning of
-        truncated analysis segment; this will be compared against timestamps
-        in `fit.data` objects so that the closest sample to `t0` is preserved
-        after conditioning and taken as the first sample of the analysis 
+        Provide a targeted analysis start time `t0` to serve as beginning of
+        truncated analysis segment; this will be compared against timestamps in
+        `fit.data` objects so that the closest sample to `t0` is preserved
+        after conditioning and taken as the first sample of the analysis
         segment.
 
         .. important::
@@ -1215,10 +1227,10 @@ class Fit(object):
         required if the model can handle data from multiple detectors.
 
         The argument `duration` specifies the length of the analysis segment in
-        the unit of time used to index the data (e.g., s). Based on the sampling
-        rate, this argument is used to compute the number of samples to be
-        included in the segment, beginning from the first sample identified from
-        `t0`.
+        the unit of time used to index the data (e.g., s). Based on the
+        sampling rate, this argument is used to compute the number of samples
+        to be included in the segment, beginning from the first sample
+        identified from `t0`.
 
         Alternatively, the `n_analyze` argument can be specified directly. If
         neither `duration` nor `n_analyze` are provided, the duration will be
@@ -1233,8 +1245,7 @@ class Fit(object):
         ---------
         t0 : float, dict
             target time (at geocenter for a detector network, if no
-            `reference_ifo` is specified), or a dictionary of start
-            times.
+            `reference_ifo` is specified), or a dictionary of start times.
         ra : float
             source right ascension (rad).
         dec : float
@@ -1245,22 +1256,22 @@ class Fit(object):
             analysis segment length in seconds, or time unit indexing data
             (overrides `n_analyze`).
         antenna_patterns : dict
-            dictionary with tuples for plus and cross antenna patterns for
-            each detector `{ifo: (Fp, Fc)}` (optional)
+            dictionary with tuples for plus and cross antenna patterns for each
+            detector `{ifo: (Fp, Fc)}` (optional)
         reference_ifo : str
-            if specified, use this detector as reference for delays and
-            antenna patterns, otherwise assume t0 defined at geocenter.
+            if specified, use this detector as reference for delays and antenna
+            patterns, otherwise assume t0 defined at geocenter.
         """
-        # turn float into LIGOTimeGPS object to ensure we get the right 
+        # turn float into LIGOTimeGPS object to ensure we get the right
         # number of digits when converting to string
         t0 = lal.LIGOTimeGPS(t0) if isinstance(t0, float) else t0
-        
+
         # record all arguments for provenance
-        settings = {k: v for k,v in locals().items() if k != 'self'}
-        
+        settings = {k: v for k, v in locals().items() if k != 'self'}
+
         if self.result is not None:
             raise ValueError("cannot set target with preexisting results")
-        
+
         if n_analyze:
             if duration:
                 logging.warning("ignoring duration in favor of n_analyze")
@@ -1270,13 +1281,13 @@ class Fit(object):
             logging.warning("no duration or n_analyze specified")
         else:
             self._duration = float(duration)
-        
+
         self.target = Target.construct(t0, ra, dec, psi, reference_ifo,
                                        antenna_patterns, ifos=self.ifos)
-                
+
         # make sure that start times are encompassed by data (if data exist)
         for i, data in self.data.items():
-            t0_i = self.start_times[i] 
+            t0_i = self.start_times[i]
             if t0_i < data.time[0] or t0_i > data.time[-1]:
                 raise ValueError("{} start time not in data".format(i))
         # record state
@@ -1286,9 +1297,9 @@ class Fit(object):
     def duration(self) -> float:
         """Analysis duration in the units of time presumed by the
         :attr:`Fit.data` and :attr:`Fit.acfs` objects
-        (usually seconds). Defined as :math:`T = N\\times\Delta t`, where
+        (usually seconds). Defined as :math:`T = N\\times\\Delta t`, where
         :math:`N` is the number of analysis samples
-        (:attr:`n_analyze`) and :math:`\Delta t` is the time
+        (:attr:`n_analyze`) and :math:`\\Delta t` is the time
         sample spacing.
         """
         if self._n_analyze and not self._duration:

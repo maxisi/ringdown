@@ -88,9 +88,10 @@ def construct_sYlm(s : int,
     return ylm
 
 def calc_YpYc(cosi, swsh):
-    """Returns + and x angular factors for aligned model"""
+    """Returns + and x angular factors for aligned model, as well as ellipticity for the set of QNMs in the model"""
     ylm_p = swsh(cosi)
     ylm_m = swsh(-cosi)
     Yp = ylm_p + ylm_m
     Yc = ylm_p - ylm_m
-    return Yp, Yc
+    ellip = (jnp.abs(ylm_p) - jnp.abs(ylm_m)) / (jnp.abs(ylm_p) + jnp.abs(ylm_m))
+    return Yp, Yc, ellip

@@ -8,11 +8,12 @@ from .utils import docstring_parameter
 
 T_MSUN = lal.GMSUN_SI / lal.C_SI**3
 
-def get_ftau(M, chi, n, l=2, m=2):
+
+def get_ftau(M, chi, n, l=2, m=2):  # noqa: E741
     """Get the frequency and damping time of a Kerr quasinormal mode.
-    
+
     This is a wrapper around the package `qnm`.
-    
+
     Arguments
     ---------
     M : float
@@ -25,7 +26,7 @@ def get_ftau(M, chi, n, l=2, m=2):
         Spherical harmonic index (def. 2)
     m : int
         Azimuthal harmonic index (def. 2)
-        
+
     Returns
     -------
     f : float
@@ -39,6 +40,7 @@ def get_ftau(M, chi, n, l=2, m=2):
     gamma = abs(np.imag(omega)) / (T_MSUN*M)
     return f, 1./gamma
 
+
 class KerrMode(object):
     """A Kerr quasinormal mode.
     """
@@ -50,9 +52,9 @@ class KerrMode(object):
         """All arguments are passed to `indexing.ModeIndex.construct`,
         in order to identify the mode index (p, s, l, m, n) from
         a string, tuple or some other input.
-        
+
         Docs for `indexing.ModeIndex.construct`:
-        
+
         {0}
         """
         if len(args) == 1:
@@ -88,37 +90,40 @@ class KerrMode(object):
     def __call__(self, *args, **kwargs):
         f, tau = self.ftau(*args, **kwargs)
         return 2*np.pi*f - 1j/tau
-    
+
     def fgamma(self, chi, m_msun=None, approx=False):
         if approx:
             logchi = np.log1p(-chi)
-            c = (chi, np.ones_like(chi), logchi, logchi**2, logchi**3, logchi**4)
+            c = (chi, np.ones_like(chi), logchi,
+                 logchi**2, logchi**3, logchi**4)
             f, g = [np.dot(coeff, c) for coeff in self.coefficients]
         else:
             p, s, l, m, n = self.index
             q = qnm.modes_cache(s, l, p*abs(m), n)
+
             def omega(c):
                 return q(c)[0]
             f = np.sign(m)*np.vectorize(omega)(chi).real/(2*np.pi)
             g = abs(np.vectorize(omega)(chi).imag)
         if m_msun is not None:
-           f /= (m_msun * T_MSUN)
-           g /= (m_msun * T_MSUN)
+            f /= (m_msun * T_MSUN)
+            g /= (m_msun * T_MSUN)
         return f, g
 
     def ftau(self, chi, m_msun=None, approx=False):
-        f, g = self.fgamma(chi, m_msun, approx)            
+        f, g = self.fgamma(chi, m_msun, approx)
         return f, 1/g
 
+
 class ParameterLabel(object):
-    
+
     _PARAMETER_KEY_MAP = {
         'm': '$M / M_\\odot$',
         'chi': '$\\chi$',
         'f': '$f_{{{mode}}} / \\mathrm{{Hz}}$',
         'g': '$\\gamma_{{{mode}}} / \\mathrm{{Hz}}$',
-        'df': '$\delta f_{{{mode}}}$',
-        'dg': '$\delta \gamma_{{{mode}}}$',
+        'df': '$\\delta f_{{{mode}}}$',
+        'dg': '$\\delta \\gamma_{{{mode}}}$',
         'a': '$A_{{{mode}}}$',
         'phi': '$\\phi_{{{mode}}}$',
         'theta': '$\\theta_{{{mode}}}$',
@@ -126,27 +131,27 @@ class ParameterLabel(object):
         'h_det': '$h(t) [\\mathrm{{{ifo}}}]$',
         'h_det_mode': '$h_{{{mode}}}(t) [\\mathrm{{{ifo}}}]$',
     }
-    
+
     def __init__(self, parameter):
         self.parameter = parameter.lower()
         if self.parameter not in self._PARAMETER_KEY_MAP:
             raise ValueError(f"Parameter {parameter} not recognized.")
-        
+
     def __str__(self):
         return self.parameter
-    
+
     def __repr__(self):
-        return(f"ParameterLabel('{self.parameter}')")
-        
+        return (f"ParameterLabel('{self.parameter}')")
+
     @property
     def is_mode_specific(self):
-        l = self._PARAMETER_KEY_MAP[self.parameter]
-        return '{{{mode}}}' in l
-    
+        label = self._PARAMETER_KEY_MAP[self.parameter]
+        return '{{{mode}}}' in label
+
     @property
     def is_strain(self):
         return self.parameter.startswith('h_det')
-        
+
     def get_latex(self, mode=None, ifo=None, **kws):
         label = self._PARAMETER_KEY_MAP[self.parameter]
         subst = {}
@@ -160,9 +165,9 @@ class ParameterLabel(object):
         else:
             label = label.replace(' [\\mathrm{{{ifo}}}]', '')
         return label.format(**subst)
-    
+
     def get_key(self, mode=None, ifo=None, **kws):
-        key =  self.parameter
+        key = self.parameter
         if mode is not None:
             mode_index = indexing.get_mode_label(mode, **kws)
             if key == 'h_det_mode':
@@ -172,13 +177,14 @@ class ParameterLabel(object):
         if ifo is not None:
             key = key.replace('det', ifo)
         return key
-    
+
     def get_label(self, latex=False, **kws):
         if latex:
             return self.get_latex(**kws)
         else:
             return self.get_key(**kws)
-    
+
+
 def get_parameter_label_map(pars=None, modes=None, ifos=None, **kws):
     label_dict = {}
     pars = pars or ParameterLabel._PARAMETER_KEY_MAP.keys()
