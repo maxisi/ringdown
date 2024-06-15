@@ -13,14 +13,13 @@ sphinx:
 
 # formats: all
 
-# python:
-#   install:
-#     - method: pip
-#       path: .
-#       extra_requirements:
-#         - all
-#     - requirements: docs/requirements_docs.txt
-#   system_packages: true
+python:
+  install:
+    - method: pip
+      path: .
+      extra_requirements:
+        - all
+    - requirements: docs/requirements_docs.txt
 
 submodules:
   include: all
