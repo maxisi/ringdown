@@ -718,6 +718,7 @@ class Fit(object):
             min_ess : int | None = None,
             prng : jaxlib.xla_extension.ArrayImpl | int | None = None,
             validation_enabled: bool = False,
+            return_model: bool = False,
             **kwargs):
         """Fit model.
 
@@ -762,6 +763,9 @@ class Fit(object):
         validation_enabled: bool
             if True, run with numpyro.validation_enabled() to get verbose error
             messages
+            
+        return_model: bool
+            returns numpyro model instead of running it (def. `False`).
 
         \*\*kwargs :
             arguments passed to sampler.
@@ -795,6 +799,8 @@ class Fit(object):
             ms['a_scale_max'] = ms['a_scale_max'] / self.strain_scale
         model = make_model(self.modes.value, prior=prior, predictive=False,
                            store_h_det=False, store_h_det_mode=False, **ms)
+        if return_model:
+            return model
         
         logging.info('running {} mode fit'.format(self.modes))
         logging.info('prior run: {}'.format(prior))

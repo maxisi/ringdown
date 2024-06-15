@@ -67,10 +67,12 @@ class KerrMode(object):
         return self._cache[i]
 
     @staticmethod
-    def compute_coefficients(mode, n_chi=1000, **kws):
+    def compute_coefficients(mode, n_chi=4096, **kws):
         p, s, l, m, n = mode
-        chis = np.linspace(0, 1, n_chi)[:-1]
-        logchis = np.log1p(-chis)
+        # chis = np.linspace(0, 1, n_chi, endpoint=False)
+        # logchis = np.log1p(-chis)
+        logchis = np.linspace(0, -10, n_chi)
+        chis = 1 - np.exp(logchis)
         M = np.column_stack((chis, np.ones_like(chis), logchis, logchis**2,
                              logchis**3, logchis**4))
 
