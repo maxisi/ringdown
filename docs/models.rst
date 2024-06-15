@@ -110,8 +110,8 @@ In this more restricted version of the mass-spin model above, the polarizations 
 
 .. math::
    \begin{eqnarray}
-   h^{(+)} &= \sum_{\ell m n} Y^+_{\ell |m| n}(\cos\iota) A_{\ell |m| n} \cos(\omega_{\ell |m| n} t - \phi_{\ell |m| n})\exp(-t \gamma_{\ell |m| n})\, , \\
-   h^{(\times)} &= \sum_{\ell |m| n} A_{\ell |m| n} Y^\times_{\ell |m| n}(\cos\iota) \sin(\omega_{\ell |m| n} t - \phi_{\ell |m| n}) \exp(-t/\tau_{\ell |m| n})\, .
+   h^{(+)} &= \sum_{\ell |m| n} Y^+_{\ell |m| n}(\cos\iota) A_{\ell |m| n} \cos(\omega_{\ell |m| n} t - \phi_{\ell |m| n})\exp(-\gamma_{\ell |m| n} t)\, , \\
+   h^{(\times)} &= \sum_{\ell |m| n} Y^\times_{\ell |m| n}(\cos\iota) A_{\ell |m| n} \sin(\omega_{\ell |m| n} t - \phi_{\ell |m| n}) \exp(-\gamma_{\ell |m| n} t)\, .
    \end{eqnarray}
 
 where :math:`Y^{+/\times}_{\ell |m| n}(\cos\iota)` are given in Eq. (31) of
