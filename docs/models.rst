@@ -20,10 +20,10 @@ time. The signal model is thus
 although this is internally parameterized in terms of cosine and sine
 quadratures, :math:`A_x = A \cos \phi` and :math:`A_y = A \sin \phi`, for
 efficiency. Importantly, label switching problems are avoided by defining
-:math:`\f_n < \f_{n+1}` or :math:`\gamma_n < \gamma_{n+1}`.
+:math:`f_n < f_{n+1}` or :math:`\gamma_n < \gamma_{n+1}`.
 
 Priors are flat in :math:`A_n, \phi_n, f_n, \gamma_n`, modulo the
-:math:`\f_n < \f_{n+1}` or :math:`\gamma_n < \gamma_{n+1}` restriction.
+:math:`f_n < f_{n+1}` or :math:`\gamma_n < \gamma_{n+1}` restriction.
 
 |:point_right:| **See this model in action!** :doc:`examples/single_damped_sinusoid`.
 
@@ -110,8 +110,7 @@ In this more restricted version of the mass-spin model above, the polarizations 
 
 .. math::
    \begin{eqnarray}
-   h^{(+)} &= \sum_{\ell m n} Y^+_{\ell |m| n}(\cos\iota) A_{\ell |m| n} \cos(\omega_{\ell |m| n} t - \phi__{\ell |m| n})
-   \exp(-t \gamma_{\ell |m| n})\, , \\
+   h^{(+)} &= \sum_{\ell m n} Y^+_{\ell |m| n}(\cos\iota) A_{\ell |m| n} \cos(\omega_{\ell |m| n} t - \phi_{\ell |m| n})\exp(-t \gamma_{\ell |m| n})\, , \\
    h^{(\times)} &= \sum_{\ell |m| n} A_{\ell |m| n} Y^\times_{\ell |m| n}(\cos\iota) \sin(\omega_{\ell |m| n} t - \phi_{\ell |m| n}) \exp(-t/\tau_{\ell |m| n})\, .
    \end{eqnarray}
 
