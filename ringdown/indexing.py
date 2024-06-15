@@ -52,7 +52,13 @@ class GenericIndex(ModeIndex):
     """Generic mode index for non-harmonic modes (a wrapper around an integer).
     """
     i : int
- 
+    
+    def __eq__(self, other):
+        if isinstance(other, GenericIndex):
+            return self.i == other.i
+        else:
+            return False
+        
     def __str__(self):
         return str(self.i)
     
@@ -104,6 +110,13 @@ class HarmonicIndex(ModeIndex):
             return getattr(self, self._keys[i])
         else:
             return getattr(self, i)
+    
+    def __eq__(self, other):
+        if isinstance(other, HarmonicIndex):
+            return all([getattr(self, k) == getattr(other, k) 
+                        for k in ['p', 's', 'l', 'm', 'n']])
+        else:
+            return False
         
     def as_dict(self) -> bool:
         return {k: getattr(self, k) for k in self._keys}
