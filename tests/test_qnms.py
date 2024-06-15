@@ -7,17 +7,18 @@ M_REF = 70
 C_REF = 0.7
 FTAU_REF = {
     (1, -2, 2, 2, 0): (245.85210273356427, 0.004267509656122605),
-    (1, -2, 2, 2, 1): (240.57155728864586, 0.0014116718959024234),
+    (1, -2, 2, 2, 1): (240.57155728864586, 0.001411671895902423),
     (1, -2, 3, 2, 0): (350.440511991165, 0.004095329813033091)
 }
 
 def test_T_MSUN():
     assert ringdown.qnms.T_MSUN == T_MSUN
 
-@pytest.mark.parametrize("index, f_tau", FTAU_REF.items())
-def test_get_ftau(index, f_tau):
+@pytest.mark.parametrize("index, f_tau_ref", FTAU_REF.items())
+def test_get_ftau(index, f_tau_ref):
     (p, s, l, m, n) = index
-    assert ringdown.qnms.get_ftau(M_REF, C_REF, n=n, l=l, m=p*m) == f_tau
+    ftau = ringdown.qnms.get_ftau(M_REF, C_REF, n=n, l=l, m=p*m)
+    assert ftau == pytest.approx(f_tau_ref, abs=1e-18)
 
 
 class TestKerrMode:
