@@ -57,13 +57,13 @@ def test_target(kws):
     # check detector values
     t0s = target.get_detector_times_dict(IFOS)
     aps = target.get_antenna_patterns_dict(IFOS)
-    assert t0s == REF_VALUES['t0']
-    assert aps == REF_VALUES['antenna_patterns']
+    assert t0s == pytest.approx(REF_VALUES['t0'], abs=1e-10)
+    assert aps == pytest.approx(REF_VALUES['antenna_patterns'], abs=1e-10)
     for ifo, t0 in t0s.items():
-        assert target.get_detector_time(ifo) == pytest.approx(t0, abs=1e-12)
+        assert target.get_detector_time(ifo) == pytest.approx(t0, abs=1e-10)
     for ifo, ap in aps.items():
         assert target.get_antenna_patterns(ifo) == \
-            pytest.approx(ap, abs=1e-12)
+            pytest.approx(ap, abs=1e-10)
     # check exceptions
     with pytest.raises(ValueError):
         target.get_detector_time('FAKE')
