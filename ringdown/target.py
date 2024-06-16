@@ -37,6 +37,12 @@ class Target(ABC):
     def as_dict(self) -> dict:
         return asdict(self)
 
+    def __eq__(self, other) -> bool:
+        if isinstance(other, Target):
+            return self.as_dict() == other.as_dict()
+        else:
+            return False
+
     @abstractmethod
     def get_detector_time(self, ifo) -> float | None:
         pass
@@ -63,10 +69,10 @@ class Target(ABC):
     def is_set(self) -> bool:
         return any([x is not None for x in self.as_dict().values()])
 
-    def get_detector_times_dict(self, ifos):
+    def get_detector_times_dict(self, ifos) -> dict:
         return {ifo: self.get_detector_time(ifo) for ifo in ifos}
 
-    def get_antenna_patterns_dict(self, ifos):
+    def get_antenna_patterns_dict(self, ifos) -> dict:
         return {ifo: self.get_antenna_patterns(ifo) for ifo in ifos}
 
     @staticmethod
@@ -114,7 +120,7 @@ class Target(ABC):
 class SkyTarget(Target):
     """Sky location target for a ringdown analysis.
     """
-    geocenter_time: float | None = None
+    geocenter_time: float | lal.LIGOTimeGPS | None = None
     ra: float | None = None
     dec: float | None = None
     psi: float | None = None
@@ -131,7 +137,7 @@ class SkyTarget(Target):
                     raise ValueError(f"missing {k}")
 
     @property
-    def t0(self):
+    def t0(self) -> float | None:
         """Alias for time_geocenter."""
         if self.geocenter_time is None:
             return None
@@ -139,22 +145,22 @@ class SkyTarget(Target):
             return float(self.geocenter_time)
 
     @property
-    def sky(self):
+    def sky(self) -> tuple[float | None]:
         """Return sky location as a tuple (ra, dec, psi)."""
         return (self.ra, self.dec, self.psi)
 
-    def get_detector_time(self, ifo):
+    def get_detector_time(self, ifo) -> float:
         """Compute detector times based on sky location.
 
         Arguments
         ---------
-        ifos : list
-            list of detector names.
+        ifo : list
+            detector name.
 
         Returns
         -------
-        times : dict
-            dictionary of detector times.
+        times : float
+            time for specified detector.
         """
         if ifo in lal.cached_detector_by_prefix:
             det = lal.cached_detector_by_prefix[ifo]
@@ -166,7 +172,7 @@ class SkyTarget(Target):
         t0 = self.geocenter_time + dt
         return float(t0)
 
-    def get_antenna_patterns(self, ifo):
+    def get_antenna_patterns(self, ifo) -> tuple[float, float]:
         """Compute antenna patterns based on sky location.
 
         Arguments
@@ -187,7 +193,7 @@ class SkyTarget(Target):
         gmst = lal.GreenwichMeanSiderealTime(tgps)
         fpfc = lal.ComputeDetAMResponse(det.response, self.ra, self.dec,
                                         self.psi, gmst)
-        return fpfc
+        return tuple(fpfc)
 
     @classmethod
     def construct(cls, t0: float, ra: float, dec: float, psi: float,
@@ -241,7 +247,7 @@ class DetectorTarget(Target):
             _antenna_patterns = {None: self.antenna_patterns}
         else:
             # make sure antenna patterns is a dictionary
-            _antenna_patterns = {k: self.antenna_patterns[k]
+            _antenna_patterns = {k: tuple(self.antenna_patterns[k])
                                  for k in self.antenna_patterns.keys()}
         for i, fpfc in _antenna_patterns.items():
             if fpfc is None:
@@ -284,23 +290,23 @@ class DetectorTarget(Target):
         self.detector_times = _detector_times
 
     @property
-    def t0(self):
+    def t0(self) -> None:
         """Geocenter reference time is `None`"""
         return None
 
     @property
-    def sky(self):
+    def sky(self) -> tuple[None]:
         """Sky location is `(None, None, None)`"""
         return (None, None, None)
 
-    def get_antenna_patterns(self, ifo):
+    def get_antenna_patterns(self, ifo) -> tuple[float, float]:
         if ifo in self.antenna_patterns:
             return self.antenna_patterns[ifo]
         else:
             raise ValueError(f"antenna patterns unavailable for {ifo}; "
                              "you might need to reset the target.")
 
-    def get_detector_time(self, ifo):
+    def get_detector_time(self, ifo) -> float:
         if ifo in self.detector_times:
             return self.detector_times[ifo]
         else:
@@ -308,8 +314,7 @@ class DetectorTarget(Target):
                              "you might need to reset the target.")
 
     @classmethod
-    def construct(cls,
-                  detector_times: dict | float | list,
+    def construct(cls, detector_times: dict | float | list,
                   antenna_patterns: dict | list[tuple[float]] |
                   tuple[float, float], ifos: list | str = None):
         """Create a target object from a set of detector times and antenna
@@ -410,27 +415,37 @@ class TargetCollection(utils.MultiIndexCollection):
         return f"{self.__class__.__name__}({self.targets})"
 
     @property
-    def targets(self):
+    def targets(self) -> list:
         """List of targets in the collection."""
         return self.data
 
-    def get(self, key):
+    @property
+    def reference_mass_time(self) -> float | None:
+        """Reference mass in units of seconds."""
+        if self.reference_mass:
+            return self.reference_mass * T_MSUN
+        else:
+            return None
+
+    def get(self, key) -> list | np.ndarray:
         """Get attribute `key` for each target in the collection."""
         if key.lower() == 'delta-t0':
             t0 = 0 if self.reference_time is None else self.reference_time
             return np.array(self.get('t0')) - t0
         elif key.lower() == 'delta-m':
             if self.step_time:
-                return np.array(self.get('delta-t0')) / self.step_time
+                return self.get('delta-t0') / self.step_time
+            elif self.reference_mass and self.reference_time:
+                return self.get('delta-t0') / self.reference_mass_time
             else:
                 return [None] * len(self)
         return [getattr(t, key) for t in self.targets]
 
-    def get_detector_times(self, ifo):
+    def get_detector_times(self, ifo) -> list[float]:
         """Get detector times for each target in the collection."""
         return [t.get_detector_time(ifo=ifo) for t in self.targets]
 
-    def get_antenna_patterns(self, ifo):
+    def get_antenna_patterns(self, ifo) -> list[tuple[float, float]]:
         """Get antenna patterns for each target in the collection."""
         return [t.get_antenna_patterns(ifo=ifo) for t in self.targets]
 
@@ -441,17 +456,17 @@ class TargetCollection(utils.MultiIndexCollection):
         self.info[section].update(**kws)
 
     @property
-    def t0(self):
+    def t0(self) -> np.ndarray:
         """Start times for each target in the collection."""
-        return self.get('t0')
+        return np.array(self.get('t0'))
 
     @property
-    def t0m(self):
+    def t0m(self) -> np.ndarray:
         """Start times relative to the reference time in units of mass."""
         return self.get('delta-m')
 
     @property
-    def index(self):
+    def index(self) -> list:
         """Index for the collection; defaults to start times if none
         provided."""
         if self._index is None:
@@ -461,7 +476,7 @@ class TargetCollection(utils.MultiIndexCollection):
         return self._index
 
     @property
-    def reference_time(self):
+    def reference_time(self) -> float | None:
         """Reference time relative to which to compute time differences."""
         if self._reference_time is None:
             tdef = self.info.get(PIPE_SEC, {}).get(self._tref_key, None)
@@ -469,7 +484,7 @@ class TargetCollection(utils.MultiIndexCollection):
         return self._reference_time
 
     @property
-    def reference_mass(self):
+    def reference_mass(self) -> float | None:
         """Reference mass in solar masses to use for time steps in units of
         mass."""
         if self._reference_mass is None:
@@ -477,14 +492,14 @@ class TargetCollection(utils.MultiIndexCollection):
             self._reference_mass = self.info.get(self._mref_key, mdef)
         return self._reference_mass
 
-    def set_reference_time(self, t0: float | None):
+    def set_reference_time(self, t0: float | None) -> None:
         """Set the reference time for the collection."""
         if self._reference_time is not None:
             logging.warning(
                 f"overwriting reference time ({self._reference_time} )")
         self._reference_time = float(t0)
 
-    def set_reference_mass(self, mref: float | None):
+    def set_reference_mass(self, mref: float | None) -> None:
         """Set the reference mass for the collection."""
         if self._reference_mass is not None:
             logging.warning(
@@ -492,12 +507,12 @@ class TargetCollection(utils.MultiIndexCollection):
         self._reference_mass = float(mref)
 
     @property
-    def _step(self):
+    def _step(self) -> float | None:
         tdef = self.info.get(PIPE_SEC, {}).get('t0-step', None)
         return self.info.get('t0-step', tdef)
 
     @property
-    def step_time(self):
+    def step_time(self) -> float | None:
         """Time step for the collection, in seconds."""
         mref = self.reference_mass
         if mref and self.step_mass:
@@ -507,7 +522,7 @@ class TargetCollection(utils.MultiIndexCollection):
         return tstep
 
     @property
-    def step_mass(self):
+    def step_mass(self) -> float | None:
         """Time step for the collection, in units of mass."""
         mref = self.reference_mass
         if mref and self._step:
