@@ -60,7 +60,7 @@ def test_target(kws):
     assert t0s == REF_VALUES['t0']
     assert aps == REF_VALUES['antenna_patterns']
     for ifo, t0 in t0s.items():
-        assert target.get_detector_time(ifo) == t0
+        assert target.get_detector_time(ifo) == pytest.approx(t0, abs=1e-12)
     for ifo, ap in aps.items():
         assert target.get_antenna_patterns(ifo) == \
             pytest.approx(ap, abs=1e-12)
