@@ -808,7 +808,7 @@ class Fit(object):
         filter = 'ignore' if suppress_warnings else 'default'
 
         # create model
-        ms = self.model_settings
+        ms = cp.deepcopy(self.model_settings)
         if 'a_scale_max' in ms:
             ms['a_scale_max'] = ms['a_scale_max'] / self.strain_scale
         model = make_model(self.modes.value, prior=prior, predictive=False,
