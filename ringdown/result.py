@@ -119,6 +119,8 @@ class Result(az.InferenceData):
                 scale * self.posterior['h_det_mode']
         if 'a' in self.posterior:
             self.posterior['a'] = scale * self.posterior['a']
+        if 'a_scale' in self.posterior:
+            self.posterior['a_scale'] = scale * self.posterior['a_scale']
         if 'observed_data' in self and 'strain' in self.observed_data:
             self.observed_data['strain'] = \
                 scale * self.observed_data['strain']
