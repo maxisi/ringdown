@@ -930,6 +930,8 @@ def get_arviz(sampler,
         # add observed data
         if hasattr(result, 'observed_data'):
             logging.info("added strain to observed data")
+            # make sure we have the right coordinates
+            result.observed_data.coords.update(coords)
             result.observed_data['strain'] = (in_dims['strain'],
                                               obs_data['strain'])
         else:
@@ -938,7 +940,7 @@ def get_arviz(sampler,
             result.add_groups(dict(
                 observed_data=dict_to_dataset(
                     obs_data,
-                    coords=result.posterior.coords,
+                    coords=coords,
                     dims={'strain': in_dims['strain']},
                 )))
     return Result(result)
