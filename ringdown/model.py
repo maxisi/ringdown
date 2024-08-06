@@ -804,6 +804,7 @@ def make_model(modes: int | list[(int, int, int, int)],
                 # We need a Jacobian that is A^-3 for the generic model
                 # (4 quadratures) and A^-1 for the aligned model
                 # (2 quadratures)
+                n_quad_n_modes = dms.shape[2]
                 n_quad = n_quad_n_modes / n_modes
                 numpyro.factor('flat_a_prior', (1 - n_quad)*jnp.sum(jnp.log(a))
                                + 0.5*jnp.sum(jnp.square(quads)))
