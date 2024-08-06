@@ -453,7 +453,7 @@ class Result(az.InferenceData):
         residuals = {}
         residuals_stacked = {}
         for ifo in self.ifos.values.astype(str):
-            r = self.observed_strain.sel(ifo=ifo) -\
+            r = self.observed_strain[list(self.ifos.values.astype(str)).index(ifo)] -\
                 self.h_det.sel(ifo=ifo)
             residuals[ifo] = r.transpose('chain', 'draw', 'time_index')
             residuals_stacked[ifo] = residuals[ifo].stack(sample=['chain',
