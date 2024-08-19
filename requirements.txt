@@ -1,4 +1,4 @@
-numpy==1.26.4
+numpy==2.1.0
 lalsuite==7.22
 h5py~=3.11
 arviz~=0.19
