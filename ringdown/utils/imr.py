@@ -73,6 +73,19 @@ class IMRResult(pd.DataFrame):
             g_keys.append(g_key)
         return self[f_keys + g_keys]
 
+    def get_mode_parameter_dataframe(self, modes, **kws):
+        # get frequencies and damping rates
+        fg = self.get_kerr_frequencies(modes, **kws)
+        modes = indexing.ModeIndexList(modes)
+        df = pd.DataFrame()
+        for index in modes:
+            label = index.get_label()
+            df_loc = pd.DataFrame({'f': fg[f'f_{label}'],
+                                   'g': fg[f'g_{label}']})
+            df_loc['mode'] = label
+            df = pd.concat([df, df_loc], ignore_index=True)
+        return df
+
     def get_remnant_parameters(self, f_ref: float = -1,
                                model: str = 'NRSur7dq4Remnant',
                                nproc: int | None = None,
