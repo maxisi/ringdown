@@ -4,6 +4,7 @@ from .data import *
 from .fit import *
 from .result import *
 from .waveforms import *
+from .utils.imr import IMRResult
 from . import qnms
 from . import model
 from . import utils

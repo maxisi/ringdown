@@ -16,6 +16,7 @@ import h5py
 import os
 import logging
 import inspect
+from . import utils
 
 
 class Series(pd.Series):
@@ -642,7 +643,21 @@ class PowerSpectrum(FrequencySeries):
     _meta = ['ifo', 'attrs']
 
     def __init__(self, *args, delta_f=None, ifo=None, attrs=None,
-                 **kwargs):
+                 complete_power_of_two=True, **kwargs):
+        """Initialize power spectral density.
+
+        Arguments
+        ---------
+        delta_f : float
+            frequency spacing.
+        ifo : str
+            detector identifier (e.g., 'H1' for LIGO Hanford).
+        attrs : dict
+            optional additional information, e.g., to identify data provenance.
+        complete_power_of_two : bool
+            ensure that the power spectrum is complete up to the next power of
+            two.
+        """
         if ifo is not None:
             ifo = ifo.upper()
         kwargs['name'] = kwargs.get('name', ifo)
@@ -653,6 +668,12 @@ class PowerSpectrum(FrequencySeries):
             args = [None]
         self.ifo = ifo or getattr(args[0], 'ifo', None)
         self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
+        if complete_power_of_two:
+            logging.info("completing power spectrum to next power of two")
+            fmax = self.freq[-1]
+            new_fmax = utils.np2(fmax)
+            if fmax % 2 and np.isclose(new_fmax - fmax, self.delta_f):
+                self[new_fmax] = self.iloc[-1]
 
     @property
     def _constructor(self):
