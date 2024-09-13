@@ -410,6 +410,65 @@ class Result(az.InferenceData):
         else:
             return snrs
 
+    def compute_posterior_snr_timeseries(self, optimal: bool = True,
+                                         network: bool = True) -> np.ndarray:
+        """Efficiently computes cumulative signal-to-noise ratio from
+        posterior samples as a function of time.
+
+        Depending on the ``optimal`` argument, returns either the optimal SNR::
+
+          snr_opt = sqrt(dot(template, template))
+
+        or the matched filter SNR::
+
+          snr_mf = dot(data, template) / snr_opt
+
+        NOTE: the last time sample of the returned SNR timeseries corresponds
+              to the total accumulated SNR, which is the same as returned
+              by :meth:`compute_posterior_snrs`; however, that function is
+              10x faster, so use it if you only need the total SNR.
+
+        Arguments
+        ---------
+        optimal : bool
+            return optimal SNR, instead of matched filter SNR (def., ``True``)
+        network : bool
+            return network SNR, instead of individual-detector SNRs (def.,
+            ``True``)
+
+        Returns
+        -------
+        snrs : array
+            stacked array of cumulative SNRs, with shape ``(time, samples,)``
+            if ``network = True``, or ``(ifo, time, samples)`` otherwise;
+            the number of samples equals the number of chains times the number
+            of draws.
+
+        See Also
+        --------
+        compute_posterior_snrs : Computes the overall signal-to-noise ratio.
+        """
+        # get whitened reconstructions from posterior (ifo, time, sample)
+        whs = self.whitened_templates
+        # get series of cumulative optimal SNRs for each (ifo, time, sample)
+        opt_ifo_snrs = np.sqrt(np.cumsum(whs * whs, axis=1))
+        if optimal:
+            snrs = opt_ifo_snrs
+        else:
+            # get analysis data, shaped as (ifo, time)
+            ds = self.observed_strain
+            # whiten it with the Cholesky factors,
+            # so shape will remain (ifo, time)
+            wds = self.whiten(ds)
+            # take inner product between whitened template and data,
+            # and normalize
+            snrs = np.cumsum(wds[:, :, None]*whs, axis=1) / opt_ifo_snrs
+        if network:
+            # take norm across detectors
+            return np.linalg.norm(snrs, axis=0)
+        else:
+            return snrs
+
     @property
     def observed_strain(self):
         if "strain" in self.observed_data:
