@@ -82,6 +82,7 @@ def string_to_tuple(s):
     result = []
     i = 0
     while i < len(s):
+        # Check if character is a digit
         if s[i].isdigit():
             # Check if the previous character was a hyphen
             if i > 0 and s[i-1] == '-':
