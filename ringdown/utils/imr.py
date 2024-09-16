@@ -13,7 +13,6 @@ MASS_ALIASES = ['final_mass', 'mf', 'mfinal', 'm_final', 'final_mass_source',
 SPIN_ALIASES = ['final_spin', 'remnant_spin', 'chif', 'chi_f', 'chi_final',
                 'af', 'a_final']
 
-
 def get_remnant(mass_1, mass_2, spin_1x, spin_1y, spin_1z,
                 spin_2x, spin_2y, spin_2z, f_ref, model):
     r = nrfits.eval_nrfit(mass_1, mass_2,
