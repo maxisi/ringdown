@@ -1,7 +1,7 @@
 # ringdown
 
 [![PyPI version](https://badge.fury.io/py/ringdown.svg)](https://badge.fury.io/py/ringdown)
-[![Binder](https://mybinder.org/badge_logo.svg)](https://binder.flatironinstitute.org/~wfarr/ringdown)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/maxisi/ringdown/HEAD)
 [![DOI](https://zenodo.org/badge/368680640.svg)](https://zenodo.org/badge/latestdoi/368680640)
 ![pytest](https://github.com/maxisi/ringdown/actions/workflows/python-app.yml/badge.svg?event=push)
 [![Documentation Status](https://readthedocs.org/projects/ringdown/badge/?version=latest)](https://ringdown.readthedocs.io/en/latest/?badge=latest)
