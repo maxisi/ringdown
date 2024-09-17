@@ -618,6 +618,8 @@ class Fit(object):
         self._raw_data = self.data
         self.data = new_data
         if not preserve_acfs:
+            if self.acfs:
+                logging.warning("discarding existing ACFs after conditioning")
             self.acfs = {}  # Just to be sure that these stay consistent
         elif self.acfs:
             logging.warning("preserving existing ACFs after conditioning")
