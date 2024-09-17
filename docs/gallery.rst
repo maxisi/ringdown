@@ -6,6 +6,4 @@ Here are a number of examples sourced from Jupyter notebooks found `here <https:
 .. nbgallery::
     examples/single_damped_sinusoid
     examples/GW150914
-    examples/GW150914_marginalized
-    examples/GW150914_circular
-    examples/GW150914_loo
+    examples/GW190521
