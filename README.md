@@ -34,7 +34,7 @@ pip install ringdown
 
 will leave the shell in an environment that includes `jupyterlab` ready to explore the `ringdown` package.  
 
-The `environment.yml` file enables running `ringdown` in JupyterHub services like [MyBinder](https://mybinder.org/) by pointing MyBinder at this repository or clicking the button at the top of this README.  (Don't forget to `pip install ringdown` after the binder activates!)
+The `environment.yml` file enables running `ringdown` in JupyterHub services like [MyBinder](https://mybinder.org/) by pointing MyBinder at this repository or clicking the button at the top of this README.
 
 ## Examples of Use
 
