@@ -91,7 +91,7 @@ frequencies and damping times such that
    \gamma_j &= \gamma_j(M,\chi) \exp(\delta \gamma_j) \, .
    \end{eqnarray}
 
-|:point_right:| **See this model in action!** :doc:`examples/GW150914`.
+|:point_right:| **See this model in action!** :doc:`examples/GW190521`.
 
 Kerr ringdowns with restricted polarizations
 --------------------------------------------
@@ -117,3 +117,5 @@ In this more restricted version of the mass-spin model above, the polarizations 
 where :math:`Y^{+/\times}_{\ell |m| n}(\cos\iota)` are given in Eq. (31) of
 `Isi (2022) <https://arxiv.org/abs/2208.03372>`_. Other options for this model
 are analogous to those in the generic mass-spin configuration.
+
+|:point_right:| **See this model in action!** :doc:`examples/GW150914`.

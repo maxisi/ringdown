@@ -25,11 +25,11 @@ Example
 You can get an analysis going with just a few lines of code. For example, assuming you have already downloaded GW150914 data from `GWOSC <https://www.gw-openscience.org>`_::
 
     import ringdown as rd
-    fit = rd.Fit('mchi', modes=[(1,-2,2,2,0), (1,-2,2,2,1)])
+    fit = rd.Fit(modes=[(1,-2,2,2,0), (1,-2,2,2,1)])
     fit.load_data('{i}-{i}1_GWOSC_16KHZ_R1-1126259447-32.hdf5', ifos=['H1', 'L1'], kind='gwosc')
     fit.set_target(1126259462.4083147, ra=1.95, dec=-1.27, psi=0.82, duration=0.05)
     fit.condition_data(ds=8)
-    fit.update_prior(A_scale_max=1e-21, M_min=50, M_max=150)
+    fit.update_prior(a_scale_max=1e-21, m_min=50, m_max=150)
     fit.run()
 
 Or run using a configuration file from the :doc:`command line <exe_ringdown_fit>`:
