@@ -65,3 +65,11 @@ Target module
    :members:
    :undoc-members:
    :show-inheritance:
+
+Utilities module
+-------------
+
+.. automodule:: ringdown.utils
+   :members:
+   :undoc-members:
+   :show-inheritance:

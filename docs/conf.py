@@ -14,6 +14,7 @@ import os
 import sys
 sys.path.insert(0, os.path.abspath('../ringdown/'))
 sys.path.insert(0, os.path.abspath('../ringdown/waveforms/'))
+sys.path.insert(0, os.path.abspath('../ringdown/utils/'))
 sys.path.insert(0, os.path.abspath('.'))
 sys.path.insert(0, os.path.abspath('../'))
 
