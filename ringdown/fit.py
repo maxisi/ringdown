@@ -999,11 +999,19 @@ class Fit(object):
                                 "removing target (please reset)")
                 self.target = None
 
-    def load_data(self, path=None, ifos=None, channel=None,
-                  frametype=None, **kws):
+    def load_data(self, path: str | None = None,
+                  ifos: list[str] | None = None,
+                  channel: dict[str] | None = None,
+                  frametype: dict[str] | None = None,
+                  slide: dict[float] | None = None, **kws):
         """Load data from disk.
 
-        Additional arguments are passed to :meth:`ringdown.data.Data.read`.
+        Additional arguments are passed to :meth:`ringdown.data.Data.load`.
+
+        If a `seglen` argument is provided (e.g., to fetch data from  GWOSC),
+        the segment will be assumed to be centered on a GPS time `t0`, which
+        (if not provided) defaults to the target time :attr:`Fit.t0` (if `t0`
+        is not provided and no target was set, an error will be raised).
 
         Arguments
         ---------
@@ -1029,9 +1037,16 @@ class Fit(object):
 
         frametype : dict, str
             dictionary of frame types indexed by interferometer keys, or frame
-            type string replacement pattern, e.g., `'H1_HOFT_C00'`, with
-            same replacement rules as for `channel` and `path`. Only used when
-            `kind = 'discover'`.
+            type string replacement pattern, e.g., `'H1_HOFT_C00'`, with same
+            replacement rules as for `channel` and `path`. Only used when `kind
+            = 'discover'`.
+
+        slide : dict
+            optional dictionary of time slides to apply to each detector, e.g.,
+            ``{'H1': 0.1, 'L1': -0.05}``; if provided, the data of each
+            detector will be rolled by an integer number of samples closest to
+            the requested time shift, i.e.,
+            ``np.roll(data, int(slide / delta_t)``.
         """
         # record all arguments
         settings = {k: v for k, v in locals().items() if k != 'self'}
@@ -1065,7 +1080,7 @@ class Fit(object):
         if frametype is not None:
             kws['frametype'] = utils.get_dict_from_pattern(frametype, ifos)
 
-        tslide = kws.pop('slide', {}) or {}
+        tslide = slide or {}
         for ifo, path in path_dict.items():
             self.add_data(Data.load(path, ifo=ifo, channel=channel_dict[ifo],
                                     **kws))
@@ -1078,6 +1093,50 @@ class Fit(object):
         # record data provenance
         settings['path'] = path_dict
         self.update_info('data', **settings)
+
+    def fake_data(self, ifos: list[str],
+                  psds: dict | None = None,
+                  seglen: float | None = None,
+                  sample_rate: float | None = None,
+                  t0: float | None = None,
+                  epoch: float | None = None,
+                  **kws):
+        """Generate fake data for a given set of interferometers.
+        """
+        # WIP
+        # record all arguments
+        settings = {k: v for k, v in locals().items() if k != 'self'}
+        for k, v in settings.pop('kws').items():
+            settings[k] = v
+
+        # look for aliases of sample_rate
+        if not sample_rate:
+            for k in ['fsamp', 'fs', 'f_samp']:
+                sample_rate = kws.pop(k, sample_rate)
+            for k in ['delta_t', 'dt']:
+                sample_rate = 1/kws.pop(k, sample_rate)
+
+        if (not seglen or not seglen) and not psds:
+            raise ValueError("must provided PSDs, or seglen and sample rate")
+
+        # create time array
+        delta_t = 1/sample_rate
+        tlen = int(np.round(seglen / delta_t))
+
+        if t0 is None and epoch is None:
+            if self.t0 is None:
+                epoch = 0.
+            else:
+                t0 = self.t0
+        if t0 is not None and epoch is not None:
+            raise ValueError("cannot provide both t0 and epoch")
+        elif t0 is not None:
+            epoch = t0 - 0.5*tlen*delta_t
+        elif epoch is None:
+            epoch = 0.
+
+        # time_dict = {i: np.arange(tlen)*delta_t + epoch for i in ifos}
+        pass
 
     def compute_acfs(self, shared=False, ifos=None, **kws):
         """Compute ACFs for all data sets in `Fit.data`.

@@ -199,6 +199,15 @@ class Series(pd.Series):
         """Universal load function to read data from disk or discover GWOSC/NDS
         data using GWpy.
 
+        Only one of `path` or `channel` can be provided. If a `path` is
+        provided, it will attempt to read the data from disk using
+        :meth:`Series.read`; if `channel` is provided, it will attempt to
+        discover and fetch the data using :meth:`Series.fetch`, which leverages
+        GWpy's NDS2 interface.
+
+        A special case of the latter is when `channel` is 'GWOSC' (case
+        insensitive); if so, it will download open data from GWOSC.
+
         Arguments
         ---------
         path : str
