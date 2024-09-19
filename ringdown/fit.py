@@ -1094,49 +1094,148 @@ class Fit(object):
         settings['path'] = path_dict
         self.update_info('data', **settings)
 
-    def fake_data(self, ifos: list[str],
-                  psds: dict | None = None,
-                  seglen: float | None = None,
-                  sample_rate: float | None = None,
+    def fake_data(self, ifos: list[str] | str | None = None,
+                  psds: dict[str, str | PowerSpectrum] | None = None,
+                  duration: float | None = None,
+                  delta_t: float | None = None,
+                  freq: float | None = None,
+                  f_samp: float | None = None,
+                  f_min: float | None = None,
+                  f_max: float | None = None,
+                  delta_f: float | None = None,
                   t0: float | None = None,
                   epoch: float | None = None,
+                  rng: int | np.random.Generator | None = None,
+                  psd_kws: dict | None = None,
                   **kws):
-        """Generate fake data for a given set of interferometers.
+        """Generate synthetic data for a given set of interferometers.
+
+        If PSDs are provided, draws time-domain data from PSDs using
+        :meth:`ringdown.data.PowerSpectrum.draw_noise_td`. If no PSDs are
+        provided, initializes empty data arrays with specified time stamps.
+
+        Arguments
+        ---------
+        ifos : list
+            list of detector keys (e.g., ``['H1', 'L1']``); also accepts a
+            single string if adding a single detector.
+        psds : dict
+            dictionary of PSDs indexed by interferometer keys, or: (1)
+            PSD string replacement pattern, e.g., ``'path/to/{ifo}-PSD.txt'``
+            where `ifo`  will be replaced by the detector key (e.g., `H1` for
+            LIGO Hanford); (2) name of a PSD function available in
+            LALSimulation.
+        duration : float
+            duration of data segment (default None); not required if PSD is
+            provided.
+        delta_t : float
+            time step of data (default None).
+        freq : float
+            frequency array to create PSD (default None).
+        f_samp : float
+            sampling frequency of data (default None).
+        f_min : float
+            minimum frequency of data (default None).
+        f_max : float
+            maximum frequency of data (default None).
+        delta_f : float
+            frequency step of PSD (default None).
+        t0 : float
+            time of data segment center (default None); if not provided, the
+            target time will be used if available.
+        epoch : float
+            time of data segment start (default None); if not provided, will
+            be set based on `t0` or target time.
+        rng : int, np.random.Generator
+            random number generator seed or object (default None).
+        psd_kws : dict
+            additional keyword arguments passed to PSD constructor.
+        **kws :
+            additional keyword arguments passed to
+            :meth:`ringdown.data.Data.draw_noise_td`.
         """
-        # WIP
         # record all arguments
         settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kws').items():
             settings[k] = v
 
-        # look for aliases of sample_rate
-        if not sample_rate:
-            for k in ['fsamp', 'fs', 'f_samp']:
-                sample_rate = kws.pop(k, sample_rate)
-            for k in ['delta_t', 'dt']:
-                sample_rate = 1/kws.pop(k, sample_rate)
+        # type check some arguments
+        if isinstance(ifos, str):
+            ifos = [ifos]
+        psd_kws = psd_kws or {}
 
-        if (not seglen or not seglen) and not psds:
-            raise ValueError("must provided PSDs, or seglen and sample rate")
+        # look for aliases to accept same terminology as GWpy
+        if duration is None and 'seglen' in kws:
+            duration = kws.pop('seglen', None)
+        if f_samp is None and 'sample_rate' in kws:
+            f_samp = kws.pop('sample_rate', None)
 
-        # create time array
-        delta_t = 1/sample_rate
-        tlen = int(np.round(seglen / delta_t))
-
+        # define epoch
         if t0 is None and epoch is None:
-            if self.t0 is None:
+            if not self.has_target:
                 epoch = 0.
-            else:
+            elif self.t0 is not None:
                 t0 = self.t0
-        if t0 is not None and epoch is not None:
+            else:
+                # we have a target but no t0, so there must be individual
+                # detector start times; use those below
+                pass
+        elif t0 is not None and epoch is not None:
             raise ValueError("cannot provide both t0 and epoch")
-        elif t0 is not None:
-            epoch = t0 - 0.5*tlen*delta_t
-        elif epoch is None:
-            epoch = 0.
 
-        # time_dict = {i: np.arange(tlen)*delta_t + epoch for i in ifos}
-        pass
+        # determine if PSDs were provided, if not this will be no-noise data
+        # i.e., just time stamps
+        data = {}
+        if psds is not None:
+            # get a dictionary with strings or PSD objects indexed by ifo
+            psd_origins = utils.get_dict_from_pattern(psds, ifos)
+            for ifo, p in psd_origins.items():
+                if isinstance(p, str) and os.path.exists(p):
+                    psd = PowerSpectrum.read(p, **psd_kws)
+                elif isinstance(p, str):
+                    if freq is None:
+                        if f_max is None:
+                            if delta_t is not None:
+                                f_max = 1/(2*delta_t)
+                            elif f_samp is not None:
+                                f_max = f_samp / 2
+                            else:
+                                raise ValueError("provide freq, f_max, "
+                                                 "f_samp or delta_t")
+                        if delta_f is None:
+                            if duration is None:
+                                raise ValueError("provide duration or delta_f")
+                            delta_f = 1/duration
+                    psd = PowerSpectrum.from_lalsimulation(p, freq=freq,
+                                                           f_min=f_min,
+                                                           f_max=f_max,
+                                                           delta_f=delta_f,
+                                                           **psd_kws)
+                else:
+                    psd = PowerSpectrum(p, ifo=ifo, **psd_kws)
+                data[ifo] = psd.draw_noise_td(duration=duration, f_samp=f_samp,
+                                              delta_t=delta_t, f_min=f_min,
+                                              f_max=f_max, delta_f=delta_f,
+                                              rng=rng, **kws)
+        else:
+            # no PSDs provided, so just create empty data arrays
+            time = np.arange(int(duration//delta_t))*delta_t
+            for ifo in ifos:
+                data[ifo] = Data(np.zeros_like(time), index=time, ifo=ifo)
+
+        # adjust epoch and log data
+        for ifo, d in data.items():
+            if epoch is None:
+                if t0 is None:
+                    t_center = self.target.get_detector_time(ifo)
+                else:
+                    t_center = t0
+                epoch_ifo = t_center - len(d)*d.delta_t // 2
+            else:
+                epoch_ifo = epoch
+            d.index = np.arange(len(d))*d.delta_t + epoch_ifo
+            # record data
+            self.add_data(d, ifo=ifo)
 
     def compute_acfs(self, shared=False, ifos=None, **kws):
         """Compute ACFs for all data sets in `Fit.data`.

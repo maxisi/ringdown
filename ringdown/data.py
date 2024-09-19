@@ -17,6 +17,7 @@ import os
 import logging
 import inspect
 from . import utils
+from typing import Callable
 
 
 class Series(pd.Series):
@@ -298,6 +299,11 @@ class TimeSeries(Series):
     def time(self) -> pd.Index:
         """Time stamps."""
         return self.index
+
+    @property
+    def epoch(self) -> float:
+        """Time of first sample."""
+        return self.index[0]
 
     def to_frequency_series(self):
         """Fourier transform time series to frequency series.
@@ -750,7 +756,11 @@ class PowerSpectrum(FrequencySeries):
         return p
 
     @classmethod
-    def from_lalsimulation(cls, func, freq, f_min=0, fill_value=None, **kws):
+    def from_lalsimulation(cls, func: str | Callable,
+                           freq: np.ndarray | None = None,
+                           f_min: float = 0, f_max: float | None = None,
+                           delta_f: float | None = None,
+                           fill_value: float | None = None, **kws):
         """Obtain :class:`PowerSpectrum` from LALSimulation function.
 
         Arguments
@@ -763,6 +773,10 @@ class PowerSpectrum(FrequencySeries):
         f_min : float
             lower frequency threshold for padding: PSD will be patched below
             this value.
+        delta_f : float
+            frequency spacing (required if ``freq`` is not provided).
+        fill_value : float
+            value with which to patch PSD below ``f_min``.
         **kw :
             additional arguments passed to padding function
             :meth:`PowerSpectrum.patch`.
@@ -774,7 +788,15 @@ class PowerSpectrum(FrequencySeries):
         """
         if isinstance(func, str):
             import lalsimulation as lalsim
+            if not hasattr(lalsim, func):
+                raise ValueError(f"unrecognized PSD name: {func}")
             func = getattr(lalsim, func)
+        if freq is None:
+            if f_max is None:
+                raise ValueError("must provide f_max if not freq")
+            if delta_f is None:
+                raise ValueError("must provide delta_f if not freq")
+            freq = np.arange(0, f_max+delta_f, delta_f)
         f_ref = freq[np.argmin(abs(freq - f_min))]
         p_ref = func(f_ref) if fill_value is None else fill_value
 
@@ -870,8 +892,24 @@ class PowerSpectrum(FrequencySeries):
         Can specify a frequency array or frequency range and spacing to which
         interpolate or extrapolate the PSD.
 
-        All keyword arguments except for `rng` are passed to the interpolation
-        routing :meth:`PowerSpectrum.interpolate_to_index`.
+        Other keyword arguments are passed to the interpolation rutine
+        :meth:`PowerSpectrum.interpolate_to_index`.
+
+        Arguments
+        ---------
+        freq : array
+            frequencies over which to draw noise (default to PSD index).
+        delta_f : float
+            frequency spacing; can be used to create ``freq`` if not provided).
+        f_min : float
+            minimum frequency to draw noise.
+        f_max : float
+            maximum frequency to draw noise.
+        rng : int, np.random.Generator
+            random number generator.
+        kws : dict
+            additional keyword arguments passed to
+            :meth:`PowerSpectrum.interpolate_to_index`.
 
         Returns
         -------
@@ -930,6 +968,9 @@ class PowerSpectrum(FrequencySeries):
             frequency step (provide this argument or `duration`)
         epoch : float
             initial time of the time series.
+        kws : dict
+            additional keyword arguments passed to
+            :meth:`PowerSpectrum.draw_noise_fd`.
 
         Returns
         -------
@@ -941,18 +982,21 @@ class PowerSpectrum(FrequencySeries):
         elif duration is None and delta_f is not None:
             duration = 1 / delta_f
         elif delta_f is not None and duration is not None:
-            raise ValueError("cannot specify both duration and delta_f")
+            if duration != 1 / delta_f:
+                raise ValueError("cannot specify both duration and delta_f")
 
         if f_samp is None and f_max is not None:
             f_samp = 2 * f_max
         elif f_samp is not None and f_max is not None:
-            raise ValueError("cannot specify both f_samp and f_max")
+            if f_samp != 2 * f_max:
+                raise ValueError("cannot specify both f_samp and f_max")
         if delta_t is None and f_samp is None:
             delta_t = self.delta_t
         elif delta_t is None and f_samp is not None:
             delta_t = 1 / f_samp
         elif delta_t is not None and f_samp is not None:
-            raise ValueError("cannot specify both delta_t and f_samp/max")
+            if delta_t != 1 / f_samp:
+                raise ValueError("cannot specify both delta_t and f_samp/max")
 
         # we must have a well formed frequency array to draw TD noise
         t_len = int(duration / delta_t)
@@ -960,7 +1004,7 @@ class PowerSpectrum(FrequencySeries):
 
         psd = self.copy()
         if f_min is not None or f_max is not None:
-            psd.patch(inplace=True, f_min=f_min, f_max=f_max,
+            psd.patch(in_place=True, f_min=f_min, f_max=f_max,
                       fill_value=kws.get('fill_value', 0.))
         noise_fd = psd.draw_noise_fd(freq=freq, **kws)
         return noise_fd.to_time_series(epoch=epoch)
