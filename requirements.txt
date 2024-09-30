@@ -1,6 +1,6 @@
 numpy==1.26.4
 lalsuite==7.23
-h5py~=3.11
+h5py~=3.12
 arviz~=0.19
 pandas~=2.2
 qnm==0.4.3
