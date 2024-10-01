@@ -630,6 +630,10 @@ class Coalescence(Signal):
             bufEndIndex = bufLength
 
         bufWaveLength = bufEndIndex - bufStartIndex
+        if bufWaveLength < 0:
+            raise ValueError("waveform does not overlap with buffer:"
+                             f"trigger_time = {pars['trigger_time']}; "
+                             f"buffer = {time[0], time[-1]}")
 
         if tcSample >= waveTcSample:
             waveStartIndex = 0
