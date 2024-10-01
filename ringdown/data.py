@@ -382,12 +382,14 @@ class FrequencySeries(Series):
     @property
     def delta_t(self) -> float:
         """Sampling time interval."""
-        return 0.5/((len(self)-1)*self.delta_f)
+        # sampling rate is the inverse of the sampling frequency
+        return 1/self.f_samp
 
     @property
     def f_samp(self) -> float:
         """Sampling frequency (`1/delta_t`)."""
-        return 1/self.delta_t
+        # sampling frequency is twice the Nyquist frequency
+        return 2*self.freq[-1]
 
     @property
     def duration(self) -> float:
@@ -438,7 +440,7 @@ class FrequencySeries(Series):
         f_max : float
             max frequency of the new interpolated signal
         log : bool
-            interpolate in log-log space (default False)
+            interpolate in log-log space [EXPERIMENTAL] (default False)
 
         Returns
         -------
@@ -461,6 +463,7 @@ class FrequencySeries(Series):
                             f"[{min(freq)}, {max(freq)}]")
 
         if log:
+            logging.info("log-log interpolation is experimental")
             # construct loglog representation of self
             y = np.log(self)
             y.index = np.log(self.index)
@@ -694,6 +697,45 @@ class PowerSpectrum(FrequencySeries):
     def _constructor(self):
         return PowerSpectrum
 
+    def complete_low_frequencies(self, f_min: float = 0.,
+                                 fill_value: float | None = None,
+                                 **kws) -> 'PowerSpectrum':
+        """Complete low frequencies in power spectrum, extending all the
+        way down to `f_min`, which defaults to 0. If `fill_value` is not
+        provided, it will be set to 10 times the maximum PSD value.
+
+        If f_min is not below the lowest frequency in the PSD, nothing
+        is done and the PSD is returned as is.
+
+        Additional arguments are passed to
+        :meth:`PowerSpectrum.interpolate_to_index`.
+
+        Arguments
+        ---------
+        f_min : float
+            lower frequency threshold.
+        fill_value : float
+            value with which to patch PSD below `f_min`.
+        ** kws :
+            additional keyword arguments passed to
+            :meth:`PowerSpectrum.interpolate_to_index`.
+
+        Returns
+        -------
+        psd : PowerSpectrum
+            power spectrum with low frequencies completed.
+        """
+        if f_min > self.freq[0]:
+            logging.info("no need to complete low PSD frequencies")
+            return self
+        
+        if fill_value is None:
+            logging.info("completing low frequencies with 10x max PSD")
+            fill_value = 10*self.max()
+
+        f = np.arange(f_min, self.freq[-1] + self.delta_f, self.delta_f)
+        return self.interpolate_to_index(f, fill_value=fill_value, **kws)
+
     @classmethod
     def from_data(cls, data: Data | np.ndarray,
                   f_min: float | None = None, f_max: float | None = None,
@@ -843,6 +885,13 @@ class PowerSpectrum(FrequencySeries):
         psd = self if in_place else self.copy()
         # determine highest frequency
         f = psd.freq
+        if f_min < min(f):
+            logging.warning("f_min below PSD range; no patching appplied; "
+                            "use `interpolate_to_index` or "
+                            "`complete_low_frequencies` to extend PSD")
+        if f_max is not None and f_max > max(f):
+            logging.warning("f_max above PSD range; no patching appplied; "
+                            "use `interpolate_to_index` to extend PSD")
         f_min = max(f_min or min(f), min(f))
         f_max = min(f_max or max(f), max(f))
         # create tuple (patch_level_low, patch_level_high)
