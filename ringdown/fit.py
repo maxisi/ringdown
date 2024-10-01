@@ -111,6 +111,7 @@ class Fit(object):
         self.result = None
         self.prior = None
         self._n_analyze = None
+        self._duration = None
         self._raw_data = None
         # set strain scale
         self._strain_scale = None
@@ -414,24 +415,36 @@ class Fit(object):
         # create fit object
         fit = cls(**model_opts)
 
-        if 'data' not in config:
+        if 'data' not in config and 'fake-data' not in config:
             # the rest of the options require loading data, so if no pointer to
             # data was provided, just exit
             return fit
 
-        # load data
-        ifo_input = config.get('data', 'ifos', fallback='')
-        try:
-            ifos = literal_eval(ifo_input)
-        except (ValueError, SyntaxError):
-            ifos = [i.strip() for i in ifo_input.split(',')]
-        path_input = config['data']['path']
+        # utility to extract ifos from config
+        def get_ifo_list(section):
+            ifo_input = config.get(section, 'ifos', fallback='')
+            try:
+                ifos = literal_eval(ifo_input)
+            except (ValueError, SyntaxError):
+                ifos = [i.strip() for i in ifo_input.split(',')]
+            return ifos
 
-        # TODO: add ability to generate synthetic data here
-        # NOTE: not popping in order to preserve original ConfigParser
-        kws = {k: utils.try_parse(v) for k, v in config['data'].items()
-               if k not in ['ifos', 'path']}
-        fit.load_data(path_input, ifos, **kws)
+        # load data
+        if 'data' in config:
+            ifos = get_ifo_list('data')
+            path_input = config['data']['path']
+
+            # NOTE: not popping in order to preserve original ConfigParser
+            kws = {k: utils.try_parse(v) for k, v in config['data'].items()
+                   if k not in ['ifos', 'path']}
+            fit.load_data(path_input, ifos, **kws)
+
+        # simulate data
+        if 'fake-data' in config:
+            ifos = get_ifo_list('fake-data')
+            kws = {k: utils.try_parse(v) 
+                   for k, v in config['fake-data'].items() if k != 'ifos'}
+            fit.fake_data(ifos=ifos, **kws)
 
         # add target
         fit.set_target(**{k: utils.try_parse(v)
@@ -1107,6 +1120,7 @@ class Fit(object):
                   epoch: float | None = None,
                   rng: int | np.random.Generator | None = None,
                   psd_kws: dict | None = None,
+                  record_acfs: bool = False,
                   **kws):
         """Generate synthetic data for a given set of interferometers.
 
@@ -1150,6 +1164,8 @@ class Fit(object):
             random number generator seed or object (default None).
         psd_kws : dict
             additional keyword arguments passed to PSD constructor.
+        record_acfs : bool
+            record ACFs for this data (default False).
         **kws :
             additional keyword arguments passed to
             :meth:`ringdown.data.Data.draw_noise_td`.
@@ -1158,7 +1174,7 @@ class Fit(object):
         settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kws').items():
             settings[k] = v
-
+        
         # type check some arguments
         if isinstance(ifos, str):
             ifos = [ifos]
@@ -1186,10 +1202,12 @@ class Fit(object):
         # determine if PSDs were provided, if not this will be no-noise data
         # i.e., just time stamps
         data = {}
+        acfs = {}
         if psds is not None:
             # get a dictionary with strings or PSD objects indexed by ifo
             psd_origins = utils.get_dict_from_pattern(psds, ifos)
             for ifo, p in psd_origins.items():
+                logging.info(f"Faking {ifo} data from PSD")
                 if isinstance(p, str) and os.path.exists(p):
                     psd = PowerSpectrum.read(p, **psd_kws)
                 elif isinstance(p, str):
@@ -1217,10 +1235,14 @@ class Fit(object):
                                               delta_t=delta_t, f_min=f_min,
                                               f_max=f_max, delta_f=delta_f,
                                               rng=rng, **kws)
+                if record_acfs:
+                    acfs[ifo] = psd.to_acf()
         else:
             # no PSDs provided, so just create empty data arrays
+            psd_origins = {}
             time = np.arange(int(duration//delta_t))*delta_t
             for ifo in ifos:
+                logging.info(f"Empty {ifo} data")
                 data[ifo] = Data(np.zeros_like(time), index=time, ifo=ifo)
 
         # adjust epoch and log data
@@ -1235,7 +1257,12 @@ class Fit(object):
                 epoch_ifo = epoch
             d.index = np.arange(len(d))*d.delta_t + epoch_ifo
             # record data
-            self.add_data(d, ifo=ifo)
+            self.add_data(d, ifo=ifo, acf=acfs.get(ifo))
+
+        # record data provenance
+        if psd_origins:
+            settings['psds'] = {k: str(v) for k, v in psd_origins.items()}
+        self.update_info('fake-data', **settings)
 
     def compute_acfs(self, shared=False, ifos=None, **kws):
         """Compute ACFs for all data sets in `Fit.data`.
