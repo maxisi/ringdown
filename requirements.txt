@@ -1,7 +1,7 @@
 numpy==1.26.4
 lalsuite==7.23
 h5py~=3.12
-arviz~=0.19
+arviz~=0.20
 pandas~=2.2
 qnm==0.4.3
 seaborn~=0.13
