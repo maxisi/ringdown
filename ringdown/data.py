@@ -728,7 +728,7 @@ class PowerSpectrum(FrequencySeries):
         if f_min > self.freq[0]:
             logging.info("no need to complete low PSD frequencies")
             return self
-        
+
         if fill_value is None:
             logging.info("completing low frequencies with 10x max PSD")
             fill_value = 10*self.max()
@@ -1061,15 +1061,15 @@ class PowerSpectrum(FrequencySeries):
                       fill_value=kws.get('fill_value', 0.))
         noise_fd = psd.draw_noise_fd(freq=freq, **kws)
         return noise_fd.to_time_series(epoch=epoch)
-    
+
     def inner_product(self,
                       x: FrequencySeries,
                       y: FrequencySeries | None = None,
                       f_min: float | None = None,
                       f_max: float | None = None) -> complex:
         """Compute the noise weighterd inner product between `x` and `y`
-        defined by :math:`\\left\\langle x \\mid y \\right\\rangle \\equiv 
-        4 \\delta_f \\Re \sum x_i y_i / S_i`.
+        defined by :math:`\\left\\langle x \\mid y \\right\\rangle \\equiv
+        4 \\delta_f \\Re \\sum x_i y_i / S_i`.
 
         Arguments
         ---------
@@ -1101,7 +1101,7 @@ class PowerSpectrum(FrequencySeries):
         s = self.interpolate_to_index(f, fill_value=np.inf)
 
         return 4*x.delta_f*np.sum(np.conj(x)*y/s)
-    
+
     def compute_snr(self,
                     x: FrequencySeries,
                     y: FrequencySeries | None = None,
@@ -1111,8 +1111,8 @@ class PowerSpectrum(FrequencySeries):
         :math:`\\mathrm{SNR} = \\left\\langle x \\mid y \\right\\rangle /
         \\sqrt{\\left\\langle x \\mid x \\right\\rangle}`, where the inner
         product is defined by
-        :math:`\\left\\langle x \\mid y \\right\\rangle \\equiv 
-        4 \\delta_f \\Re \sum x_i y_i / S_i`.
+        :math:`\\left\\langle x \\mid y \\right\\rangle \\equiv
+        4 \\delta_f \\Re \\sum x_i y_i / S_i`.
 
         If `x` is a signal and `y` is noisy data, then this is the matched
         filter SNR; if both of them are a template, then this is the optimal

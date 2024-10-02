@@ -442,7 +442,7 @@ class Fit(object):
         # simulate data
         if 'fake-data' in config:
             ifos = get_ifo_list('fake-data')
-            kws = {k: utils.try_parse(v) 
+            kws = {k: utils.try_parse(v)
                    for k, v in config['fake-data'].items() if k != 'ifos'}
             fit.fake_data(ifos=ifos, **kws)
 
@@ -1181,7 +1181,7 @@ class Fit(object):
         settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kws').items():
             settings[k] = v
-        
+
         # type check some arguments
         if isinstance(ifos, str):
             ifos = [ifos]
@@ -1568,9 +1568,9 @@ class Fit(object):
             each detector.
         """
         return {i: self.acfs[i].whiten(d) for i, d in datas.items()}
-    
+
     def compute_injected_snrs(self, optimal=True, network=True) \
-        -> dict | float:
+            -> dict | float:
         """Return a dictionary of injected SNRs for each detector.
 
         Arguments
@@ -1578,10 +1578,10 @@ class Fit(object):
         optimal : bool
             if True, return optimal SNRs (def. True); otherwise return matched
             filter SNRs.
-        
+
         network : bool
             if True, return total network SNR (def. True).
-        
+
         Returns
         -------
         snrs : dict | float
@@ -1590,10 +1590,10 @@ class Fit(object):
         """
         if not self.has_injections:
             snrs = {i: 0. for i in self.ifos}
-        
+
         winjs = self.whiten(self.analysis_injections)
         opt_snrs = {ifo: np.linalg.norm(wi) for ifo, wi in winjs.items()}
-        
+
         if optimal:
             snrs = opt_snrs
         else:
