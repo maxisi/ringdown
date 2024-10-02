@@ -38,7 +38,7 @@ Or run using a configuration file from the :doc:`command line <exe_ringdown_fit>
 
     ringdown_fit config.ini
 
-See full-fledged examples in the :doc:`gallery`.
+See full-fledged examples in the :doc:`gallery`, as well as notes on how to configure your analysis to run on multiple CPUs/GPUs in :doc:`configuration`.
 
 
 How to cite
@@ -67,6 +67,7 @@ Contents
 
    overview
    models
+   configuration
    gallery
    exe_ringdown_fit
    modules
