@@ -36,9 +36,43 @@ will leave the shell in an environment that includes `jupyterlab` ready to explo
 
 The `environment.yml` file enables running `ringdown` in JupyterHub services like [MyBinder](https://mybinder.org/) by pointing MyBinder at this repository or clicking the button at the top of this README.
 
-## Examples of Use
+## Examples and tips
 
-See the `docs/examples` directory for Jupyter notebooks that give examples of using the package.  In particular, `docs/examples/GW150914.ipynb` demonstrates an analysis of the ringdown in GW150914 and uses the fundamental (2,2) mode and first overtone to constrain the Kerr-ness of the post-peak signal, much like [Isi, et al. (2019)](https://arxiv.org/abs/1905.00869).
+See the [example gallery](https://ringdown.readthedocs.io/en/latest/gallery.html) in the docs for several examples. You can download the Jupyter notebooks featured in the docs from the `docs/examples`.
+
+### Performance notes
+
+In order to run Jax on a CPU with four cores and use double precision, you can do the following:
+```python
+# disable numpy multithreading to avoid conflicts
+# with jax multiprocessing in numpyro
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+
+# import jax and set it up to use double precision
+from jax import config
+config.update("jax_enable_x64", True)
+
+# import numpyro and set it up to use 4 CPU devices
+import numpyro
+numpyro.set_host_device_count(4)
+numpyro.set_platform('cpu')
+```
+
+To run on a GPU with single precision you can instead do:
+```python
+# import jax and set it up to use double precision
+from jax import config
+config.update("jax_enable_x64", False)
+
+# import numpyro and set it up to use 4 CPU devices
+import numpyro
+numpyro.set_platform('gpu')
+```
+
+You will see significant performance enhancements when running ona GPU with 32-bit precision. If you have multiple GPUs, `numpyro` can use them in parallel to run different chains, just as with CPUs. Sampling one chain for a GW150914-like system takes O(s) on an Nvidia A100 GPU.
+
+⚠️ _Caveat emptor:_ depending on the autocovariance function (ACF), using `float32` can cause numerical problems when computing the likelihood; _ringdown_ will automatically rescale the strain in an attempt to prevent this, but you should use this feature at your own risk.
 
 ## Citations
 
