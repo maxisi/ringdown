@@ -927,7 +927,7 @@ class PowerSpectrum(FrequencySeries):
                       delta_f: float | None = None,
                       f_min: float | None = None,
                       f_max: float | None = None,
-                      rng: int | np.random.Generator | None = None,
+                      prng: int | np.random.Generator | None = None,
                       **kws):
         """Draw Fourier-domain noise from the PSD, with variance consistent
         with the LIGO definition of the PSD (cf. GW likelihood), namely
@@ -954,7 +954,7 @@ class PowerSpectrum(FrequencySeries):
             minimum frequency to draw noise.
         f_max : float
             maximum frequency to draw noise.
-        rng : int, np.random.Generator
+        prng : int, np.random.Generator
             random number generator.
         kws : dict
             additional keyword arguments passed to
@@ -965,10 +965,10 @@ class PowerSpectrum(FrequencySeries):
         noise : FrequencySeries
             noise realization.
         """
-        if isinstance(rng, int):
-            rng = np.random.default_rng(rng)
-        elif rng is None:
-            rng = np.random.default_rng()
+        if isinstance(prng, int):
+            prng = np.random.default_rng(prng)
+        elif prng is None:
+            prng = np.random.default_rng()
 
         psd = self.interpolate_to_index(freq=freq, delta_f=delta_f,
                                         f_min=f_min, f_max=f_max, **kws)

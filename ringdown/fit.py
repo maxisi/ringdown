@@ -1118,7 +1118,7 @@ class Fit(object):
                   delta_f: float | None = None,
                   t0: float | None = None,
                   epoch: float | None = None,
-                  rng: int | np.random.Generator | None = None,
+                  prng: int | np.random.Generator | None = None,
                   psd_kws: dict | None = None,
                   record_acfs: bool = False,
                   **kws):
@@ -1160,7 +1160,7 @@ class Fit(object):
         epoch : float
             time of data segment start (default None); if not provided, will
             be set based on `t0` or target time.
-        rng : int, np.random.Generator
+        prng : int, np.random.Generator
             random number generator seed or object (default None).
         psd_kws : dict
             additional keyword arguments passed to PSD constructor.
@@ -1234,7 +1234,7 @@ class Fit(object):
                 data[ifo] = psd.draw_noise_td(duration=duration, f_samp=f_samp,
                                               delta_t=delta_t, f_min=f_min,
                                               f_max=f_max, delta_f=delta_f,
-                                              rng=rng, **kws)
+                                              prng=prng, **kws)
                 if record_acfs:
                     acfs[ifo] = psd.to_acf()
         else:
