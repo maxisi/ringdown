@@ -298,7 +298,8 @@ class Parameters:
         """
         return self.mass_2 * lal.MSUN_SI
 
-    def compute_remnant_mchi(self, model: str = 'NRSur7dq4Remnant') -> tuple:
+    def compute_remnant_mchi(self, model: str = 'NRSur7dq4Remnant',
+                             solar_masses=True) -> tuple:
         """Estimate remnant mass and spin using a remnant model.
 
         Arguments
@@ -313,9 +314,14 @@ class Parameters:
         chif : float
             remnant dimensionless spin magnitude.
         """
+        if solar_masses:
+            m1 = self['mass_1'] * lal.MSUN_SI
+            m2 = self['mass_2'] * lal.MSUN_SI
+        else:
+            m1 = self['mass_1']
+            m2 = self['mass_2']
         remnant = ls.nrfits.eval_nrfit(
-            self['mass_1'],
-            self['mass_2'],
+            m1, m2,
             [self['spin_1x'], self['spin_1y'], self['spin_1z']],
             [self['spin_2x'], self['spin_2y'], self['spin_2z']],
             model,
@@ -323,6 +329,8 @@ class Parameters:
             f_ref=self['f_ref'],
         )
         mf = remnant['FinalMass']
+        if solar_masses:
+            mf /= lal.MSUN_SI
         chif = np.linalg.norm(remnant['FinalSpin'])
         return mf, chif
 
