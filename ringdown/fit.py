@@ -686,7 +686,7 @@ class Fit(object):
         kws['modes'] = self.modes
         return waveforms.get_detector_signals(**kws)
 
-    def inject(self, no_noise=False, **kws):
+    def inject(self, no_noise=False, **kws) -> None:
         """Add simulated signal to data, and records it in
         :attr:`Fit.injections`.
 
@@ -700,7 +700,6 @@ class Fit(object):
         no_noise : bool
             if true, replaces data with injection, instead of adding the two.
             (def. False)
-
         """
         # record all arguments
         settings = {k: v for k, v in locals().items() if k != 'self'}
@@ -716,8 +715,16 @@ class Fit(object):
         self.update_info('injection', **settings)
 
     @property
-    def injection_parameters(self) -> dict:
-        return self.info.get('injection', {})
+    def injection_parameters(self) -> dict | waveforms.Parameters:
+        """Injection parameters, if available.
+        """
+        if self.has_injections:
+            info = self.info.get('injection', {})
+            if info.get('model', 'ringdown') == 'ringdown':
+                return info
+            else:
+                return waveforms.Parameters.construct(**info)
+        return info
 
     @property
     def conditioned_injections(self) -> dict:
@@ -1178,6 +1185,8 @@ class Fit(object):
         # type check some arguments
         if isinstance(ifos, str):
             ifos = [ifos]
+        elif ifos is None and psds is None:
+            raise ValueError("ifos argument required if not providing PSDs")
         psd_kws = psd_kws or {}
 
         # look for aliases to accept same terminology as GWpy
@@ -1240,6 +1249,11 @@ class Fit(object):
         else:
             # no PSDs provided, so just create empty data arrays
             psd_origins = {}
+            if delta_t is None:
+                if f_samp is None:
+                    raise ValueError("provide delta_t or f_samp")
+                else:
+                    delta_t = 1/f_samp
             time = np.arange(int(duration//delta_t))*delta_t
             for ifo in ifos:
                 logging.info(f"Empty {ifo} data")
