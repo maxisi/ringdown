@@ -42,7 +42,7 @@ See the [example gallery](https://ringdown.readthedocs.io/en/latest/gallery.html
 
 ### Performance notes
 
-In order to run Jax on a CPU with four cores and use double precision, you can do the following:
+In order to run Jax on a CPU with four cores and use double precision, you can do the following at the top of your script:
 ```python
 # disable numpy multithreading to avoid conflicts
 # with jax multiprocessing in numpyro
