@@ -17,6 +17,7 @@ import os
 import logging
 import inspect
 from . import utils
+from typing import Callable
 
 
 class Series(pd.Series):
@@ -199,6 +200,15 @@ class Series(pd.Series):
         """Universal load function to read data from disk or discover GWOSC/NDS
         data using GWpy.
 
+        Only one of `path` or `channel` can be provided. If a `path` is
+        provided, it will attempt to read the data from disk using
+        :meth:`Series.read`; if `channel` is provided, it will attempt to
+        discover and fetch the data using :meth:`Series.fetch`, which leverages
+        GWpy's NDS2 interface.
+
+        A special case of the latter is when `channel` is 'GWOSC' (case
+        insensitive); if so, it will download open data from GWOSC.
+
         Arguments
         ---------
         path : str
@@ -290,6 +300,11 @@ class TimeSeries(Series):
         """Time stamps."""
         return self.index
 
+    @property
+    def epoch(self) -> float:
+        """Time of first sample."""
+        return self.index[0]
+
     def to_frequency_series(self):
         """Fourier transform time series to frequency series.
 
@@ -367,12 +382,14 @@ class FrequencySeries(Series):
     @property
     def delta_t(self) -> float:
         """Sampling time interval."""
-        return 0.5/((len(self)-1)*self.delta_f)
+        # sampling rate is the inverse of the sampling frequency
+        return 1/self.f_samp
 
     @property
     def f_samp(self) -> float:
         """Sampling frequency (`1/delta_t`)."""
-        return 1/self.delta_t
+        # sampling frequency is twice the Nyquist frequency
+        return 2*self.freq[-1]
 
     @property
     def duration(self) -> float:
@@ -423,7 +440,7 @@ class FrequencySeries(Series):
         f_max : float
             max frequency of the new interpolated signal
         log : bool
-            interpolate in log-log space (default False)
+            interpolate in log-log space [EXPERIMENTAL] (default False)
 
         Returns
         -------
@@ -446,6 +463,7 @@ class FrequencySeries(Series):
                             f"[{min(freq)}, {max(freq)}]")
 
         if log:
+            logging.info("log-log interpolation is experimental")
             # construct loglog representation of self
             y = np.log(self)
             y.index = np.log(self.index)
@@ -679,6 +697,45 @@ class PowerSpectrum(FrequencySeries):
     def _constructor(self):
         return PowerSpectrum
 
+    def complete_low_frequencies(self, f_min: float = 0.,
+                                 fill_value: float | None = None,
+                                 **kws) -> 'PowerSpectrum':
+        """Complete low frequencies in power spectrum, extending all the
+        way down to `f_min`, which defaults to 0. If `fill_value` is not
+        provided, it will be set to 10 times the maximum PSD value.
+
+        If f_min is not below the lowest frequency in the PSD, nothing
+        is done and the PSD is returned as is.
+
+        Additional arguments are passed to
+        :meth:`PowerSpectrum.interpolate_to_index`.
+
+        Arguments
+        ---------
+        f_min : float
+            lower frequency threshold.
+        fill_value : float
+            value with which to patch PSD below `f_min`.
+        ** kws :
+            additional keyword arguments passed to
+            :meth:`PowerSpectrum.interpolate_to_index`.
+
+        Returns
+        -------
+        psd : PowerSpectrum
+            power spectrum with low frequencies completed.
+        """
+        if f_min > self.freq[0]:
+            logging.info("no need to complete low PSD frequencies")
+            return self
+
+        if fill_value is None:
+            logging.info("completing low frequencies with 10x max PSD")
+            fill_value = 10*self.max()
+
+        f = np.arange(f_min, self.freq[-1] + self.delta_f, self.delta_f)
+        return self.interpolate_to_index(f, fill_value=fill_value, **kws)
+
     @classmethod
     def from_data(cls, data: Data | np.ndarray,
                   f_min: float | None = None, f_max: float | None = None,
@@ -741,7 +798,11 @@ class PowerSpectrum(FrequencySeries):
         return p
 
     @classmethod
-    def from_lalsimulation(cls, func, freq, f_min=0, fill_value=None, **kws):
+    def from_lalsimulation(cls, func: str | Callable,
+                           freq: np.ndarray | None = None,
+                           f_min: float = 0, f_max: float | None = None,
+                           delta_f: float | None = None,
+                           fill_value: float | None = None, **kws):
         """Obtain :class:`PowerSpectrum` from LALSimulation function.
 
         Arguments
@@ -754,6 +815,10 @@ class PowerSpectrum(FrequencySeries):
         f_min : float
             lower frequency threshold for padding: PSD will be patched below
             this value.
+        delta_f : float
+            frequency spacing (required if ``freq`` is not provided).
+        fill_value : float
+            value with which to patch PSD below ``f_min``.
         **kw :
             additional arguments passed to padding function
             :meth:`PowerSpectrum.patch`.
@@ -765,7 +830,15 @@ class PowerSpectrum(FrequencySeries):
         """
         if isinstance(func, str):
             import lalsimulation as lalsim
+            if not hasattr(lalsim, func):
+                raise ValueError(f"unrecognized PSD name: {func}")
             func = getattr(lalsim, func)
+        if freq is None:
+            if f_max is None:
+                raise ValueError("must provide f_max if not freq")
+            if delta_f is None:
+                raise ValueError("must provide delta_f if not freq")
+            freq = np.arange(0, f_max+delta_f, delta_f)
         f_ref = freq[np.argmin(abs(freq - f_min))]
         p_ref = func(f_ref) if fill_value is None else fill_value
 
@@ -812,6 +885,13 @@ class PowerSpectrum(FrequencySeries):
         psd = self if in_place else self.copy()
         # determine highest frequency
         f = psd.freq
+        if f_min < min(f):
+            logging.warning("f_min below PSD range; no patching appplied; "
+                            "use `interpolate_to_index` or "
+                            "`complete_low_frequencies` to extend PSD")
+        if f_max is not None and f_max > max(f):
+            logging.warning("f_max above PSD range; no patching appplied; "
+                            "use `interpolate_to_index` to extend PSD")
         f_min = max(f_min or min(f), min(f))
         f_max = min(f_max or max(f), max(f))
         # create tuple (patch_level_low, patch_level_high)
@@ -847,7 +927,7 @@ class PowerSpectrum(FrequencySeries):
                       delta_f: float | None = None,
                       f_min: float | None = None,
                       f_max: float | None = None,
-                      rng: int | np.random.Generator | None = None,
+                      prng: int | np.random.Generator | None = None,
                       **kws):
         """Draw Fourier-domain noise from the PSD, with variance consistent
         with the LIGO definition of the PSD (cf. GW likelihood), namely
@@ -861,18 +941,38 @@ class PowerSpectrum(FrequencySeries):
         Can specify a frequency array or frequency range and spacing to which
         interpolate or extrapolate the PSD.
 
-        All keyword arguments except for `rng` are passed to the interpolation
-        routing :meth:`PowerSpectrum.interpolate_to_index`.
+        Other keyword arguments are passed to the interpolation rutine
+        :meth:`PowerSpectrum.interpolate_to_index`.
+
+        Arguments
+        ---------
+        freq : array
+            frequencies over which to draw noise (default to PSD index).
+        delta_f : float
+            frequency spacing; can be used to create ``freq`` if not provided).
+        f_min : float
+            minimum frequency to draw noise.
+        f_max : float
+            maximum frequency to draw noise.
+        prng : int, np.random.Generator
+            random number generator.
+        kws : dict
+            additional keyword arguments passed to
+            :meth:`PowerSpectrum.interpolate_to_index`.
 
         Returns
         -------
         noise : FrequencySeries
             noise realization.
         """
-        if isinstance(rng, int):
-            rng = np.random.default_rng(rng)
-        elif rng is None:
-            rng = np.random.default_rng()
+        if isinstance(prng, int):
+            prng = np.random.default_rng(prng)
+        elif isinstance(prng, np.random.Generator):
+            pass
+        elif prng is None:
+            prng = np.random.default_rng()
+        else:
+            raise ValueError(f"invalid random number generator {prng}")
 
         psd = self.interpolate_to_index(freq=freq, delta_f=delta_f,
                                         f_min=f_min, f_max=f_max, **kws)
@@ -881,8 +981,8 @@ class PowerSpectrum(FrequencySeries):
         # definition of the PSD (cf. GW likelihood)
         n = len(psd)
         std = np.sqrt(psd / (4*psd.delta_f))
-        noise_real = np.random.normal(size=n, loc=0, scale=std)
-        noise_imag = np.random.normal(size=n, loc=0, scale=std)
+        noise_real = prng.normal(size=n, loc=0, scale=std)
+        noise_imag = prng.normal(size=n, loc=0, scale=std)
 
         return FrequencySeries(noise_real + 1j*noise_imag, index=psd.freq,
                                name=self.name)
@@ -921,6 +1021,9 @@ class PowerSpectrum(FrequencySeries):
             frequency step (provide this argument or `duration`)
         epoch : float
             initial time of the time series.
+        kws : dict
+            additional keyword arguments passed to
+            :meth:`PowerSpectrum.draw_noise_fd`.
 
         Returns
         -------
@@ -932,18 +1035,21 @@ class PowerSpectrum(FrequencySeries):
         elif duration is None and delta_f is not None:
             duration = 1 / delta_f
         elif delta_f is not None and duration is not None:
-            raise ValueError("cannot specify both duration and delta_f")
+            if duration != 1 / delta_f:
+                raise ValueError("cannot specify both duration and delta_f")
 
         if f_samp is None and f_max is not None:
             f_samp = 2 * f_max
         elif f_samp is not None and f_max is not None:
-            raise ValueError("cannot specify both f_samp and f_max")
+            if f_samp != 2 * f_max:
+                raise ValueError("cannot specify both f_samp and f_max")
         if delta_t is None and f_samp is None:
             delta_t = self.delta_t
         elif delta_t is None and f_samp is not None:
             delta_t = 1 / f_samp
         elif delta_t is not None and f_samp is not None:
-            raise ValueError("cannot specify both delta_t and f_samp/max")
+            if delta_t != 1 / f_samp:
+                raise ValueError("cannot specify both delta_t and f_samp/max")
 
         # we must have a well formed frequency array to draw TD noise
         t_len = int(duration / delta_t)
@@ -951,10 +1057,84 @@ class PowerSpectrum(FrequencySeries):
 
         psd = self.copy()
         if f_min is not None or f_max is not None:
-            psd.patch(inplace=True, f_min=f_min, f_max=f_max,
+            psd.patch(in_place=True, f_min=f_min, f_max=f_max,
                       fill_value=kws.get('fill_value', 0.))
         noise_fd = psd.draw_noise_fd(freq=freq, **kws)
         return noise_fd.to_time_series(epoch=epoch)
+
+    def inner_product(self,
+                      x: FrequencySeries,
+                      y: FrequencySeries | None = None,
+                      f_min: float | None = None,
+                      f_max: float | None = None) -> complex:
+        """Compute the noise weighterd inner product between `x` and `y`
+        defined by :math:`\\left\\langle x \\mid y \\right\\rangle \\equiv
+        4 \\delta_f \\Re \\sum x_i y_i / S_i`.
+
+        Arguments
+        ---------
+        x : array
+            target frequency series.
+        y : array
+            reference frequency series. Defaults to `x`.
+        f_min : float
+            lower frequency bound (default derived from `x`)
+        f_max : float
+            upper frequency bound (default derived from `x`)
+
+        Returns
+        -------
+        snr : float
+            signal-to-noise ratio
+        """
+        if f_min is None:
+            f_min = x.freq[0]
+        if f_max is None:
+            f_max = x.freq[-1]
+        x = x.loc[f_min:f_max]
+        f = x.freq
+
+        if y is None:
+            y = x
+        else:
+            y = y.interpolate_to_index(f, fill_value=0.)
+        s = self.interpolate_to_index(f, fill_value=np.inf)
+
+        return 4*x.delta_f*np.sum(np.conj(x)*y/s)
+
+    def compute_snr(self,
+                    x: FrequencySeries,
+                    y: FrequencySeries | None = None,
+                    f_min: float | None = None,
+                    f_max: float | None = None) -> float:
+        """Efficiently compute the signal-to_noise ratio
+        :math:`\\mathrm{SNR} = \\left\\langle x \\mid y \\right\\rangle /
+        \\sqrt{\\left\\langle x \\mid x \\right\\rangle}`, where the inner
+        product is defined by
+        :math:`\\left\\langle x \\mid y \\right\\rangle \\equiv
+        4 \\delta_f \\Re \\sum x_i y_i / S_i`.
+
+        If `x` is a signal and `y` is noisy data, then this is the matched
+        filter SNR; if both of them are a template, then this is the optimal
+        SNR (default).
+
+        Arguments
+        ---------
+        x : array
+            target frequency series.
+        y : array
+            reference frequency series. Defaults to `x`.
+
+        Returns
+        -------
+        snr : float
+            signal-to-noise ratio
+        """
+        x_dot_y = self.inner_product(x, y, f_min, f_max).real
+        if y is None:
+            return np.sqrt(x_dot_y)
+        x_dot_x = self.inner_product(x, x, f_min, f_max).real
+        return x_dot_y / np.sqrt(x_dot_x)
 
 
 class AutoCovariance(TimeSeries):

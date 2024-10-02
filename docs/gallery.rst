@@ -9,3 +9,4 @@ For a more comprehensive list of features, please refer to the API documentation
     examples/single_damped_sinusoid
     examples/GW150914
     examples/GW190521
+    examples/imr_injection

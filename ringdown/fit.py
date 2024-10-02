@@ -111,6 +111,7 @@ class Fit(object):
         self.result = None
         self.prior = None
         self._n_analyze = None
+        self._duration = None
         self._raw_data = None
         # set strain scale
         self._strain_scale = None
@@ -414,24 +415,36 @@ class Fit(object):
         # create fit object
         fit = cls(**model_opts)
 
-        if 'data' not in config:
+        if 'data' not in config and 'fake-data' not in config:
             # the rest of the options require loading data, so if no pointer to
             # data was provided, just exit
             return fit
 
-        # load data
-        ifo_input = config.get('data', 'ifos', fallback='')
-        try:
-            ifos = literal_eval(ifo_input)
-        except (ValueError, SyntaxError):
-            ifos = [i.strip() for i in ifo_input.split(',')]
-        path_input = config['data']['path']
+        # utility to extract ifos from config
+        def get_ifo_list(section):
+            ifo_input = config.get(section, 'ifos', fallback='')
+            try:
+                ifos = literal_eval(ifo_input)
+            except (ValueError, SyntaxError):
+                ifos = [i.strip() for i in ifo_input.split(',')]
+            return ifos
 
-        # TODO: add ability to generate synthetic data here
-        # NOTE: not popping in order to preserve original ConfigParser
-        kws = {k: utils.try_parse(v) for k, v in config['data'].items()
-               if k not in ['ifos', 'path']}
-        fit.load_data(path_input, ifos, **kws)
+        # load data
+        if 'data' in config:
+            ifos = get_ifo_list('data')
+            path_input = config['data']['path']
+
+            # NOTE: not popping in order to preserve original ConfigParser
+            kws = {k: utils.try_parse(v) for k, v in config['data'].items()
+                   if k not in ['ifos', 'path']}
+            fit.load_data(path_input, ifos, **kws)
+
+        # simulate data
+        if 'fake-data' in config:
+            ifos = get_ifo_list('fake-data')
+            kws = {k: utils.try_parse(v)
+                   for k, v in config['fake-data'].items() if k != 'ifos'}
+            fit.fake_data(ifos=ifos, **kws)
 
         # add target
         fit.set_target(**{k: utils.try_parse(v)
@@ -673,7 +686,7 @@ class Fit(object):
         kws['modes'] = self.modes
         return waveforms.get_detector_signals(**kws)
 
-    def inject(self, no_noise=False, **kws):
+    def inject(self, no_noise=False, **kws) -> None:
         """Add simulated signal to data, and records it in
         :attr:`Fit.injections`.
 
@@ -687,7 +700,6 @@ class Fit(object):
         no_noise : bool
             if true, replaces data with injection, instead of adding the two.
             (def. False)
-
         """
         # record all arguments
         settings = {k: v for k, v in locals().items() if k != 'self'}
@@ -703,8 +715,16 @@ class Fit(object):
         self.update_info('injection', **settings)
 
     @property
-    def injection_parameters(self) -> dict:
-        return self.info.get('injection', {})
+    def injection_parameters(self) -> dict | waveforms.Parameters:
+        """Injection parameters, if available.
+        """
+        if self.has_injections:
+            info = self.info.get('injection', {})
+            if info.get('model', 'ringdown') == 'ringdown':
+                return info
+            else:
+                return waveforms.Parameters.construct(**info)
+        return info
 
     @property
     def conditioned_injections(self) -> dict:
@@ -999,11 +1019,19 @@ class Fit(object):
                                 "removing target (please reset)")
                 self.target = None
 
-    def load_data(self, path=None, ifos=None, channel=None,
-                  frametype=None, **kws):
+    def load_data(self, path: str | None = None,
+                  ifos: list[str] | None = None,
+                  channel: dict[str] | None = None,
+                  frametype: dict[str] | None = None,
+                  slide: dict[float] | None = None, **kws):
         """Load data from disk.
 
-        Additional arguments are passed to :meth:`ringdown.data.Data.read`.
+        Additional arguments are passed to :meth:`ringdown.data.Data.load`.
+
+        If a `seglen` argument is provided (e.g., to fetch data from  GWOSC),
+        the segment will be assumed to be centered on a GPS time `t0`, which
+        (if not provided) defaults to the target time :attr:`Fit.t0` (if `t0`
+        is not provided and no target was set, an error will be raised).
 
         Arguments
         ---------
@@ -1029,9 +1057,16 @@ class Fit(object):
 
         frametype : dict, str
             dictionary of frame types indexed by interferometer keys, or frame
-            type string replacement pattern, e.g., `'H1_HOFT_C00'`, with
-            same replacement rules as for `channel` and `path`. Only used when
-            `kind = 'discover'`.
+            type string replacement pattern, e.g., `'H1_HOFT_C00'`, with same
+            replacement rules as for `channel` and `path`. Only used when `kind
+            = 'discover'`.
+
+        slide : dict
+            optional dictionary of time slides to apply to each detector, e.g.,
+            ``{'H1': 0.1, 'L1': -0.05}``; if provided, the data of each
+            detector will be rolled by an integer number of samples closest to
+            the requested time shift, i.e.,
+            ``np.roll(data, int(slide / delta_t)``.
         """
         # record all arguments
         settings = {k: v for k, v in locals().items() if k != 'self'}
@@ -1065,7 +1100,7 @@ class Fit(object):
         if frametype is not None:
             kws['frametype'] = utils.get_dict_from_pattern(frametype, ifos)
 
-        tslide = kws.pop('slide', {}) or {}
+        tslide = slide or {}
         for ifo, path in path_dict.items():
             self.add_data(Data.load(path, ifo=ifo, channel=channel_dict[ifo],
                                     **kws))
@@ -1078,6 +1113,170 @@ class Fit(object):
         # record data provenance
         settings['path'] = path_dict
         self.update_info('data', **settings)
+
+    def fake_data(self, ifos: list[str] | str | None = None,
+                  psds: dict[str, str | PowerSpectrum] | None = None,
+                  duration: float | None = None,
+                  delta_t: float | None = None,
+                  freq: float | None = None,
+                  f_samp: float | None = None,
+                  f_min: float | None = None,
+                  f_max: float | None = None,
+                  delta_f: float | None = None,
+                  t0: float | None = None,
+                  epoch: float | None = None,
+                  prng: int | np.random.Generator | None = None,
+                  psd_kws: dict | None = None,
+                  record_acfs: bool = False,
+                  **kws):
+        """Generate synthetic data for a given set of interferometers.
+
+        If PSDs are provided, draws time-domain data from PSDs using
+        :meth:`ringdown.data.PowerSpectrum.draw_noise_td`. If no PSDs are
+        provided, initializes empty data arrays with specified time stamps.
+
+        Arguments
+        ---------
+        ifos : list
+            list of detector keys (e.g., ``['H1', 'L1']``); also accepts a
+            single string if adding a single detector.
+        psds : dict
+            dictionary of PSDs indexed by interferometer keys, or: (1)
+            PSD string replacement pattern, e.g., ``'path/to/{ifo}-PSD.txt'``
+            where `ifo`  will be replaced by the detector key (e.g., `H1` for
+            LIGO Hanford); (2) name of a PSD function available in
+            LALSimulation.
+        duration : float
+            duration of data segment (default None); not required if PSD is
+            provided.
+        delta_t : float
+            time step of data (default None).
+        freq : float
+            frequency array to create PSD (default None).
+        f_samp : float
+            sampling frequency of data (default None).
+        f_min : float
+            minimum frequency of data (default None).
+        f_max : float
+            maximum frequency of data (default None).
+        delta_f : float
+            frequency step of PSD (default None).
+        t0 : float
+            time of data segment center (default None); if not provided, the
+            target time will be used if available.
+        epoch : float
+            time of data segment start (default None); if not provided, will
+            be set based on `t0` or target time.
+        prng : int, np.random.Generator
+            random number generator seed or object (default None).
+        psd_kws : dict
+            additional keyword arguments passed to PSD constructor.
+        record_acfs : bool
+            record ACFs for this data (default False).
+        **kws :
+            additional keyword arguments passed to
+            :meth:`ringdown.data.Data.draw_noise_td`.
+        """
+        # record all arguments
+        settings = {k: v for k, v in locals().items() if k != 'self'}
+        for k, v in settings.pop('kws').items():
+            settings[k] = v
+
+        # type check some arguments
+        if isinstance(ifos, str):
+            ifos = [ifos]
+        elif ifos is None and psds is None:
+            raise ValueError("ifos argument required if not providing PSDs")
+        psd_kws = psd_kws or {}
+
+        # look for aliases to accept same terminology as GWpy
+        if duration is None and 'seglen' in kws:
+            duration = kws.pop('seglen', None)
+        if f_samp is None and 'sample_rate' in kws:
+            f_samp = kws.pop('sample_rate', None)
+
+        # define epoch
+        if t0 is None and epoch is None:
+            if not self.has_target:
+                epoch = 0.
+            elif self.t0 is not None:
+                t0 = self.t0
+            else:
+                # we have a target but no t0, so there must be individual
+                # detector start times; use those below
+                pass
+        elif t0 is not None and epoch is not None:
+            raise ValueError("cannot provide both t0 and epoch")
+
+        # determine if PSDs were provided, if not this will be no-noise data
+        # i.e., just time stamps
+        data = {}
+        acfs = {}
+        if psds is not None:
+            # get a dictionary with strings or PSD objects indexed by ifo
+            psd_origins = utils.get_dict_from_pattern(psds, ifos)
+            for ifo, p in psd_origins.items():
+                logging.info(f"Faking {ifo} data from PSD")
+                if isinstance(p, str) and os.path.exists(p):
+                    psd = PowerSpectrum.read(p, **psd_kws)
+                elif isinstance(p, str):
+                    if freq is None:
+                        if f_max is None:
+                            if delta_t is not None:
+                                f_max = 1/(2*delta_t)
+                            elif f_samp is not None:
+                                f_max = f_samp / 2
+                            else:
+                                raise ValueError("provide freq, f_max, "
+                                                 "f_samp or delta_t")
+                        if delta_f is None:
+                            if duration is None:
+                                raise ValueError("provide duration or delta_f")
+                            delta_f = 1/duration
+                    psd = PowerSpectrum.from_lalsimulation(p, freq=freq,
+                                                           f_min=f_min,
+                                                           f_max=f_max,
+                                                           delta_f=delta_f,
+                                                           **psd_kws)
+                else:
+                    psd = PowerSpectrum(p, ifo=ifo, **psd_kws)
+                data[ifo] = psd.draw_noise_td(duration=duration, f_samp=f_samp,
+                                              delta_t=delta_t, f_min=f_min,
+                                              f_max=f_max, delta_f=delta_f,
+                                              prng=prng, **kws)
+                if record_acfs:
+                    acfs[ifo] = psd.to_acf()
+        else:
+            # no PSDs provided, so just create empty data arrays
+            psd_origins = {}
+            if delta_t is None:
+                if f_samp is None:
+                    raise ValueError("provide delta_t or f_samp")
+                else:
+                    delta_t = 1/f_samp
+            time = np.arange(int(duration//delta_t))*delta_t
+            for ifo in ifos:
+                logging.info(f"Empty {ifo} data")
+                data[ifo] = Data(np.zeros_like(time), index=time, ifo=ifo)
+
+        # adjust epoch and log data
+        for ifo, d in data.items():
+            if epoch is None:
+                if t0 is None:
+                    t_center = self.target.get_detector_time(ifo)
+                else:
+                    t_center = t0
+                epoch_ifo = t_center - len(d)*d.delta_t // 2
+            else:
+                epoch_ifo = epoch
+            d.index = np.arange(len(d))*d.delta_t + epoch_ifo
+            # record data
+            self.add_data(d, ifo=ifo, acf=acfs.get(ifo))
+
+        # record data provenance
+        if psd_origins:
+            settings['psds'] = {k: str(v) for k, v in psd_origins.items()}
+        self.update_info('fake-data', **settings)
 
     def compute_acfs(self, shared=False, ifos=None, **kws):
         """Compute ACFs for all data sets in `Fit.data`.
@@ -1369,3 +1568,41 @@ class Fit(object):
             each detector.
         """
         return {i: self.acfs[i].whiten(d) for i, d in datas.items()}
+
+    def compute_injected_snrs(self, optimal=True, network=True) \
+            -> dict | float:
+        """Return a dictionary of injected SNRs for each detector.
+
+        Arguments
+        ---------
+        optimal : bool
+            if True, return optimal SNRs (def. True); otherwise return matched
+            filter SNRs.
+
+        network : bool
+            if True, return total network SNR (def. True).
+
+        Returns
+        -------
+        snrs : dict | float
+            dictionary of SNRs for each detector if `network=False`, otherwise
+            the total network SNR.
+        """
+        if not self.has_injections:
+            snrs = {i: 0. for i in self.ifos}
+
+        winjs = self.whiten(self.analysis_injections)
+        opt_snrs = {ifo: np.linalg.norm(wi) for ifo, wi in winjs.items()}
+
+        if optimal:
+            snrs = opt_snrs
+        else:
+            wdata = self.whiten(self.analysis_data)
+            snrs = {}
+            for ifo, opt_snr in opt_snrs.items():
+                snrs[ifo] = np.dot(wdata[ifo], winjs[ifo]) / opt_snr
+
+        if network:
+            return np.linalg.norm(list(snrs.values()))
+        else:
+            return snrs

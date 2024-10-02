@@ -69,6 +69,7 @@ def get_dict_from_pattern(path, ifos=None, abspath=False):
         path_dict = {k: os.path.abspath(v) for k, v in path_dict.items()}
     return path_dict
 
+
 def docstring_parameter(*args, **kwargs):
     def dec(obj):
         if obj.__doc__ is not None:
