@@ -967,8 +967,12 @@ class PowerSpectrum(FrequencySeries):
         """
         if isinstance(prng, int):
             prng = np.random.default_rng(prng)
+        elif isinstance(prng, np.random.Generator):
+            pass
         elif prng is None:
             prng = np.random.default_rng()
+        else:
+            raise ValueError(f"invalid random number generator {prng}")
 
         psd = self.interpolate_to_index(freq=freq, delta_f=delta_f,
                                         f_min=f_min, f_max=f_max, **kws)
@@ -977,8 +981,8 @@ class PowerSpectrum(FrequencySeries):
         # definition of the PSD (cf. GW likelihood)
         n = len(psd)
         std = np.sqrt(psd / (4*psd.delta_f))
-        noise_real = np.random.normal(size=n, loc=0, scale=std)
-        noise_imag = np.random.normal(size=n, loc=0, scale=std)
+        noise_real = prng.normal(size=n, loc=0, scale=std)
+        noise_imag = prng.normal(size=n, loc=0, scale=std)
 
         return FrequencySeries(noise_real + 1j*noise_imag, index=psd.freq,
                                name=self.name)
@@ -1057,6 +1061,80 @@ class PowerSpectrum(FrequencySeries):
                       fill_value=kws.get('fill_value', 0.))
         noise_fd = psd.draw_noise_fd(freq=freq, **kws)
         return noise_fd.to_time_series(epoch=epoch)
+    
+    def inner_product(self,
+                      x: FrequencySeries,
+                      y: FrequencySeries | None = None,
+                      f_min: float | None = None,
+                      f_max: float | None = None) -> complex:
+        """Compute the noise weighterd inner product between `x` and `y`
+        defined by :math:`\\left\\langle x \\mid y \\right\\rangle \\equiv 
+        4 \\delta_f \\Re \sum x_i y_i / S_i`.
+
+        Arguments
+        ---------
+        x : array
+            target frequency series.
+        y : array
+            reference frequency series. Defaults to `x`.
+        f_min : float
+            lower frequency bound (default derived from `x`)
+        f_max : float
+            upper frequency bound (default derived from `x`)
+
+        Returns
+        -------
+        snr : float
+            signal-to-noise ratio
+        """
+        if f_min is None:
+            f_min = x.freq[0]
+        if f_max is None:
+            f_max = x.freq[-1]
+        x = x.loc[f_min:f_max]
+        f = x.freq
+
+        if y is None:
+            y = x
+        else:
+            y = y.interpolate_to_index(f, fill_value=0.)
+        s = self.interpolate_to_index(f, fill_value=np.inf)
+
+        return 4*x.delta_f*np.sum(np.conj(x)*y/s)
+    
+    def compute_snr(self,
+                    x: FrequencySeries,
+                    y: FrequencySeries | None = None,
+                    f_min: float | None = None,
+                    f_max: float | None = None) -> float:
+        """Efficiently compute the signal-to_noise ratio
+        :math:`\\mathrm{SNR} = \\left\\langle x \\mid y \\right\\rangle /
+        \\sqrt{\\left\\langle x \\mid x \\right\\rangle}`, where the inner
+        product is defined by
+        :math:`\\left\\langle x \\mid y \\right\\rangle \\equiv 
+        4 \\delta_f \\Re \sum x_i y_i / S_i`.
+
+        If `x` is a signal and `y` is noisy data, then this is the matched
+        filter SNR; if both of them are a template, then this is the optimal
+        SNR (default).
+
+        Arguments
+        ---------
+        x : array
+            target frequency series.
+        y : array
+            reference frequency series. Defaults to `x`.
+
+        Returns
+        -------
+        snr : float
+            signal-to-noise ratio
+        """
+        x_dot_y = self.inner_product(x, y, f_min, f_max).real
+        if y is None:
+            return np.sqrt(x_dot_y)
+        x_dot_x = self.inner_product(x, x, f_min, f_max).real
+        return x_dot_y / np.sqrt(x_dot_x)
 
 
 class AutoCovariance(TimeSeries):
