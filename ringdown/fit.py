@@ -1569,7 +1569,8 @@ class Fit(object):
         """
         return {i: self.acfs[i].whiten(d) for i, d in datas.items()}
     
-    def compute_injected_snrs(self, optimal=True) -> dict:
+    def compute_injected_snrs(self, optimal=True, network=True) \
+        -> dict | float:
         """Return a dictionary of injected SNRs for each detector.
 
         Arguments
@@ -1578,23 +1579,30 @@ class Fit(object):
             if True, return optimal SNRs (def. True); otherwise return matched
             filter SNRs.
         
+        network : bool
+            if True, return total network SNR (def. True).
+        
         Returns
         -------
-        snrs : dict
-            dictionary of SNRs for each detector.
+        snrs : dict | float
+            dictionary of SNRs for each detector if `network=False`, otherwise
+            the total network SNR.
         """
         if not self.has_injections:
-            return {i: 0. for i in self.ifos}
+            snrs = {i: 0. for i in self.ifos}
         
         winjs = self.whiten(self.analysis_injections)
         opt_snrs = {ifo: np.linalg.norm(wi) for ifo, wi in winjs.items()}
         
         if optimal:
-            return opt_snrs
-        
-        wdata = self.whiten(self.analysis_data)
-        mf_snrs = {}
-        for ifo, opt_snr in opt_snrs.items():
-            mf_snrs[ifo] = np.dot(wdata[ifo], winjs[ifo]) / opt_snr
+            snrs = opt_snrs
+        else:
+            wdata = self.whiten(self.analysis_data)
+            snrs = {}
+            for ifo, opt_snr in opt_snrs.items():
+                snrs[ifo] = np.dot(wdata[ifo], winjs[ifo]) / opt_snr
 
-        return mf_snrs
+        if network:
+            return np.linalg.norm(list(snrs.values()))
+        else:
+            return snrs
