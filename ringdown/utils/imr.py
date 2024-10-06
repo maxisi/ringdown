@@ -12,6 +12,7 @@ MASS_ALIASES = ['final_mass', 'mf', 'mfinal', 'm_final', 'final_mass_source',
                 'remnant_mass']
 SPIN_ALIASES = ['final_spin', 'remnant_spin', 'chif', 'chi_f', 'chi_final',
                 'af', 'a_final']
+TIME_KEY = '_time'
 
 
 def get_remnant(mass_1, mass_2, spin_1x, spin_1y, spin_1z,
@@ -140,3 +141,43 @@ class IMRResult(pd.DataFrame):
         self['final_mass'] = r[:, 0] / lal.MSUN_SI
         self['final_spin'] = r[:, 1]
         return self[keys]
+    
+    def get_peak_times(self, nsamp: int | None=None, ifos: list | None = None,
+                       manual: bool = False, prng=None, **kws) -> dict:
+        """Get the peak times of the waveform for a given set of detectors.
+
+        Arguments
+        ---------
+        ifos : list of str | None
+            List of detector names to use for the peak time calculation; if
+            None, uses all detectors in the DataFrame.
+        kws : dict
+            Additional keyword arguments to pass to the peak
+            time calculation.
+        """
+        # subselect samples if requested
+        if nsamp is None:
+            df = self
+        else:
+            df = self.sample(nsamp, random_state=prng, **kws)
+        
+        if manual:
+            # estimate peak time manually from reconstructed waveforms
+            raise NotImplementedError
+        else:
+            # retrieve coalescence time as recorded in samples
+            time_keys = [k for k in self.columns if TIME_KEY in k]
+            if ifos is None:
+                ifos = [k.replace(TIME_KEY, '') for k in time_keys]
+            elif isinstance(ifos, str):
+                ifos = [ifos]
+
+            tp = {}
+            for ifo in ifos:
+                key = f'{ifo}{TIME_KEY}'
+                if key in self.columns:
+                    tp[ifo] = df[key]
+                else:
+                    raise KeyError(f'peak time not found for {ifo}')
+            return tp
+            
