@@ -2,11 +2,14 @@ __all__ = ['IMRResult']
 
 import numpy as np
 import pandas as pd
-from .. import indexing
-from .. import qnms
+from . import indexing
+from . import qnms
+from . import waveforms
+from .utils import get_tqdm
 import lal
 import multiprocessing as mp
 from lalsimulation import nrfits
+import logging
 
 MASS_ALIASES = ['final_mass', 'mf', 'mfinal', 'm_final', 'final_mass_source',
                 'remnant_mass']
@@ -143,7 +146,9 @@ class IMRResult(pd.DataFrame):
         return self[keys]
     
     def get_peak_times(self, nsamp: int | None=None, ifos: list | None = None,
-                       manual: bool = False, prng=None, **kws) -> dict:
+                       time: np.ndarray | None = None,
+                       manual: bool = False, prng=None, 
+                       progress: bool = True, **kws) -> dict:
         """Get the peak times of the waveform for a given set of detectors.
 
         Arguments
@@ -159,25 +164,60 @@ class IMRResult(pd.DataFrame):
         if nsamp is None:
             df = self
         else:
-            df = self.sample(nsamp, random_state=prng, **kws)
+            df = self.sample(nsamp, random_state=prng)
+
+        time_keys = [k for k in df.columns if TIME_KEY in k]
+        if ifos is None:
+            ifos = [k.replace(TIME_KEY, '') for k in time_keys]
+        elif isinstance(ifos, str):
+            ifos = [ifos]
         
         if manual:
             # estimate peak time manually from reconstructed waveforms
-            raise NotImplementedError
+            if 'geocent_time' in df.columns:
+                # use geocenter time as reference
+                reference = waveforms.Signal._FROM_GEO_KEY
+                ref_key = 'geocent_time'
+            else:
+                # use first detector as reference
+                reference = ifos[0]
+                ref_key = f'{reference}{TIME_KEY}'
+
+            if time is None:
+                tc = np.median(df[ref_key])
+                dt = 1 / 16384
+                n = 1 / dt + 1
+                time = np.arange(n)*dt + tc - dt*(n//2)
+                logging.warning("no time array provided; defaulting to "
+                                f"{time[-1]-time[0]} s around {tc} at "
+                                f"{1/dt} Hz")
+            
+            peak_times_rows = []
+            tqdm = get_tqdm(progress)
+            for _, sample in tqdm(df.iterrows(), total=len(df), ncols=None):
+                h = waveforms.Coalescence.from_parameters(time, **sample, **kws)
+                tp = h.get_invariant_peak_time()
+                tp_dict = {}
+                for ifo in ifos:
+                    key = f'{ifo}{TIME_KEY}'
+                    if key != ref_key:
+                        dt = waveforms.get_delay(ifo, h.t0,
+                                                 h.get_parameter('ra'),
+                                                 h.get_parameter('dec'),
+                                                 reference=reference)
+                        tp_dict[ifo] = tp + dt
+                    else:
+                        tp_dict[ifo] = tp
+                peak_times_rows.append(tp_dict)
+            return pd.DataFrame(peak_times_rows, index=df.index)
         else:
             # retrieve coalescence time as recorded in samples
-            time_keys = [k for k in self.columns if TIME_KEY in k]
-            if ifos is None:
-                ifos = [k.replace(TIME_KEY, '') for k in time_keys]
-            elif isinstance(ifos, str):
-                ifos = [ifos]
-
-            tp = {}
+            peak_times = {}
             for ifo in ifos:
                 key = f'{ifo}{TIME_KEY}'
-                if key in self.columns:
-                    tp[ifo] = df[key]
+                if key in df.columns:
+                    peak_times[ifo] = df[key]
                 else:
                     raise KeyError(f'peak time not found for {ifo}')
-            return tp
+            return pd.DataFrame(peak_times)
             
