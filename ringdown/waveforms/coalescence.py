@@ -12,6 +12,7 @@ import lalsimulation as ls
 from dataclasses import dataclass, asdict, fields
 import inspect
 import h5py
+import logging
 
 
 def m1m2_from_mtotq(mtot, q):
@@ -110,6 +111,9 @@ class Parameters:
             value = getattr(self, f.name)
             if value is not None:
                 setattr(self, f.name, float(value))
+        if self.f_ref is None and self.f_low is not None:
+            logging.warning("f_ref not set, using f_low")
+            self.f_ref = self.f_low
         self._final_mass = None
         self._final_spin = None
 
@@ -541,6 +545,9 @@ class Coalescence(Signal):
             compact binary coalescence signal.
         """
         approximant = model or approximant
+
+        if approximant is None:
+            raise ValueError("'model' or 'approximant' must be specified")
 
         all_kws = {k: v for k, v in locals().items() if k not in [
             'cls', 'time']}
