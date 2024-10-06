@@ -58,7 +58,7 @@ class Fit(object):
         fit.set_target(1126259462.4083147, ra=1.95, dec=-1.27, psi=0.82,
                        duration=0.05)
         fit.condition_data(ds=8)
-        fit.update_model(A_scale=1e-21, M_min=50, M_max=150)
+        fit.update_model(a_scale_max=1e-21, m_min=50, m_max=150, cosi=-1)
         fit.run()
 
     Attributes

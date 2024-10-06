@@ -1074,7 +1074,7 @@ class PowerSpectrum(FrequencySeries):
                       f_max: float | None = None) -> complex:
         """Compute the noise weighterd inner product between `x` and `y`
         defined by :math:`\\left\\langle x \\mid y \\right\\rangle \\equiv
-        4 \\delta_f \\Re \\sum x_i y_i / S_i`.
+        4 \\Deltaf \\Re \\sum x_i y_i / S_i`.
 
         Arguments
         ---------
@@ -1117,7 +1117,7 @@ class PowerSpectrum(FrequencySeries):
         \\sqrt{\\left\\langle x \\mid x \\right\\rangle}`, where the inner
         product is defined by
         :math:`\\left\\langle x \\mid y \\right\\rangle \\equiv
-        4 \\delta_f \\Re \\sum x_i y_i / S_i`.
+        4 \\Delta f \\Re \\sum x_i y_i / S_i`.
 
         If `x` is a signal and `y` is noisy data, then this is the matched
         filter SNR; if both of them are a template, then this is the optimal
