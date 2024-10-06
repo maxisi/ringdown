@@ -587,6 +587,11 @@ class Data(TimeSeries):
         elif f_min and f_max:
             b, a = sig.butter(4, (f_min/fny, f_max/fny), btype='bandpass',
                               output='ba')
+            
+        if f_max == fny:
+            logging.warning("f_max is at Nyquist frequency but filter will "
+                            "be applied anyway; to prevent this, set f_max to"
+                            " None (default)")
 
         if f_min or f_max:
             cond_data = sig.filtfilt(b, a, raw_data)
