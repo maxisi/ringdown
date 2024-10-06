@@ -144,21 +144,40 @@ class IMRResult(pd.DataFrame):
         self['final_mass'] = r[:, 0] / lal.MSUN_SI
         self['final_spin'] = r[:, 1]
         return self[keys]
-    
-    def get_peak_times(self, nsamp: int | None=None, ifos: list | None = None,
+
+    def get_peak_times(self, nsamp: int | None = None,
+                       ifos: list | None = None,
                        time: np.ndarray | None = None,
-                       manual: bool = False, prng=None, 
-                       progress: bool = True, **kws) -> dict:
+                       manual: bool = False,
+                       prng: np.random.RandomState | int | None = None,
+                       progress: bool = True, **kws) -> pd.DataFrame:
         """Get the peak times of the waveform for a given set of detectors.
 
         Arguments
         ---------
+        nsamp : int | None
+            Number of samples to use for the peak time calculation; if None,
+            uses all samples in the DataFrame.
         ifos : list of str | None
             List of detector names to use for the peak time calculation; if
             None, uses all detectors in the DataFrame.
+        time : np.ndarray | None
+            Time array to use for the peak time calculation; if None, uses
+            a default time array.
+        manual : bool
+            If True, estimates the peak time manually from the reconstructed
+            waveforms.
+        prng : np.random.RandomState | int | None
+            Random number generator to use for sampling; if None, uses the
+            default random number generator.
         kws : dict
             Additional keyword arguments to pass to the peak
             time calculation.
+
+        Returns
+        -------
+        peak_times : pd.DataFrame
+            DataFrame with the peak times for each detector.
         """
         # subselect samples if requested
         if nsamp is None:
@@ -171,7 +190,7 @@ class IMRResult(pd.DataFrame):
             ifos = [k.replace(TIME_KEY, '') for k in time_keys]
         elif isinstance(ifos, str):
             ifos = [ifos]
-        
+
         if manual:
             # estimate peak time manually from reconstructed waveforms
             if 'geocent_time' in df.columns:
@@ -191,11 +210,12 @@ class IMRResult(pd.DataFrame):
                 logging.warning("no time array provided; defaulting to "
                                 f"{time[-1]-time[0]} s around {tc} at "
                                 f"{1/dt} Hz")
-            
+
             peak_times_rows = []
             tqdm = get_tqdm(progress)
             for _, sample in tqdm(df.iterrows(), total=len(df), ncols=None):
-                h = waveforms.Coalescence.from_parameters(time, **sample, **kws)
+                h = waveforms.Coalescence.from_parameters(
+                    time, **sample, **kws)
                 tp = h.get_invariant_peak_time()
                 tp_dict = {}
                 for ifo in ifos:
@@ -220,4 +240,38 @@ class IMRResult(pd.DataFrame):
                 else:
                     raise KeyError(f'peak time not found for {ifo}')
             return pd.DataFrame(peak_times)
-            
+
+    def get_best_peak_times(self, average: str = 'median',
+                            **kws) -> tuple[pd.Series, str]:
+        """Get the peak times corresponding to the average at the best-measured
+        detector.
+
+        Arguments
+        ---------
+        average : str
+            Method to use for averaging the peak times; must be 'mean' or
+            'median'.
+        kws : dict
+            Additional keyword arguments to pass to the peak
+            time calculation.
+
+        Returns
+        -------
+        peak_times : pd.Series
+            Series with the peak times at the best-measured detector,
+            "name" attribute is the index of the sample in the original
+            DataFrame.
+        best_ifo : str
+            Name of the best-measured detector.
+        """
+        peak_times = self.get_peak_times(**kws)
+        # identify best measured peak time
+        best_ifo = peak_times.std().idxmin()
+        if average == 'mean':
+            tp = peak_times[best_ifo].mean()
+        elif average == 'median':
+            tp = peak_times[best_ifo].median()
+        else:
+            raise ValueError(f'invalid average method: {average}')
+        iloc = (peak_times[best_ifo] - tp).idxmin()
+        return peak_times.loc[iloc], best_ifo
