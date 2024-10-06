@@ -377,7 +377,7 @@ class Parameters:
                 self.long_asc_nodes, self.eccentricity, self.mean_per_ano,
                 float(delta_t), self.f_low, self.f_ref]
         return args
-    
+
     _CHOOSETDWAVEFORM_ARGS = ['mass_1', 'mass_2', 'spin_1_x', 'spin_1_y',
                               'spin_1_z', 'spin_2_x', 'spin_2_y', 'spin_2_z',
                               'luminosity_distance', 'iota', 'phase',
@@ -603,7 +603,8 @@ class Coalescence(Signal):
             hp, hc = ls.SimInspiralChooseTDWaveform(*args, param_dict, approx)
         except TypeError:
             k = Parameters._CHOOSETDWAVEFORM_ARGS
-            s = ''.join([f'{i}\t{k[i]}\t{type(a)}\t{a}\n' for i, a in enumerate(args)])
+            s = ''.join([f'{i}\t{k[i]}\t{type(a)}\t{a}\n'
+                         for i, a in enumerate(args)])
             s += f'\napprox\t{approx}'
             raise TypeError(f"SimInspiral type error for arguments:\n{s}")
 
