@@ -1074,7 +1074,7 @@ class PowerSpectrum(FrequencySeries):
                       f_max: float | None = None) -> complex:
         """Compute the noise weighterd inner product between `x` and `y`
         defined by :math:`\\left\\langle x \\mid y \\right\\rangle \\equiv
-        4 \\Deltaf \\Re \\sum x_i y_i / S_i`.
+        4 \\Delta f \\Re \\sum x_i y_i / S_i`.
 
         Arguments
         ---------
