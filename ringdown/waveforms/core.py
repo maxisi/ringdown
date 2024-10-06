@@ -65,6 +65,9 @@ class Signal(TimeSeries):
     onto detectors and signal processing.
     """
     _metadata = ['parameters']
+    # note that alias order matters, as the first one found will be used
+    # 't0' is present in some PESummary files but it need not refer to the
+    # geocenter time, so we place it last so that 'geocent_time' is preferred 
     _T0_ALIASES = ['geocent_time', 'trigger_time', 'triggertime',
                    'tc', 'tgps_geo', 'tgps_geocent', 't0']
     _FROM_GEO_KEY = 'from_geo'
