@@ -205,6 +205,7 @@ class Parameters:
             for k in aliases:
                 if k in kws:
                     kws[par] = kws.pop(k)
+                    break
         # compose component masses
         if 'mass_1' not in kws or 'mass_2' not in kws:
             if 'total_mass' in kws and 'mass_ratio' in kws:
@@ -372,6 +373,12 @@ class Parameters:
                 self.long_asc_nodes, self.eccentricity, self.mean_per_ano,
                 float(delta_t), self.f_low, self.f_ref]
         return args
+    
+    _CHOOSETDWAVEFORM_ARGS = ['mass_1', 'mass_2', 'spin_1_x', 'spin_1_y',
+                              'spin_1_z', 'spin_2_x', 'spin_2_y', 'spin_2_z',
+                              'luminosity_distance', 'iota', 'phase',
+                              'long_asc_nodes', 'eccentricity', 'mean_per_ano',
+                              'delta_t', 'f_low', 'f_ref']
 
     def get_choosetdmodes_args(self, delta_t):
         """Construct input for :func:`ls.SimInspiralChooseTDModes`.
@@ -585,7 +592,13 @@ class Coalescence(Signal):
             ls.SimInspiralWaveformParamsInsertModeArray(param_dict, ma)
 
         args = pars.get_choosetdwaveform_args(dt)
-        hp, hc = ls.SimInspiralChooseTDWaveform(*args, param_dict, approx)
+        try:
+            hp, hc = ls.SimInspiralChooseTDWaveform(*args, param_dict, approx)
+        except TypeError:
+            k = Parameters._CHOOSETDWAVEFORM_ARGS
+            s = ''.join([f'{i}\t{p[i]}\t{type(a)}\t{a}\n' for i, a in enumerate(args)])
+            s += f'\napprox\t{approx}'
+            raise TypeError(f"SimInspiral type error for arguments:\n{s}")
 
         # align waveform to trigger time, following LALInferenceTemplate
         # https://git.ligo.org/lscsoft/lalsuite/blob/master/lalinference/lib/LALInferenceTemplate.c#L1124
