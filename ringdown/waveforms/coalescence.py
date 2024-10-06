@@ -596,7 +596,7 @@ class Coalescence(Signal):
             hp, hc = ls.SimInspiralChooseTDWaveform(*args, param_dict, approx)
         except TypeError:
             k = Parameters._CHOOSETDWAVEFORM_ARGS
-            s = ''.join([f'{i}\t{p[i]}\t{type(a)}\t{a}\n' for i, a in enumerate(args)])
+            s = ''.join([f'{i}\t{k[i]}\t{type(a)}\t{a}\n' for i, a in enumerate(args)])
             s += f'\napprox\t{approx}'
             raise TypeError(f"SimInspiral type error for arguments:\n{s}")
 
