@@ -70,7 +70,7 @@ class Signal(TimeSeries):
     # geocenter time, so we place it last so that 'geocent_time' is preferred 
     _T0_ALIASES = ['geocent_time', 'trigger_time', 'triggertime',
                    'tc', 'tgps_geo', 'tgps_geocent', 't0']
-    _FROM_GEO_KEY = 'from_geo'
+    _FROM_GEO_KEY = 'geocent'
 
     _MODEL_REGISTER = {}
 
