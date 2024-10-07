@@ -25,6 +25,8 @@ from .result import Result
 from .model import make_model, get_arviz, MODEL_DIMENSIONS
 from . import indexing
 from . import waveforms
+from . import imr
+import pandas as pd
 
 # TODO: support different samplers?
 KERNEL = numpyro.infer.NUTS
@@ -110,6 +112,7 @@ class Fit(object):
         self.target = None
         self.result = None
         self.prior = None
+        self.imr_result = None
         self._n_analyze = None
         self._duration = None
         self._raw_data = None
@@ -1606,3 +1609,99 @@ class Fit(object):
             return np.linalg.norm(list(snrs.values()))
         else:
             return snrs
+
+    @property
+    def times(self) -> dict:
+        """Dictionary of analysis segment start times for each detector.
+        """
+        return {i: d.time.values for i, d in self.data.items()}
+
+    def add_imr_result(self,
+                       imr_result: pd.DataFrame | dict | np.ndarray,
+                       approximant: str | None = None,
+                       reference_frequency: float | None = None):
+        """Add reference inspiral-merger-ringdown (IMR) result to fit."""
+        self.imr_result = imr.IMRResult(imr_result)
+        if approximant is not None:
+            self.imr_result.set_approximant(approximant)
+        if reference_frequency is not None:
+            self.imr_result.set_reference_frequency(reference_frequency)
+
+    def get_imr_templates(self, condition: bool = True, **kws) -> np.ndarray:
+        """Return IMR templates based on reference IMR result.
+
+        NOTE: make use of the `nsamp` argument to subselect from the IMR
+        samples---will produce templates for all samples if not provided.
+
+        Arguments
+        ---------
+        condition : bool
+            if True, condition templates based on `Data.condition` method;
+            this replicates the conditioning applied to the data, but will
+            slow things down.
+        **kws :
+            additional keyword arguments passed to
+            :meth:`ringdown.imr.IMRResult.get_waveforms`.
+
+        Returns
+        -------
+        templates : np.ndarray
+            array of IMR with shape `(nifo, ntime, nsamp)`.
+        """
+        if self.imr_result is None:
+            raise ValueError("no IMR result found; use `add_imr_result`")
+
+        kws['ifos'] = kws.get('ifos', self.ifos)
+        nsamp = kws.get('nsamp', len(self.imr_result))
+        if nsamp > 1000:
+            logging.warning('large number of IMR samples requested; use'
+                            '`nsamp` to subselect for speed')
+
+        if condition:
+            t = {i: d.time.values for i, d in self._raw_data.items()}
+            wfs = self.imr_result.get_waveforms(time=t, **kws)
+            # inspect Data.condition for options
+            x = inspect.signature(Data.condition).parameters.keys()
+            c = {k: v for k, v in self.info['condition'].items() if k in x}
+            # iterate over IMR result draws
+            new_wfs = []
+            tqdm = utils.get_tqdm(progress=kws.get('progress', True))
+            niter = wfs.shape[0]*wfs.shape[2]
+            with tqdm(total=niter, ncols=None, desc='conditioning') as pbar:
+                for i, ifo_wfs in zip(self.ifos, wfs):
+                    t0 = self.start_times[i]
+                    new_ifo_wfs_T = []
+                    for wf in ifo_wfs.T:
+                        new_wf = Data(wf, index=t[i]).condition(t0=t0, **c)
+                        new_ifo_wfs_T.append(new_wf.values)
+                        pbar.update(1)
+                    new_wfs.append(new_ifo_wfs_T)
+            # new_wfs should now have shape (nifo, nsamp, ntime)
+            # but we want (nifo, ntime, nsamp)
+            wfs = np.swapaxes(new_wfs, 1, 2)
+        else:
+            wfs = self.imr_result.get_waveforms(time=self.times, **kws)
+        return wfs
+
+    def get_imr_analysis_templates(self, **kws) -> np.ndarray:
+        """Return IMR templates for analysis segment.
+
+        Arguments
+        ---------
+        **kws :
+            all keyword arguments passed to
+            :meth:`ringdown.Fit.get_imr_templates`.
+
+        Returns
+        -------
+        templates : np.ndarray
+            array of IMR with shape `(nifo, ntime, nsamp)` where
+            `ntime = fit.n_analyze`.
+        """
+        wfs = self.get_imr_templates(**kws)
+        n = self.n_analyze
+        new_wfs = []
+        for ifo, ifo_wfs in zip(self.ifos, wfs):
+            i0 = self.start_indices[ifo]
+            new_wfs.append(ifo_wfs[i0:i0+n, :])
+        return np.array(new_wfs)

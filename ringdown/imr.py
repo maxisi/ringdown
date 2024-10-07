@@ -34,18 +34,48 @@ class IMRResult(pd.DataFrame):
     _f_key = 'f_{mode}'
     _g_key = 'g_{mode}'
 
+    _meta = ['attrs']
+
+    def __init__(self, *args, attrs=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if len(args) == 0:
+            args = [None]
+        self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
+
+    @property
+    def reference_frequency(self) -> float | None:
+        """Reference frequency used in analysis in Hz."""
+        return self.attrs.get('reference_frequency', self.attrs.get('f_ref'))
+
+    def set_reference_frequency(self, f_ref: float) -> None:
+        """Set the reference frequency used in analysis in Hz."""
+        self.attrs['reference_frequency'] = f_ref
+        if 'f_ref' in self.attrs:
+            del self.attrs['f_ref']
+
+    @property
+    def approximant(self) -> str | None:
+        """Waveform approximant used in analysis."""
+        return self.attrs.get('approximant')
+
+    def set_approximant(self, approximant: str) -> None:
+        """Set the waveform approximant used in analysis."""
+        self.attrs['approximant'] = approximant
+
     @property
     def _constructor(self):
         return IMRResult
 
     @property
     def final_mass(self) -> np.ndarray:
+        """Remnant mass samples."""
         for k in MASS_ALIASES:
             if k in self.columns:
                 return self[k]
 
     @property
     def final_spin(self) -> np.ndarray:
+        """Remnant spin samples."""
         for k in SPIN_ALIASES:
             if k in self.columns:
                 return self[k]
@@ -91,7 +121,7 @@ class IMRResult(pd.DataFrame):
             df = pd.concat([df, df_loc], ignore_index=True)
         return df
 
-    def get_remnant_parameters(self, f_ref: float = -1,
+    def get_remnant_parameters(self, f_ref: float | None = None,
                                model: str = 'NRSur7dq4Remnant',
                                nproc: int | None = None,
                                force: bool = False):
@@ -101,7 +131,8 @@ class IMRResult(pd.DataFrame):
         ---------
         f_ref : float
             Reference frequency for the remnant parameters in Hz; if -1, uses
-            earliest point in the waveform.
+            earliest point in the waveform; if None, uses the value stored in
+            the DataFrame attributes, defaulting to -1 if not found.
         model : str
             Name of the model to use for the remnant parameters; default is
             'NRSur7dq4Remnant'.
@@ -122,6 +153,9 @@ class IMRResult(pd.DataFrame):
         keys = ['final_mass', 'final_spin']
         if all([k in self.columns for k in keys]) and not force:
             return self[keys]
+
+        if f_ref is None:
+            f_ref = self.reference_frequency
 
         if nproc is None:
             r = np.vectorize(get_remnant)(self['mass_1']*lal.MSUN_SI,
@@ -219,6 +253,12 @@ class IMRResult(pd.DataFrame):
 
             if time is None:
                 time = self._get_default_time(ref_key)
+
+            if 'reference_frequency' not in kws and 'f_ref' not in kws:
+                kws['f_ref'] = self.reference_frequency
+
+            if 'model' not in kws and 'approximant' not in kws:
+                kws['model'] = self.approximant
 
             peak_times_rows = []
             tqdm = get_tqdm(progress)
@@ -346,9 +386,16 @@ class IMRResult(pd.DataFrame):
         if time is None:
             time = self._get_default_time()
 
+        if 'reference_frequency' not in kws and 'f_ref' not in kws:
+            kws['f_ref'] = self.reference_frequency
+
+        if 'model' not in kws and 'approximant' not in kws:
+            kws['model'] = self.approximant
+
         wf_dict = {ifo: [] for ifo in ifos}
         tqdm = get_tqdm(progress)
-        for _, sample in tqdm(df.iterrows(), total=len(df), ncols=None):
+        tqdm_kws = dict(total=len(df), ncols=None, desc='waveforms')
+        for _, sample in tqdm(df.iterrows(), **tqdm_kws):
             h = waveforms.get_detector_signals(times=time, ifos=ifos,
                                                **sample, **kws)
             for ifo in ifos:
