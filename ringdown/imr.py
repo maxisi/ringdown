@@ -5,6 +5,7 @@ import pandas as pd
 from . import indexing
 from . import qnms
 from . import waveforms
+from . import target
 from .utils import get_tqdm
 import lal
 import multiprocessing as mp
@@ -275,3 +276,23 @@ class IMRResult(pd.DataFrame):
             raise ValueError(f'invalid average method: {average}')
         iloc = (peak_times[best_ifo] - tp).idxmin()
         return peak_times.loc[iloc], best_ifo
+
+    def get_best_peak_target(self, **kws) -> target.SkyTarget:
+        """Get the target corresponding to the best-measured peak time.
+
+        Arguments
+        ---------
+        kws : dict
+            Additional keyword arguments to pass to the peak
+            time calculation.
+
+        Returns
+        -------
+        target : target.SkyTarget
+            Target constructed from the best-measured peak time.
+        """
+        peak_times, ref_ifo = self.get_best_peak_times(**kws)
+        sample = self.loc[peak_times.name]
+        skyloc = {k: sample[k] for k in ['ra', 'dec', 'psi']}
+        t0 = peak_times[ref_ifo]
+        return target.Target.construct(t0, reference_ifo=ref_ifo, **skyloc)
