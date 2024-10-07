@@ -572,7 +572,8 @@ class Data(TimeSeries):
 
         if t0 is not None:
             if t0 < raw_time[0] or t0 > raw_time[-1]:
-                raise ValueError("t0 must be within the time series")
+                raise ValueError(f"t0 must be within the time series: {t0} "
+                                 f"not in [{raw_time[0]}, {raw_time[-1]}]")
             ds = int(ds or 1)
             i = np.argmin(abs(raw_time - t0))
             raw_time = np.roll(raw_time, -(i % ds))
