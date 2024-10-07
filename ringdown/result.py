@@ -511,8 +511,9 @@ class Result(az.InferenceData):
         """
         residuals = {}
         residuals_stacked = {}
-        for ifo in self.ifos.values.astype(str):
-            r = self.observed_strain[list(self.ifos.values.astype(str)).index(ifo)] -\
+        ifo_list = list(self.ifos.values.astype(str))
+        for ifo in ifo_list:
+            r = self.observed_strain[ifo_list.index(ifo)] -\
                 self.h_det.sel(ifo=ifo)
             residuals[ifo] = r.transpose('chain', 'draw', 'time_index')
             residuals_stacked[ifo] = residuals[ifo].stack(sample=['chain',
@@ -523,8 +524,7 @@ class Result(az.InferenceData):
             i: v.reshape((d['time_index'], d['chain'], d['draw']))
             for i, v in residuals_whitened.items()
         }
-        resid = np.stack([residuals_whitened[i]
-                          for i in self.ifos.values.astype(str)], axis=-1)
+        resid = np.stack([residuals_whitened[i] for i in ifo_list], axis=-1)
         keys = ('time_index', 'chain', 'draw', 'ifo')
         self.posterior['whitened_residual'] = (keys, resid)
         keys = ('chain', 'draw', 'ifo', 'time_index')
