@@ -34,8 +34,8 @@ from ringdown import __version__
 # PARSE INPUT
 ##############################################################################
 
-parser  = argparse.ArgumentParser(description="Analyze event ringdown at "
-                                  "different times.")
+parser = argparse.ArgumentParser(description="Analyze event ringdown at "
+                                 "different times.")
 parser.add_argument('config', help="Path to configuration file.")
 parser.add_argument('-o', '--outdir', default=None, help="Output directory.")
 parser.add_argument('--force', action='store_true', help="Run even if output "
@@ -75,7 +75,7 @@ except Exception:
     githash = 'unknown'
     logging.warning("failed to locate git repo")
 
-# load config file 
+# load config file
 config_path = os.path.abspath(args.config)
 if not os.path.isfile(config_path):
     raise FileNotFoundError(f"unable to load: {config_path}")
@@ -115,7 +115,7 @@ PATHS = {
     'exe': 'submit.sh',
     't0': 'start_times.txt',
 }
-PATHS = {k: os.path.join(outdir, v) for k,v in PATHS.items()}
+PATHS = {k: os.path.join(outdir, v) for k, v in PATHS.items()}
 
 # record config and arguments for reproducibility
 with open(PATHS['config'], 'w') as f:
@@ -123,8 +123,8 @@ with open(PATHS['config'], 'w') as f:
 
 with open(PATHS['command'], 'w') as f:
     f.write("{}\n\n".format(' '.join(sys.argv)))
-    for k,v in vars(args).items():
-        f.write("# {}: {}\n".format(k,v))
+    for k, v in vars(args).items():
+        f.write("# {}: {}\n".format(k, v))
     f.write("\n# {}".format(os.path.realpath(__file__)))
     f.write("\n# GIT hash: {}".format(githash))
     f.write("\n# ringdown v {}".format(__version__))
