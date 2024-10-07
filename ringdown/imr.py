@@ -146,6 +146,21 @@ class IMRResult(pd.DataFrame):
         self['final_spin'] = r[:, 1]
         return self[keys]
 
+    def _get_default_time(self, ref_key='geocent_time'):
+        tc = np.median(self[ref_key])
+        dt = 1 / 16384
+        n = 1 / dt + 1
+        time = np.arange(n)*dt + tc - dt*(n//2)
+        logging.warning("no time array provided; defaulting to "
+                        f"{time[-1]-time[0]} s around {tc} at "
+                        f"{1/dt} Hz")
+        return time
+
+    @property
+    def _ifos(self):
+        time_keys = [k for k in self.columns if TIME_KEY in k]
+        return [k.replace(TIME_KEY, '') for k in time_keys]
+
     def get_peak_times(self, nsamp: int | None = None,
                        ifos: list | None = None,
                        time: np.ndarray | None = None,
@@ -186,9 +201,8 @@ class IMRResult(pd.DataFrame):
         else:
             df = self.sample(nsamp, random_state=prng)
 
-        time_keys = [k for k in df.columns if TIME_KEY in k]
         if ifos is None:
-            ifos = [k.replace(TIME_KEY, '') for k in time_keys]
+            ifos = self._ifos
         elif isinstance(ifos, str):
             ifos = [ifos]
 
@@ -204,13 +218,7 @@ class IMRResult(pd.DataFrame):
                 ref_key = f'{reference}{TIME_KEY}'
 
             if time is None:
-                tc = np.median(df[ref_key])
-                dt = 1 / 16384
-                n = 1 / dt + 1
-                time = np.arange(n)*dt + tc - dt*(n//2)
-                logging.warning("no time array provided; defaulting to "
-                                f"{time[-1]-time[0]} s around {tc} at "
-                                f"{1/dt} Hz")
+                time = self._get_default_time(ref_key)
 
             peak_times_rows = []
             tqdm = get_tqdm(progress)
@@ -296,3 +304,56 @@ class IMRResult(pd.DataFrame):
         skyloc = {k: sample[k] for k in ['ra', 'dec', 'psi']}
         t0 = peak_times[ref_ifo]
         return target.Target.construct(t0, reference_ifo=ref_ifo, **skyloc)
+
+    def get_waveforms(self, nsamp: int | None = None,
+                      ifos: list | None = None,
+                      time: np.ndarray | None = None,
+                      prng: np.random.RandomState | int | None = None,
+                      progress: bool = True, **kws) -> pd.DataFrame:
+        """Get the peak times of the waveform for a given set of detectors.
+
+        Arguments
+        ---------
+        nsamp : int | None
+            Number of samples to use for the peak time calculation; if None,
+            uses all samples in the DataFrame.
+        ifos : list of str | None
+            List of detector names to use for the peak time calculation; if
+            None, uses all detectors in the DataFrame.
+        time : np.ndarray | None
+            Time array to use for the peak time calculation; if None, uses
+            a default time array.
+        prng : np.random.RandomState | int | None
+            Random number generator to use for sampling; if None, uses the
+            default random number generator.
+        kws : dict
+            Additional keyword arguments to pass to the peak
+            time calculation.
+        """
+        # subselect samples if requested
+        if nsamp is None:
+            df = self
+        else:
+            df = self.sample(nsamp, random_state=prng)
+
+        # get ifos
+        if ifos is None:
+            ifos = self._ifos
+        elif isinstance(ifos, str):
+            ifos = [ifos]
+        ifos = [ifo for ifo in ifos if 'geo' not in ifo]
+
+        if time is None:
+            time = self._get_default_time()
+
+        wf_dict = {ifo: [] for ifo in ifos}
+        tqdm = get_tqdm(progress)
+        for _, sample in tqdm(df.iterrows(), total=len(df), ncols=None):
+            h = waveforms.get_detector_signals(times=time, ifos=ifos,
+                                               **sample, **kws)
+            for ifo in ifos:
+                wf_dict[ifo].append(h[ifo])
+        # waveforms array will be shaped (nifo, nsamp, ntime)
+        wfs = np.array([wf_dict[ifo] for ifo in ifos])
+        # swap axes to get (nifo, ntime, nsamp)
+        return np.swapaxes(wfs, 1, 2)
