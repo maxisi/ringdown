@@ -1820,8 +1820,7 @@ class Fit(object):
         snrs : array
             stacked array of cumulative SNRs, with shape ``(time, samples,)``
             if ``network = True``, or ``(ifo, time, samples)`` otherwise;
-            the number of samples equals the number of chains times the number
-            of draws.
+            the number of samples equals the number of IMR posterior draws.
 
         See Also
         --------
