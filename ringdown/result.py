@@ -470,6 +470,21 @@ class Result(az.InferenceData):
             return snrs
 
     @property
+    def log_likelihood_timeseries(self):
+        """Compute the likelihood timeseries for the posterior samples.
+
+        Returns
+        -------
+        likelihoods : array
+            array of likelihoods, with shape ``(time, samples,)``; the number
+            of samples equals the number of chains times the number of draws.
+        """
+        # get whitened residuals from posterior: (chain, draw, ifo, time)
+        whr = self.posterior.whitened_residual
+        # compute likelihood timeseries
+        return -0.5*np.sum(np.cumsum(whr*whr, axis=3), axis=2)
+
+    @property
     def observed_strain(self):
         if "strain" in self.observed_data:
             return self.observed_data.strain
@@ -541,6 +556,13 @@ class Result(az.InferenceData):
                     coords=self.posterior.coords,
                     dims={_WHITENED_LOGLIKE_KEY: list(keys)}
                 )))
+
+    @property
+    def whitened_residuals(self) -> np.ndarray:
+        """Whitened residuals from the analysis."""
+        if 'whitened_residual' not in self.posterior:
+            self._generate_whitened_residuals()
+        return self.posterior.whitened_residual
 
     @property
     def ess(self) -> float:
