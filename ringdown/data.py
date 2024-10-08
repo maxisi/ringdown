@@ -1293,3 +1293,75 @@ class AutoCovariance(TimeSeries):
         elif isinstance(data, TimeSeries):
             w_data = TimeSeries(w_data, index=data.index)
         return w_data
+
+
+class StrainArray(np.ndarray):
+    def __new__(cls, input_array, attrs=None, *args, **kwargs):
+        obj = np.asarray(input_array).view(cls)
+        # Assign custom attribute
+        obj.attrs = attrs or {}
+        return obj
+
+    def __array_finalize__(self, obj):
+        if obj is None:
+            return
+        # Preserve custom attributes
+        self.attrs = getattr(obj, 'attrs', {})
+
+    def whiten(self, cholesky_factors):
+
+        # check shape of strain array
+        adducted_dim = False
+        if self.ndim == 0:
+            raise ValueError("Cannot whiten a scalar.")
+        elif self.ndim == 1:
+            adducted_dim = True
+            h = self[np.newaxis, :]
+        else:
+            h = self
+
+        if np.ndim(cholesky_factors) == 2:
+            cholesky_factors = [cholesky_factors]
+        elif np.ndim(cholesky_factors) != 3:
+            raise ValueError("Cholesky factors must have shape "
+                             "(ifo, time, time).")
+
+        # identify detector axis
+        nifo = len(cholesky_factors)
+        matching_axes = [i for i in h.shape if i == nifo]
+        if len(matching_axes) == 0:
+            raise ValueError("No matching detector axis found:"
+                             f"strain shape {h.shape}, cholesky_factors "
+                             f"shape {np.dim(cholesky_factors)}")
+        elif len(matching_axes) > 1:
+            raise ValueError("Multiple matching detector axes found:"
+                             f"strain shape {h.shape}, cholesky_factors "
+                             f"shape {np.dim(cholesky_factors)}")
+        ifo_axis = matching_axes[0]
+
+        # identify time axis
+        ntime = np.shape(cholesky_factors)[1]
+        matching_axes = [i for i in h.shape if i == ntime]
+        if len(matching_axes) == 0:
+            raise ValueError("No matching time axis found:"
+                             f"strain shape {h.shape}, acfs shape "
+                             f"{np.dim(cholesky_factors)}")
+        elif len(matching_axes) > 1:
+            raise ValueError("Multiple matching time axes found:"
+                             f"strain shape {h.shape}, acfs shape "
+                             f"{np.dim(cholesky_factors)}")
+        time_axis = matching_axes[0]
+
+        # bring ifo and time axes to first and second locations
+        h = np.moveaxis(h, [ifo_axis, time_axis], [0, 1])
+
+        wh = np.array([sl.solve_triangular(L, h_i, lower=True)
+                       for L, h_i in zip(cholesky_factors, h)])
+
+        # undo axis swapping
+        wh = np.moveaxis(wh, [0, 1], [ifo_axis, time_axis])
+
+        if adducted_dim:
+            wh = wh[0]
+
+        return wh
