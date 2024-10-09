@@ -18,13 +18,15 @@ import jaxlib.xla_extension
 import xarray as xr
 import lal
 import logging
-from .data import Data, AutoCovariance, PowerSpectrum
+from .data import Data, AutoCovariance, PowerSpectrum, StrainStack
 from . import utils
 from .target import Target
 from .result import Result
 from .model import make_model, get_arviz, MODEL_DIMENSIONS
 from . import indexing
 from . import waveforms
+from . import imr
+import pandas as pd
 
 # TODO: support different samplers?
 KERNEL = numpyro.infer.NUTS
@@ -110,6 +112,7 @@ class Fit(object):
         self.target = None
         self.result = None
         self.prior = None
+        self.imr_result = None
         self._n_analyze = None
         self._duration = None
         self._raw_data = None
@@ -329,6 +332,13 @@ class Fit(object):
             fc
         ]
         return input
+    
+    @property
+    def cholesky_factors(self):
+        """Cholesky factors of ACFs for each detector.
+        """
+        return {i: a.iloc[:self.n_analyze].cholesky
+                for i, a in self.acfs.items()}
 
     @classmethod
     def from_config(cls, config_input: str | configparser.ConfigParser,
@@ -1606,3 +1616,92 @@ class Fit(object):
             return np.linalg.norm(list(snrs.values()))
         else:
             return snrs
+
+    @property
+    def times(self) -> dict:
+        """Dictionary of analysis segment start times for each detector.
+        """
+        return {i: d.time.values for i, d in self.data.items()}
+
+    def add_imr_result(self,
+                       imr_result: pd.DataFrame | dict | np.ndarray,
+                       approximant: str | None = None,
+                       reference_frequency: float | None = None):
+        """Add reference inspiral-merger-ringdown (IMR) result to fit."""
+        self.imr_result = imr.IMRResult(imr_result)
+        if approximant is not None:
+            self.imr_result.set_approximant(approximant)
+        if reference_frequency is not None:
+            self.imr_result.set_reference_frequency(reference_frequency)
+
+    def get_imr_templates(self, condition: bool = True,
+                          ifos: list | None = None,
+                          **kws) -> np.ndarray:
+        """Return IMR templates based on reference IMR result.
+
+        NOTE: make use of the `nsamp` argument to subselect from the IMR
+        samples---will produce templates for all samples if not provided.
+
+        Arguments
+        ---------
+        condition : bool
+            if True, condition templates based on `Data.condition` method;
+            this replicates the conditioning applied to the data, but will
+            slow things down.
+        ifos : list
+            list of detector keys for which to return templates;
+            defaults to all detectors in Fit.
+        **kws :
+            additional keyword arguments passed to
+            :meth:`ringdown.imr.IMRResult.get_waveforms`.
+
+        Returns
+        -------
+        templates : np.ndarray
+            array of IMR with shape `(nifo, ntime, nsamp)`.
+        """
+        if self.imr_result is None:
+            raise ValueError("no IMR result found; use `add_imr_result`")
+
+        ifos = ifos or self.ifos
+        nsamp = kws.get('nsamp', len(self.imr_result))
+        if nsamp > 1000:
+            logging.warning('large number of IMR samples requested; use'
+                            '`nsamp` to subselect for speed')
+
+        if condition:
+            # get time arrays
+            t = {i: d.time.values for i, d in self._raw_data.items()}
+            # inspect Data.condition for conditioning options
+            x = inspect.signature(Data.condition).parameters.keys()
+            c = {k: v for k, v in self.info['condition'].items() if k in x}
+            c['t0'] = self.start_times
+            # produce conditioned waveforms
+            wfs = self.imr_result.get_waveforms(time=t, ifos=ifos, condition=c,
+                                                **kws)
+        else:
+            # produce unconditioned waveforms
+            wfs = self.imr_result.get_waveforms(time=self.times, ifos=ifos,
+                                                **kws)
+        return StrainStack(wfs)
+
+    def get_imr_analysis_templates(self, **kws) -> np.ndarray:
+        """Return IMR templates for analysis segment.
+
+        Arguments
+        ---------
+        ifos : list
+            list of detector keys for which to return templates;
+            defaults to all detectors in Fit.
+        **kws :
+            all keyword arguments passed to
+            :meth:`ringdown.Fit.get_imr_templates`.
+
+        Returns
+        -------
+        templates : np.ndarray
+            array of IMR timeplates with shape `(nifo, ntime, nsamp)` where
+            `ntime = fit.n_analyze`.
+        """
+        wfs = self.get_imr_templates(ifos=self.ifos, **kws)
+        return wfs.slice(self.start_indices, self.n_analyze)

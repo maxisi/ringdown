@@ -65,9 +65,12 @@ class Signal(TimeSeries):
     onto detectors and signal processing.
     """
     _metadata = ['parameters']
-    _T0_ALIASES = ['t0', 'geocent_time', 'trigger_time', 'triggertime',
-                   'tc', 'tgps_geo', 'tgps_geocent']
-    _FROM_GEO_KEY = 'from_geo'
+    # note that alias order matters, as the first one found will be used
+    # 't0' is present in some PESummary files but it need not refer to the
+    # geocenter time, so we place it last so that 'geocent_time' is preferred
+    _T0_ALIASES = ['geocent_time', 'trigger_time', 'triggertime',
+                   'tc', 'tgps_geo', 'tgps_geocent', 't0']
+    _FROM_GEO_KEY = 'geocent'
 
     _MODEL_REGISTER = {}
 
@@ -228,6 +231,13 @@ class Signal(TimeSeries):
         data : Data
             signal projected onto detector.
         """
+        if ra is None:
+            ra = self.get_parameter('ra')
+        if dec is None:
+            dec = self.get_parameter('dec')
+        if psi is None:
+            psi = self.get_parameter('psi')
+
         if antenna_patterns is None and ifo:
             if ifo is None:
                 raise ValueError("must provide IFO name or antenna patterns")
