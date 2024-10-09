@@ -376,8 +376,8 @@ class Result(az.InferenceData):
         return self._whitened_templates
 
     def compute_posterior_snrs(self, optimal: bool = True,
-                               network: bool = True,
-                               cumulative=False) -> np.ndarray:
+                               network: bool = False,
+                               cumulative: bool = False) -> np.ndarray:
         """Efficiently computes signal-to-noise ratios from posterior samples,
         reproducing the computation internally carried out by the sampler.
 
@@ -395,13 +395,19 @@ class Result(az.InferenceData):
             return optimal SNR, instead of matched filter SNR (def., ``True``)
         network : bool
             return network SNR, instead of individual-detector SNRs (def.,
-            ``True``)
+            ``False``)
+        cumulative : bool
+            return cumulative SNR, instead of instantaneous SNR (def.,
+            ``False``)
 
         Returns
         -------
         snrs : array
-            stacked array of SNRs, with shape ``(samples,)`` if ``network =
-            True``, or ``(ifo, samples)`` otherwise; the number of samples
+            stacked array of SNRs; if ``cumulative = False``, the shape is
+            ``(samples,)``  if ``network = True``, or ``(ifo, samples)``
+            otherwise; if ``cumulative = True``, the shape is 
+            ``(time, samples)`` if ``network = True``, or 
+            ``(ifo, time, samples)`` otherwise; the number of samples
             equals the number of chains times the number of draws.
         """
         # get whitened reconstructions from posterior (ifo, time, sample)
@@ -431,23 +437,13 @@ class Result(az.InferenceData):
         else:
             return snrs
 
-    def compute_posterior_snr_timeseries(self, optimal: bool = True,
-                                         network: bool = True) -> np.ndarray:
+    def compute_posterior_snr_timeseries(self, **kwargs) -> np.ndarray:
         """Efficiently computes cumulative signal-to-noise ratio from
         posterior samples as a function of time.
 
-        Depending on the ``optimal`` argument, returns either the optimal SNR::
-
-          snr_opt = sqrt(dot(template, template))
-
-        or the matched filter SNR::
-
-          snr_mf = dot(data, template) / snr_opt
-
-        NOTE: the last time sample of the returned SNR timeseries corresponds
-              to the total accumulated SNR, which is the same as returned
-              by :meth:`compute_posterior_snrs`; however, that function is
-              10x faster, so use it if you only need the total SNR.
+        WARNING: this function is deprecated and will be removed in future;
+                 use :meth:`compute_posterior_snrs` with ``cumulative=True``
+                 instead.
 
         Arguments
         ---------
@@ -471,26 +467,7 @@ class Result(az.InferenceData):
         """
         logging.warning("deprecated; use compute_posterior_snrs with "
                         "`cumulative=True` instead")
-        # get whitened reconstructions from posterior (ifo, time, sample)
-        whs = self.whitened_templates
-        # get series of cumulative optimal SNRs for each (ifo, time, sample)
-        opt_ifo_snrs = np.sqrt(np.cumsum(whs * whs, axis=1))
-        if optimal:
-            snrs = opt_ifo_snrs
-        else:
-            # get analysis data, shaped as (ifo, time)
-            ds = self.observed_strain
-            # whiten it with the Cholesky factors,
-            # so shape will remain (ifo, time)
-            wds = self.whiten(ds)
-            # take inner product between whitened template and data,
-            # and normalize
-            snrs = np.cumsum(wds[:, :, None]*whs, axis=1) / opt_ifo_snrs
-        if network:
-            # take norm across detectors
-            return np.linalg.norm(snrs, axis=0)
-        else:
-            return snrs
+        return self.compute_posterior_snrs(**kwargs, cumulative=True)
 
     @property
     def log_likelihood_timeseries(self):
