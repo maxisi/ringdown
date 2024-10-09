@@ -342,6 +342,20 @@ class Result(az.InferenceData):
         return wds
 
     @property
+    def templates(self) -> data.StrainStack:
+        """Templates corresponding to each posterior sample, as were seen by
+        the sampler.
+
+        Dimensions will be ``(ifo, time, sample)``.
+
+        Corresponding whitened templates can be obtained from posterior by
+        doing::
+
+          result.h_det.stack(sample=('chain', 'draw'))
+        """
+        return data.StrainStack(self.h_det)
+
+    @property
     def whitened_templates(self) -> np.ndarray:
         """Whitened templates corresponding to each posterior sample, as
         were seen by the sampler.
