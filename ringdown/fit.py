@@ -18,7 +18,7 @@ import jaxlib.xla_extension
 import xarray as xr
 import lal
 import logging
-from .data import Data, AutoCovariance, PowerSpectrum, DataArray
+from .data import Data, AutoCovariance, PowerSpectrum, StrainStack
 from . import utils
 from .target import Target
 from .result import Result
@@ -1683,7 +1683,7 @@ class Fit(object):
             # produce unconditioned waveforms
             wfs = self.imr_result.get_waveforms(time=self.times, ifos=ifos,
                                                 **kws)
-        return DataArray(wfs)
+        return StrainStack(wfs)
 
     def get_imr_analysis_templates(self, **kws) -> np.ndarray:
         """Return IMR templates for analysis segment.

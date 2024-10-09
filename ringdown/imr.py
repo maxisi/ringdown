@@ -398,6 +398,9 @@ class IMRResult(pd.DataFrame):
         if 'model' not in kws and 'approximant' not in kws:
             kws['model'] = self.approximant
 
+        if condition:
+            t0 = condition.pop('t0', {})
+
         wf_dict = {ifo: [] for ifo in ifos}
         tqdm = get_tqdm(progress)
         tqdm_kws = dict(total=len(df), ncols=None, desc='waveforms')
@@ -408,7 +411,6 @@ class IMRResult(pd.DataFrame):
                 if condition:
                     # look for target time 't0' which can be a dict with 
                     # entries for each ifo or just a float for all ifos
-                    t0 = condition.get('t0', {})
                     if isinstance(t0, dict):
                         t0 = t0.get(ifo)
                     hi = h[ifo].condition(t0=t0, **condition)
@@ -418,4 +420,4 @@ class IMRResult(pd.DataFrame):
         # waveforms array will be shaped (nifo, nsamp, ntime)
         wfs = np.array([wf_dict[ifo] for ifo in ifos])
         # swap axes to get (nifo, ntime, nsamp)
-        return data.DataArray(np.swapaxes(wfs, 1, 2))
+        return data.StrainStack(np.swapaxes(wfs, 1, 2))

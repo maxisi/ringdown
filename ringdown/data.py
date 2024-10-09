@@ -1317,7 +1317,11 @@ class AutoCovariance(TimeSeries):
         return w_data
 
 
-class DataArray(np.ndarray):
+class StrainStack(np.ndarray):
+    """A wrapper around numpy arrays with useful methods for whitening strain
+    data and computing SNRs.
+    """
+    
     def __new__(cls, input_array, attrs=None, *args, **kwargs):
         obj = np.asarray(input_array).view(cls)
         # Assign custom attribute
@@ -1333,7 +1337,7 @@ class DataArray(np.ndarray):
     @staticmethod
     def _get_time_axis(h, cholesky):
         ntime = np.shape(cholesky)[1]
-        matching_axes = [i for i in h.shape if i == ntime]
+        matching_axes = [i for i, n in enumerate(h.shape) if n == ntime]
         if len(matching_axes) == 0:
             raise ValueError("No matching time axis found:"
                              f"strain shape {h.shape}, acfs shape "
@@ -1347,7 +1351,7 @@ class DataArray(np.ndarray):
     @staticmethod
     def _get_ifo_axis(h, cholesky):
         nifo = len(cholesky)
-        matching_axes = [i for i in h.shape if i == nifo]
+        matching_axes = [i for i, n in enumerate(h.shape) if n == nifo]
         if len(matching_axes) == 0:
             raise ValueError("No matching detector axis found:"
                              f"strain shape {h.shape}, acfs shape "
@@ -1358,7 +1362,30 @@ class DataArray(np.ndarray):
                              f"{np.dim(cholesky)}")
         return matching_axes[0]
 
-    def whiten(self, cholesky, ifo_axis=None, time_axis=None):
+    def whiten(self, cholesky: list | np.ndarray | dict,
+               ifo_axis: int | None = None,
+               time_axis: int | None = None) -> np.ndarray:
+        """Whiten strain data using provided Cholesky factors for the
+        covariance matrix of the noise at each detector.
+
+        Arguments
+        ---------
+        cholesky : array | dict
+            Cholesky factor or list of Cholesky factors; if a dict
+            the values are serialized assuming entries correspond to
+            detectors.
+        ifo_axis : int
+            axis indexing detectors in the strain array, default is
+            guessed from cholesky array shape.
+        time_axis : int
+            axis indexing time in the strain array, default is guessed
+            from cholesky array shape.
+
+        Returns
+        -------
+        wh : array
+            whitened strain data, with same shape as original array.
+        """
 
         # check shape of strain array (nifo, ntime, ...)
         h = np.atleast_2d(self)
@@ -1385,16 +1412,50 @@ class DataArray(np.ndarray):
         # undo axis swapping
         wh = np.moveaxis(wh, [0, 1], [ifo_axis, time_axis])
 
+        # remove extra dimension if we added it above
         if self.ndim == 1:
             wh = wh[0]
 
         return wh
 
-    def compute_snr(self, cholesky: list | np.ndarray,
-                    data: list | np.ndarray | None = None,
+    def compute_snr(self, cholesky: list | np.ndarray | dict,
+                    data: list | np.ndarray | dict | None = None,
                     network: bool = False, cumulative: bool = False,
                     time_axis: int | None = None,
                     ifo_axis: int | None = None) -> np.ndarray:
+        """Compute SNR of strain data using provided Cholesky factors for the
+        covariance matrix of the noise at each detector.
+
+        If ``data`` are provided, computes the matched-filter SNR; otherwise,
+        computes the optimal SNR.
+
+        Arguments
+        ---------
+        cholesky : list, array, or dict
+            Cholesky factor or list of Cholesky factors; if a dict
+            the values are serialized assuming entries correspond to
+            detectors.
+        data : list, array, or dict, optional
+            data array or list of data arrays; if a dict the values are
+            serialized assuming entries correspond to detectors; if None,
+            computes the optimal SNR, rather than the matched filter SNR.
+        network : bool, optional
+            compute network SNR by taking norm over detectors.
+        cumulative : bool, optional
+            compute cumulative SNR over time.
+        time_axis : int, optional
+            axis indexing time in the strain array, default is guessed
+            from ``cholesky`` array shape.
+        ifo_axis : int, optional
+            axis indexing detectors in the strain array, default is
+            guessed from ``cholesky`` array shape.
+
+        Returns
+        -------
+        snrs : array
+            SNR array with the time dimension removed if ``cumulative`` is
+            False and the detector dimension removed if ``network`` is True.
+        """
         # check shape of cholesky factors (nifo, ntime, ntime)
         if isinstance(cholesky, dict):
             cholesky = list(cholesky.values())
@@ -1413,7 +1474,7 @@ class DataArray(np.ndarray):
         whs = h.whiten(cholesky, ifo_axis=ifo_axis, time_axis=time_axis)
         
         if cumulative:
-            opt_ifo_snrs = np.sqrt(np.cumsum(whs, axis=time_axis))
+            opt_ifo_snrs = np.sqrt(np.cumsum(whs**2, axis=time_axis))
         else:
             opt_ifo_snrs = np.linalg.norm(whs, axis=time_axis)
 
@@ -1458,18 +1519,20 @@ class DataArray(np.ndarray):
                 snrs = snrs[0]
             return snrs
     
-    def slice(self, start_indices, n, ifo_axis=0):
+    def slice(self, start_indices: list | dict,
+              n: int, ifo_axis: int = 0) -> 'StrainStack':
         """Slice data array into segments of length `n` starting at
         `start_indices`.
 
         Arguments
         ---------
-        start_indices : array
-            starting indices of each segment.
+        start_indices : list | dict
+            starting indices of each segment; if a dict, the values are
+            serialized assuming entries correspond to detectors.
         n : int
             length of each segment.
-        ifo_axis : int
-            to match each segment
+        ifo_axis : int, optional
+            index detector axis in the strain array (default is 0).
         """
         if isinstance(start_indices, dict):
             start_indices = list(start_indices.values())
@@ -1477,4 +1540,4 @@ class DataArray(np.ndarray):
         new_h = []
         for i0, ifo_wfs in zip(start_indices, h):
             new_h.append(ifo_wfs[i0:i0+n, ...])
-        return DataArray(np.moveaxis(new_h, 0, ifo_axis))
+        return StrainStack(np.moveaxis(new_h, 0, ifo_axis))
