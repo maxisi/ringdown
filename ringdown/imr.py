@@ -6,6 +6,7 @@ from . import indexing
 from . import qnms
 from . import waveforms
 from . import target
+from . import data
 from .utils import get_tqdm
 import lal
 import multiprocessing as mp
@@ -348,8 +349,10 @@ class IMRResult(pd.DataFrame):
     def get_waveforms(self, nsamp: int | None = None,
                       ifos: list | None = None,
                       time: np.ndarray | None = None,
+                      condition: dict | None = None,
                       prng: np.random.RandomState | int | None = None,
-                      progress: bool = True, **kws) -> pd.DataFrame:
+                      progress: bool = True,
+                      **kws) -> pd.DataFrame:
         """Get the peak times of the waveform for a given set of detectors.
 
         Arguments
@@ -363,6 +366,9 @@ class IMRResult(pd.DataFrame):
         time : np.ndarray | None
             Time array to use for the peak time calculation; if None, uses
             a default time array.
+        condition : dict | None
+            optional conditioning settings; can include a `t0` argument
+            which is itself a dictionary for different ifos.
         prng : np.random.RandomState | int | None
             Random number generator to use for sampling; if None, uses the
             default random number generator.
@@ -399,8 +405,17 @@ class IMRResult(pd.DataFrame):
             h = waveforms.get_detector_signals(times=time, ifos=ifos,
                                                **sample, **kws)
             for ifo in ifos:
-                wf_dict[ifo].append(h[ifo])
+                if condition:
+                    # look for target time 't0' which can be a dict with 
+                    # entries for each ifo or just a float for all ifos
+                    t0 = condition.get('t0', {})
+                    if isinstance(t0, dict):
+                        t0 = t0.get(ifo)
+                    hi = h[ifo].condition(t0=t0, **condition)
+                else:
+                    hi = h[ifo]
+                wf_dict[ifo].append(hi)
         # waveforms array will be shaped (nifo, nsamp, ntime)
         wfs = np.array([wf_dict[ifo] for ifo in ifos])
         # swap axes to get (nifo, ntime, nsamp)
-        return np.swapaxes(wfs, 1, 2)
+        return data.DataArray(np.swapaxes(wfs, 1, 2))

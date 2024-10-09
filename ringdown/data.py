@@ -588,7 +588,7 @@ class Data(TimeSeries):
         elif f_min and f_max:
             b, a = sig.butter(4, (f_min/fny, f_max/fny), btype='bandpass',
                               output='ba')
-            
+
         if f_max == fny:
             logging.warning("f_max is at Nyquist frequency but filter will "
                             "be applied anyway; to prevent this, set f_max to"
@@ -1262,11 +1262,32 @@ class AutoCovariance(TimeSeries):
         snr : float
             signal-to-noise ratio
         """
-
         if y is None:
             y = x
         ow_x = sl.solve_toeplitz(self.iloc[:len(x)], x)
         return np.dot(ow_x, y)/np.sqrt(np.dot(x, ow_x))
+
+    def inner_product(self, x, y=None) -> complex:
+        """Compute the noise weighterd inner product between `x` and `y`
+        defined by :math:`\\left\\langle x \\mid y \\right\\rangle \\equiv
+        x_i C^{-1}_{ij} y_j`.
+
+        Arguments
+        ---------
+        x : array
+            target time series.
+        y : array
+            reference time series. Defaults to `x`.
+
+        Returns
+        -------
+        snr : float
+            signal-to-noise ratio
+        """
+        if y is None:
+            y = x
+        ow_x = sl.solve_toeplitz(self.iloc[:len(x)], x)
+        return np.dot(x, ow_x)
 
     def whiten(self, data) -> Data | TimeSeries | np.ndarray:
         """Whiten stretch of data using ACF.
@@ -1278,7 +1299,7 @@ class AutoCovariance(TimeSeries):
 
         Returns
         -------
-        w_data : Data
+        w_data : Data | TimeSeries | array
             whitened data.
         """
         if isinstance(data, TimeSeries):
@@ -1287,15 +1308,16 @@ class AutoCovariance(TimeSeries):
         L = self.iloc[:len(data)].cholesky
         w_data = sl.solve_triangular(L, data, lower=True)
         # return same type as input
-        _meta = {a: getattr(data, a, None) for a in getattr(data, '_meta', [])}
         if isinstance(data, Data):
+            _meta = {a: getattr(data, a, None)
+                     for a in getattr(data, '_meta', [])}
             w_data = Data(w_data, index=data.index, **_meta)
         elif isinstance(data, TimeSeries):
             w_data = TimeSeries(w_data, index=data.index)
         return w_data
 
 
-class StrainArray(np.ndarray):
+class DataArray(np.ndarray):
     def __new__(cls, input_array, attrs=None, *args, **kwargs):
         obj = np.asarray(input_array).view(cls)
         # Assign custom attribute
@@ -1308,60 +1330,151 @@ class StrainArray(np.ndarray):
         # Preserve custom attributes
         self.attrs = getattr(obj, 'attrs', {})
 
-    def whiten(self, cholesky_factors):
-
-        # check shape of strain array
-        adducted_dim = False
-        if self.ndim == 0:
-            raise ValueError("Cannot whiten a scalar.")
-        elif self.ndim == 1:
-            adducted_dim = True
-            h = self[np.newaxis, :]
-        else:
-            h = self
-
-        if np.ndim(cholesky_factors) == 2:
-            cholesky_factors = [cholesky_factors]
-        elif np.ndim(cholesky_factors) != 3:
-            raise ValueError("Cholesky factors must have shape "
-                             "(ifo, time, time).")
-
-        # identify detector axis
-        nifo = len(cholesky_factors)
-        matching_axes = [i for i in h.shape if i == nifo]
-        if len(matching_axes) == 0:
-            raise ValueError("No matching detector axis found:"
-                             f"strain shape {h.shape}, cholesky_factors "
-                             f"shape {np.dim(cholesky_factors)}")
-        elif len(matching_axes) > 1:
-            raise ValueError("Multiple matching detector axes found:"
-                             f"strain shape {h.shape}, cholesky_factors "
-                             f"shape {np.dim(cholesky_factors)}")
-        ifo_axis = matching_axes[0]
-
-        # identify time axis
-        ntime = np.shape(cholesky_factors)[1]
+    @staticmethod
+    def _get_time_axis(h, cholesky):
+        ntime = np.shape(cholesky)[1]
         matching_axes = [i for i in h.shape if i == ntime]
         if len(matching_axes) == 0:
             raise ValueError("No matching time axis found:"
                              f"strain shape {h.shape}, acfs shape "
-                             f"{np.dim(cholesky_factors)}")
+                             f"{np.dim(cholesky)}")
         elif len(matching_axes) > 1:
             raise ValueError("Multiple matching time axes found:"
                              f"strain shape {h.shape}, acfs shape "
-                             f"{np.dim(cholesky_factors)}")
-        time_axis = matching_axes[0]
+                             f"{np.dim(cholesky)}")
+        return matching_axes[0]
+
+    @staticmethod
+    def _get_ifo_axis(h, cholesky):
+        nifo = len(cholesky)
+        matching_axes = [i for i in h.shape if i == nifo]
+        if len(matching_axes) == 0:
+            raise ValueError("No matching detector axis found:"
+                             f"strain shape {h.shape}, acfs shape "
+                             f"{np.dim(cholesky)}")
+        elif len(matching_axes) > 1:
+            raise ValueError("Multiple matching detector axes found:"
+                             f"strain shape {h.shape}, acfs shape "
+                             f"{np.dim(cholesky)}")
+        return matching_axes[0]
+
+    def whiten(self, cholesky, ifo_axis=None, time_axis=None):
+
+        # check shape of strain array (nifo, ntime, ...)
+        h = np.atleast_2d(self)
+
+        # check shape of cholesky factors (nifo, ntime, ntime)
+        if isinstance(cholesky, dict):
+            cholesky = list(cholesky.values())
+        cholesky = np.atleast_3d(cholesky)
+
+        # identify detector axis
+        if ifo_axis is None:
+            ifo_axis = self._get_ifo_axis(h, cholesky)
+
+        # identify time axis
+        if time_axis is None:
+            time_axis = self._get_time_axis(h, cholesky)
 
         # bring ifo and time axes to first and second locations
         h = np.moveaxis(h, [ifo_axis, time_axis], [0, 1])
 
         wh = np.array([sl.solve_triangular(L, h_i, lower=True)
-                       for L, h_i in zip(cholesky_factors, h)])
+                       for L, h_i in zip(cholesky, h)])
 
         # undo axis swapping
         wh = np.moveaxis(wh, [0, 1], [ifo_axis, time_axis])
 
-        if adducted_dim:
+        if self.ndim == 1:
             wh = wh[0]
 
         return wh
+
+    def compute_snr(self, cholesky: list | np.ndarray,
+                    data: list | np.ndarray | None = None,
+                    network: bool = False, cumulative: bool = False,
+                    time_axis: int | None = None,
+                    ifo_axis: int | None = None) -> np.ndarray:
+        # check shape of cholesky factors (nifo, ntime, ntime)
+        if isinstance(cholesky, dict):
+            cholesky = list(cholesky.values())
+        cholesky = np.atleast_3d(cholesky)
+
+        # check shape of strain array (nifo, ntime, ...)
+        h = np.atleast_2d(self)
+
+        # identify detector and time axes
+        if ifo_axis is None:
+            ifo_axis = self._get_ifo_axis(h, cholesky)
+        if time_axis is None:
+            time_axis = self._get_time_axis(h, cholesky)
+
+        # get whitened templates
+        whs = h.whiten(cholesky, ifo_axis=ifo_axis, time_axis=time_axis)
+        
+        if cumulative:
+            opt_ifo_snrs = np.sqrt(np.cumsum(whs, axis=time_axis))
+        else:
+            opt_ifo_snrs = np.linalg.norm(whs, axis=time_axis)
+
+        if data is None:
+            snrs = opt_ifo_snrs
+        else:
+            # check shape of data array (nifo, ntime, ...)
+            if isinstance(data, dict):
+                data = list(data.values())
+            data = np.atleast_2d(data)
+            if np.ndim(data) > 2:
+                raise ValueError("Data array must have shape (nifo, ntime)")
+
+            # whiten data
+            wds = np.array([sl.solve_triangular(L, d, lower=True)
+                            for L, d in zip(cholesky, data)])
+
+            # make sure ifo axis is first and time axis is second
+            if ifo_axis is None:
+                ifo_axis = self._get_ifo_axis(h, cholesky)
+            whs = np.moveaxis(whs, [ifo_axis, time_axis], [0, 1])
+
+            # extra dimensions
+            n = np.ndim(whs) - np.ndim(wds)
+
+            # take inner product
+            wdwh = wds[(...,)+(None,)*n] * whs
+            wdwh = np.moveaxis(wdwh, [0, 1], [ifo_axis, time_axis])
+            if cumulative:
+                snrs = np.cumsum(wdwh, axis=time_axis) / opt_ifo_snrs
+            else:
+                snrs = np.sum(wdwh, axis=time_axis) / opt_ifo_snrs
+
+        if network:
+            if ifo_axis is None:
+                ifo_axis = self._get_ifo_axis(snrs, cholesky)
+            return np.linalg.norm(snrs, axis=ifo_axis)
+        else:
+            if self.ndim == 1:
+                # an extra dimension was prepended to the strain array,
+                # remove it from output
+                snrs = snrs[0]
+            return snrs
+    
+    def slice(self, start_indices, n, ifo_axis=0):
+        """Slice data array into segments of length `n` starting at
+        `start_indices`.
+
+        Arguments
+        ---------
+        start_indices : array
+            starting indices of each segment.
+        n : int
+            length of each segment.
+        ifo_axis : int
+            to match each segment
+        """
+        if isinstance(start_indices, dict):
+            start_indices = list(start_indices.values())
+        h = np.moveaxis(self, ifo_axis, 0)
+        new_h = []
+        for i0, ifo_wfs in zip(start_indices, h):
+            new_h.append(ifo_wfs[i0:i0+n, ...])
+        return DataArray(np.moveaxis(new_h, 0, ifo_axis))

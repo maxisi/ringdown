@@ -362,7 +362,8 @@ class Result(az.InferenceData):
         return self._whitened_templates
 
     def compute_posterior_snrs(self, optimal: bool = True,
-                               network: bool = True) -> np.ndarray:
+                               network: bool = True,
+                               cumulative=False) -> np.ndarray:
         """Efficiently computes signal-to-noise ratios from posterior samples,
         reproducing the computation internally carried out by the sampler.
 
@@ -392,7 +393,10 @@ class Result(az.InferenceData):
         # get whitened reconstructions from posterior (ifo, time, sample)
         whs = self.whitened_templates
         # take the norm across time to get optimal snrs for each (ifo, sample)
-        opt_ifo_snrs = np.linalg.norm(whs, axis=1)
+        if cumulative:
+            opt_ifo_snrs = np.sqrt(np.cumsum(whs * whs, axis=1))
+        else:
+            opt_ifo_snrs = np.linalg.norm(whs, axis=1)
         if optimal:
             snrs = opt_ifo_snrs
         else:
@@ -403,7 +407,10 @@ class Result(az.InferenceData):
             wds = self.whiten(ds)
             # take inner product between whitened template and data,
             # and normalize
-            snrs = np.einsum('ijk,ij->ik', whs, wds)/opt_ifo_snrs
+            if cumulative:
+                snrs = np.cumsum(wds[..., None]*whs, axis=1) / opt_ifo_snrs
+            else:
+                snrs = np.sum(wds[..., None]*whs, axis=1) / opt_ifo_snrs
         if network:
             # take norm across detectors
             return np.linalg.norm(snrs, axis=0)
@@ -448,6 +455,8 @@ class Result(az.InferenceData):
         --------
         compute_posterior_snrs : Computes the overall signal-to-noise ratio.
         """
+        logging.warning("deprecated; use compute_posterior_snrs with "
+                        "`cumulative=True` instead")
         # get whitened reconstructions from posterior (ifo, time, sample)
         whs = self.whitened_templates
         # get series of cumulative optimal SNRs for each (ifo, time, sample)

@@ -18,7 +18,7 @@ import jaxlib.xla_extension
 import xarray as xr
 import lal
 import logging
-from .data import Data, AutoCovariance, PowerSpectrum
+from .data import Data, AutoCovariance, PowerSpectrum, DataArray
 from . import utils
 from .target import Target
 from .result import Result
@@ -27,7 +27,6 @@ from . import indexing
 from . import waveforms
 from . import imr
 import pandas as pd
-import scipy.linalg as sl
 
 # TODO: support different samplers?
 KERNEL = numpyro.infer.NUTS
@@ -333,6 +332,13 @@ class Fit(object):
             fc
         ]
         return input
+    
+    @property
+    def cholesky_factors(self):
+        """Cholesky factors of ACFs for each detector.
+        """
+        return {i: a.iloc[:self.n_analyze].cholesky
+                for i, a in self.acfs.items()}
 
     @classmethod
     def from_config(cls, config_input: str | configparser.ConfigParser,
@@ -1664,34 +1670,22 @@ class Fit(object):
                             '`nsamp` to subselect for speed')
 
         if condition:
+            # get time arrays
             t = {i: d.time.values for i, d in self._raw_data.items()}
-            wfs = self.imr_result.get_waveforms(time=t, ifos=ifos, **kws)
-            # inspect Data.condition for options
+            # inspect Data.condition for conditioning options
             x = inspect.signature(Data.condition).parameters.keys()
             c = {k: v for k, v in self.info['condition'].items() if k in x}
-            # iterate over IMR result draws
-            new_wfs = []
-            tqdm = utils.get_tqdm(progress=kws.get('progress', True))
-            niter = wfs.shape[0]*wfs.shape[2]
-            with tqdm(total=niter, ncols=None, desc='conditioning') as pbar:
-                for i, ifo_wfs in zip(self.ifos, wfs):
-                    t0 = self.start_times[i]
-                    new_ifo_wfs_T = []
-                    for wf in ifo_wfs.T:
-                        new_wf = Data(wf, index=t[i]).condition(t0=t0, **c)
-                        new_ifo_wfs_T.append(new_wf.values)
-                        pbar.update(1)
-                    new_wfs.append(new_ifo_wfs_T)
-            # new_wfs should now have shape (nifo, nsamp, ntime)
-            # but we want (nifo, ntime, nsamp)
-            wfs = np.swapaxes(new_wfs, 1, 2)
+            c['t0'] = self.start_times
+            # produce conditioned waveforms
+            wfs = self.imr_result.get_waveforms(time=t, ifos=ifos, condition=c,
+                                                **kws)
         else:
+            # produce unconditioned waveforms
             wfs = self.imr_result.get_waveforms(time=self.times, ifos=ifos,
                                                 **kws)
-        return wfs
+        return DataArray(wfs)
 
-    def get_imr_analysis_templates(self, ifos: list | None = None,
-                                   **kws) -> np.ndarray:
+    def get_imr_analysis_templates(self, **kws) -> np.ndarray:
         """Return IMR templates for analysis segment.
 
         Arguments
@@ -1709,139 +1703,5 @@ class Fit(object):
             array of IMR timeplates with shape `(nifo, ntime, nsamp)` where
             `ntime = fit.n_analyze`.
         """
-        ifos = ifos or self.ifos
-        wfs = self.get_imr_templates(ifos=ifos, **kws)
-        n = self.n_analyze
-        new_wfs = []
-        for ifo, ifo_wfs in zip(ifos, wfs):
-            i0 = self.start_indices[ifo]
-            new_wfs.append(ifo_wfs[i0:i0+n, :])
-        return np.array(new_wfs)
-
-    def get_imr_whitened_analysis_templates(self, ifos: list | None = None,
-                                            **kws):
-        """Return whitened IMR templates for analysis segment.
-
-        Arguments
-        ---------
-        ifos : list
-            list of detector keys for which to return templates;
-            defaults to all detectors in Fit.
-        **kws :
-            all keyword arguments passed to
-            :meth:`ringdown.Fit.get_imr_analysis_templates`.
-
-        Returns
-        -------
-        templates : np.ndarray
-            array of whitened IMR templates with shape `(nifo, ntime, nsamp)`.
-        """
-        # whiten the reconstructions using the Cholesky factors, L, with
-        # shape (ifo, time, time). the resulting object will have shape
-        # (ifo, time, sample)
-        ifos = ifos or self.ifos
-        wfs = self.get_imr_analysis_templates(ifos=ifos, **kws)
-        chols = [self.acfs[i].iloc[:self.n_analyze].cholesky for i in ifos]
-        wds = np.array([sl.solve_triangular(L, wf, lower=True)
-                        for L, wf in zip(chols, wfs)])
-        return wds
-
-    def compute_imr_snrs(self, optimal: bool = True,
-                         network: bool = False,
-                         ifos: list | None = None, **kws) -> np.ndarray:
-        """Compute ringdown SNRs from IMR samples.
-
-        Arguments
-        ---------
-        optimal : bool
-            return optimal SNR, instead of matched filter SNR (def., ``True``)
-        network : bool
-            return network SNR, instead of individual-detector SNRs (def.,
-            ``True``)
-
-        Returns
-        -------
-        snrs : array
-            stacked array of SNRs, with shape ``(nsamp,)`` if ``network =
-            True``, or ``(nifo, nsamp)`` otherwise; the number of samples
-            equals the number IMR posterior draws.
-        """
-        ifos = ifos or self.ifos
-        # get whitened IMR templates
-        whs = self.get_imr_whitened_analysis_templates(ifos=ifos, **kws)
-        # take the norm across time to get optimal snrs for each (ifo, sample)
-        opt_ifo_snrs = np.linalg.norm(whs, axis=1)
-        if optimal:
-            snrs = opt_ifo_snrs
-        else:
-            # whiten analysis data
-            data = self.analysis_data
-            wds = self.whiten({i: data[i] for i in ifos})
-            # get whitened analysis data shaped as (ifo, time)
-            wds = np.array([wds[i] for i in ifos])
-            # take inner product between whitened template and data,
-            # and normalize
-            snrs = np.einsum('ijk,ij->ik', whs, wds)/opt_ifo_snrs
-        if network:
-            # take norm across detectors
-            return np.linalg.norm(snrs, axis=0)
-        else:
-            return snrs
-
-    def compute_imr_snr_timeseries(self, optimal: bool = True,
-                                   network: bool = False,
-                                   ifos: list | None = None, **kws) -> dict:
-        """Efficiently computes cumulative signal-to-noise ratio from
-        posterior samples as a function of time.
-
-        Depending on the ``optimal`` argument, returns either the optimal SNR::
-
-          snr_opt = sqrt(dot(template, template))
-
-        or the matched filter SNR::
-
-          snr_mf = dot(data, template) / snr_opt
-
-        NOTE: the last time sample of the returned SNR timeseries corresponds
-              to the total accumulated SNR, which is the same as returned
-              by :meth:`compute_posterior_snrs`; however, that function is
-              10x faster, so use it if you only need the total SNR.
-
-        Arguments
-        ---------
-        optimal : bool
-            return optimal SNR, instead of matched filter SNR (def., ``True``)
-        network : bool
-            return network SNR, instead of individual-detector SNRs (def.,
-            ``True``)
-
-        Returns
-        -------
-        snrs : array
-            stacked array of cumulative SNRs, with shape ``(time, samples,)``
-            if ``network = True``, or ``(ifo, time, samples)`` otherwise;
-            the number of samples equals the number of IMR posterior draws.
-
-        See Also
-        --------
-        compute_imr_snrs : Computes the overall signal-to-noise ratio.
-        """
-        ifos = ifos or self.ifos
-        # get whitened reconstructions
-        whs = self.get_imr_whitened_analysis_templates(ifos=ifos, **kws)
-        # get series of cumulative optimal SNRs for each (ifo, time, sample)
-        opt_ifo_snrs = np.sqrt(np.cumsum(whs * whs, axis=1))
-        if optimal:
-            snrs = opt_ifo_snrs
-        else:
-            # whiten analysis data
-            data = self.analysis_data
-            wds = self.whiten({i: data[i] for i in ifos})
-            # take inner product between whitened template and data,
-            # and normalize
-            snrs = np.cumsum(wds[:, :, None]*whs, axis=1) / opt_ifo_snrs
-        if network:
-            # take norm across detectors
-            return np.linalg.norm(snrs, axis=0)
-        else:
-            return snrs
+        wfs = self.get_imr_templates(ifos=self.ifos, **kws)
+        return wfs.slice(self.start_indices, self.n_analyze)
