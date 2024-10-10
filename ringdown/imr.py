@@ -1,5 +1,7 @@
 __all__ = ['IMRResult']
 
+import h5py
+import os
 import numpy as np
 import pandas as pd
 from . import indexing
@@ -35,29 +37,44 @@ class IMRResult(pd.DataFrame):
     _f_key = 'f_{mode}'
     _g_key = 'g_{mode}'
 
-    _meta = ['attrs']
+    _meta = ['attrs', '_psds']
 
-    def __init__(self, *args, attrs=None, **kwargs):
+    def __init__(self, *args, attrs=None, psds=None, **kwargs):
         super().__init__(*args, **kwargs)
         if len(args) == 0:
             args = [None]
         self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
+        self.__dict__['_psds'] = psds if psds is not None else {}
 
     @property
     def reference_frequency(self) -> float | None:
         """Reference frequency used in analysis in Hz."""
-        return self.attrs.get('reference_frequency', self.attrs.get('f_ref'))
+        config_fref = self.attrs.get('config', {}).get('reference-frequency')
+        return self.attrs.get('reference_frequency',
+                              self.attrs.get('f_ref', config_fref))
 
     def set_reference_frequency(self, f_ref: float) -> None:
         """Set the reference frequency used in analysis in Hz."""
         self.attrs['reference_frequency'] = f_ref
         if 'f_ref' in self.attrs:
             del self.attrs['f_ref']
+    
+    @property
+    def psds(self) -> dict:
+        """Power Spectral Densities used in the analysis."""
+        return self.__dict__['_psds']
+    
+    def set_psds(self, psds: dict) -> None:
+        """Set the PSDs used in the analysis."""
+        for i, p in psds.items():
+            self.__dict__['_psds'][i] = data.PowerSpectrum(p)
 
     @property
     def approximant(self) -> str | None:
         """Waveform approximant used in analysis."""
-        return self.attrs.get('approximant')
+        config_approx = self.attrs.get(
+            'config', {}).get('waveform-approximant')
+        return self.attrs.get('approximant', config_approx)
 
     def set_approximant(self, approximant: str) -> None:
         """Set the waveform approximant used in analysis."""
@@ -409,7 +426,7 @@ class IMRResult(pd.DataFrame):
                                                **sample, **kws)
             for ifo in ifos:
                 if condition:
-                    # look for target time 't0' which can be a dict with 
+                    # look for target time 't0' which can be a dict with
                     # entries for each ifo or just a float for all ifos
                     if isinstance(t0, dict):
                         t0 = t0.get(ifo)
@@ -421,3 +438,45 @@ class IMRResult(pd.DataFrame):
         wfs = np.array([wf_dict[ifo] for ifo in ifos])
         # swap axes to get (nifo, ntime, nsamp)
         return data.StrainStack(np.swapaxes(wfs, 1, 2))
+
+    @classmethod
+    def from_pesummary(cls, path, group: str | None = None,
+                       pesummary_read: bool = False,
+                       posterior_key='posterior_samples'):
+        """Create an IMRResult from a pesummary result."""
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"file not found: {path}")
+
+        if pesummary_read:
+            try:
+                from pesummary.io import read
+            except ImportError:
+                raise ImportError("missing optional dependency: pesummary")
+            pe = read(path)
+            if group is None:
+                group = pe.labels[0]
+                logging.warning(f"no group provided; using {group}")
+            config = pe.config.get(group, {}).get('config', {})
+            psds = {i: data.PowerSpectrum(p[:, 1], index=p[:, 0]) for i, p
+                    in pe.psd.get(group, {}).items()}
+            return cls(pe.samples_dict[group], attrs={'config': config},
+                       psds=psds)
+
+        if os.path.splitext(path)[1] in ['.hdf5', '.h5']:
+            with h5py.File(path, 'r') as f:
+                if group is None:
+                    group = list(f.keys())[0]
+                    logging.warning(f"no group provided; using {group}")
+                if group not in f:
+                    raise ValueError(f"group {group} not found")
+                c = f[group].attrs.get('config_file', {}).get('config', {})
+                if 'psds' in f[group]:
+                    psds = {i: data.PowerSpectrum(p[:, 1], index=p[:, 0])
+                            for i, p in f[group]['psds'].items()}
+                else:
+                    psds = {}
+                if posterior_key in f[group]:
+                    return cls(f[group][posterior_key][()],
+                               attrs={'config': c}, psds=psds)
+                else:
+                    raise ValueError("no {posterior_key} found")
