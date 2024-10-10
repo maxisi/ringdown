@@ -405,8 +405,8 @@ class Result(az.InferenceData):
         snrs : array
             stacked array of SNRs; if ``cumulative = False``, the shape is
             ``(samples,)``  if ``network = True``, or ``(ifo, samples)``
-            otherwise; if ``cumulative = True``, the shape is 
-            ``(time, samples)`` if ``network = True``, or 
+            otherwise; if ``cumulative = True``, the shape is
+            ``(time, samples)`` if ``network = True``, or
             ``(ifo, time, samples)`` otherwise; the number of samples
             equals the number of chains times the number of draws.
         """

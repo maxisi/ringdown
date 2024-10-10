@@ -1321,7 +1321,7 @@ class StrainStack(np.ndarray):
     """A wrapper around numpy arrays with useful methods for whitening strain
     data and computing SNRs.
     """
-    
+
     def __new__(cls, input_array, attrs=None, *args, **kwargs):
         obj = np.asarray(input_array).view(cls)
         # Assign custom attribute
@@ -1472,7 +1472,7 @@ class StrainStack(np.ndarray):
 
         # get whitened templates
         whs = h.whiten(cholesky, ifo_axis=ifo_axis, time_axis=time_axis)
-        
+
         if cumulative:
             opt_ifo_snrs = np.sqrt(np.cumsum(whs**2, axis=time_axis))
         else:
@@ -1518,7 +1518,7 @@ class StrainStack(np.ndarray):
                 # remove it from output
                 snrs = snrs[0]
             return snrs
-    
+
     def slice(self, start_indices: list | dict,
               n: int, ifo_axis: int = 0) -> 'StrainStack':
         """Slice data array into segments of length `n` starting at

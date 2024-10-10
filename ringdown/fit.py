@@ -332,7 +332,7 @@ class Fit(object):
             fc
         ]
         return input
-    
+
     @property
     def cholesky_factors(self):
         """Cholesky factors of ACFs for each detector.
