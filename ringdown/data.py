@@ -707,6 +707,29 @@ class PowerSpectrum(FrequencySeries):
     def _constructor(self):
         return PowerSpectrum
 
+    def gate(self, max_dynamic_range=6, inplace=False):
+        """Gate PSD to avoid numerical issues.
+
+        Arguments
+        ---------
+        max_dynamic_range : float
+            maximum dynamic range in decades to allow in the PSD.
+
+        Returns
+        -------
+        psd : PowerSpectrum
+            gated power spectrum.
+        """
+        log_psd = np.log10(self)
+        min_log_psd = log_psd.min()
+        max_log_psd = max_dynamic_range + min_log_psd
+        if inplace:
+            self.iloc[log_psd > max_log_psd] = 10**max_log_psd
+        else:
+            p = self.copy()
+            p.iloc[log_psd > max_log_psd] = 10**max_log_psd
+            return p
+
     def fill_power_of_two(self) -> None:
         """Ensure that the power spectrum is complete up to the next power of
         two frequency.

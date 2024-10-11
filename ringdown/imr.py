@@ -65,7 +65,7 @@ class IMRResult(pd.DataFrame):
     @property
     def psds(self) -> dict:
         """Power Spectral Densities used in the analysis."""
-        return self.__dict__['_psds']
+        return self.__dict__['_psds'] or {}
 
     def set_psds(self, psds: dict) -> None:
         """Set the PSDs used in the analysis."""
@@ -446,7 +446,8 @@ class IMRResult(pd.DataFrame):
     def from_pesummary(cls, path, group: str | None = None,
                        pesummary_read: bool = False,
                        posterior_key='posterior_samples'):
-        """Create an IMRResult from a pesummary result."""
+        """Create an IMRResult from a pesummary result.
+        """
         if not os.path.isfile(path):
             raise FileNotFoundError(f"file not found: {path}")
 
@@ -460,10 +461,10 @@ class IMRResult(pd.DataFrame):
                 group = pe.labels[0]
                 logging.warning(f"no group provided; using {group}")
             config = pe.config.get(group, {}).get('config', {})
-            psds = {i: data.PowerSpectrum(p).fill_low_frequencies()
-                    for i, p in pe.psd.get(group, {}).items()}
+            p = {i: data.PowerSpectrum(p).fill_low_frequencies().gate()
+                 for i, p in pe.psd.get(group, {}).items()}
             return cls(pe.samples_dict[group], attrs={'config': config},
-                       psds=psds)
+                       psds=p)
 
         if os.path.splitext(path)[1] in ['.hdf5', '.h5']:
             with h5py.File(path, 'r') as f:
@@ -475,12 +476,67 @@ class IMRResult(pd.DataFrame):
                 c = {k: get_hdf5_value(v[()]) for k, v in
                      f[group].get('config_file', {}).get('config', {}).items()}
                 if 'psds' in f[group]:
-                    psds = {i: data.PowerSpectrum(p).fill_low_frequencies()
-                            for i, p in f[group]['psds'].items()}
+                    p = {i: data.PowerSpectrum(p).fill_low_frequencies().gate()
+                         for i, p in f[group]['psds'].items()}
                 else:
-                    psds = {}
+                    p = {}
                 if posterior_key in f[group]:
                     return cls(f[group][posterior_key][()],
-                               attrs={'config': c}, psds=psds)
+                               attrs={'config': c}, psds=p)
                 else:
                     raise ValueError("no {posterior_key} found")
+
+    _REFERENCE_SRATE = 16384
+
+    @property
+    def data_options(self):
+        """Return a dictionary of options to obtain data used in the analysis.
+        """
+        if 'config' not in self.attrs:
+            return {}
+        config = self.attrs['config']
+        key_map = {'t0': 'trigger-time', 'ifos': 'detectors',
+                   'seglen': 'duration'}
+        options = {}
+        for k, v in key_map.items():
+            if v in config:
+                options[k] = config[v]
+            else:
+                logging.warning(f"missing {v} in config")
+        options['sample_rate'] = self._REFERENCE_SRATE
+        return options
+
+    @property
+    def condition_options(self):
+        """Return a dictionary of options to condition the data used in the
+        analysis.
+        """
+        if 'config' not in self.attrs:
+            return {}
+        config = self.attrs['config']
+        if self.psds:
+            sample_rate = self.psds[list(self.psds.keys())[0]].f_samp
+            ds = self._REFERENCE_SRATE / sample_rate
+        elif 'sampling-frequency' in config:
+            sample_rate = config['sampling-frequency']
+            ds = self._REFERENCE_SRATE / sample_rate
+        else:
+            logging.warning("missing sampling frequency in config")
+            ds = None
+        return {'ds': ds}
+
+    def get_patched_psds(self, f_min=0, f_max=None):
+        c = self.attrs.get('config', {})
+        psds = {}
+        for ifo, psd in self.psds.items():
+            f_min = f_min or c.get('minimum-frequency', {}).get(ifo, f_min)
+            f_max = f_max or c.get('maximum-frequency', {}).get(ifo, f_max)
+            psds[ifo] = psd.patch(f_min, f_max).gate()
+        return psds
+
+    def get_acfs(self, patch_psd=True):
+        if patch_psd:
+            psds = self.get_patched_psds()
+        else:
+            psds = self.psds
+        return {ifo: psd.to_acf() for ifo, psd in psds.items()}
