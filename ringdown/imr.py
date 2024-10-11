@@ -9,7 +9,7 @@ from . import qnms
 from . import waveforms
 from . import target
 from . import data
-from .utils import get_tqdm
+from .utils import get_tqdm, get_hdf5_value
 import lal
 import multiprocessing as mp
 from lalsimulation import nrfits
@@ -50,20 +50,23 @@ class IMRResult(pd.DataFrame):
     def reference_frequency(self) -> float | None:
         """Reference frequency used in analysis in Hz."""
         config_fref = self.attrs.get('config', {}).get('reference-frequency')
-        return self.attrs.get('reference_frequency',
+        fref = self.attrs.get('reference_frequency',
                               self.attrs.get('f_ref', config_fref))
+        if fref is not None:
+            return float(fref)
+        return None
 
     def set_reference_frequency(self, f_ref: float) -> None:
         """Set the reference frequency used in analysis in Hz."""
         self.attrs['reference_frequency'] = f_ref
         if 'f_ref' in self.attrs:
             del self.attrs['f_ref']
-    
+
     @property
     def psds(self) -> dict:
         """Power Spectral Densities used in the analysis."""
         return self.__dict__['_psds']
-    
+
     def set_psds(self, psds: dict) -> None:
         """Set the PSDs used in the analysis."""
         for i, p in psds.items():
@@ -469,7 +472,8 @@ class IMRResult(pd.DataFrame):
                     logging.warning(f"no group provided; using {group}")
                 if group not in f:
                     raise ValueError(f"group {group} not found")
-                c = f[group].attrs.get('config_file', {}).get('config', {})
+                c = {k: get_hdf5_value(v[()]) for k, v in
+                     f[group].get('config_file', {}).get('config', {}).items()}
                 if 'psds' in f[group]:
                     psds = {i: data.PowerSpectrum(p[:, 1], index=p[:, 0])
                             for i, p in f[group]['psds'].items()}

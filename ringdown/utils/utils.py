@@ -45,6 +45,16 @@ def try_parse(x):
                 return x
 
 
+def get_hdf5_value(x):
+    """Attempt to parse a string as a number, dict, or list."""
+    while isinstance(x, np.ndarray) and len(x) > 0:
+        x = x[0]
+    if isinstance(x, (bytes, np.bytes_)):
+        return try_parse(x.decode('utf-8'))
+    else:
+        return try_parse(x)
+
+
 def np2(x):
     """Returns the next power of two as big as or larger than x."""
     p = 1
