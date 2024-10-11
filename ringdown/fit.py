@@ -1705,3 +1705,12 @@ class Fit(object):
         """
         wfs = self.get_imr_templates(ifos=self.ifos, **kws)
         return wfs.slice(self.start_indices, self.n_analyze)
+
+    @classmethod
+    def from_imr_result(cls, imr_result: imr.IMRResult, **kws):
+        """Create a new `Fit` object from an IMR result."""
+        fit = cls(**kws)
+        fit.load_data(**imr_result.data_options)
+        fit.acfs = imr_result.get_acfs()
+        # fit.update_model_settings based on IMRResult
+        return fit
