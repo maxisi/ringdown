@@ -1378,12 +1378,12 @@ class StrainStack(np.ndarray):
         matching_axes = [i for i, n in enumerate(h.shape) if n == ntime]
         if len(matching_axes) == 0:
             raise ValueError("No matching time axis found:"
-                             f"strain shape {h.shape}, acfs shape "
-                             f"{np.dim(cholesky)}")
+                             f"strain shape {h.shape}, cholesky shape "
+                             f"{np.shape(cholesky)}")
         elif len(matching_axes) > 1:
             raise ValueError("Multiple matching time axes found:"
-                             f"strain shape {h.shape}, acfs shape "
-                             f"{np.dim(cholesky)}")
+                             f"strain shape {h.shape}, cholesky shape "
+                             f"{np.shape(cholesky)}")
         return matching_axes[0]
 
     @staticmethod
@@ -1392,12 +1392,12 @@ class StrainStack(np.ndarray):
         matching_axes = [i for i, n in enumerate(h.shape) if n == nifo]
         if len(matching_axes) == 0:
             raise ValueError("No matching detector axis found:"
-                             f"strain shape {h.shape}, acfs shape "
-                             f"{np.dim(cholesky)}")
+                             f"strain shape {h.shape}, cholesky shape "
+                             f"{np.shape(cholesky)}")
         elif len(matching_axes) > 1:
             raise ValueError("Multiple matching detector axes found:"
-                             f"strain shape {h.shape}, acfs shape "
-                             f"{np.dim(cholesky)}")
+                             f"strain shape {h.shape}, cholesky shape "
+                             f"{np.shape(cholesky)}")
         return matching_axes[0]
 
     def whiten(self, cholesky: list | np.ndarray | dict,
