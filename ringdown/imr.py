@@ -460,8 +460,8 @@ class IMRResult(pd.DataFrame):
                 group = pe.labels[0]
                 logging.warning(f"no group provided; using {group}")
             config = pe.config.get(group, {}).get('config', {})
-            psds = {i: data.PowerSpectrum(p[:, 1], index=p[:, 0]) for i, p
-                    in pe.psd.get(group, {}).items()}
+            psds = {i: data.PowerSpectrum(p).fill_low_frequencies()
+                    for i, p in pe.psd.get(group, {}).items()}
             return cls(pe.samples_dict[group], attrs={'config': config},
                        psds=psds)
 
@@ -475,7 +475,7 @@ class IMRResult(pd.DataFrame):
                 c = {k: get_hdf5_value(v[()]) for k, v in
                      f[group].get('config_file', {}).get('config', {}).items()}
                 if 'psds' in f[group]:
-                    psds = {i: data.PowerSpectrum(p[:, 1], index=p[:, 0])
+                    psds = {i: data.PowerSpectrum(p).fill_low_frequencies()
                             for i, p in f[group]['psds'].items()}
                 else:
                     psds = {}
