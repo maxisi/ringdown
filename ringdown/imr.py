@@ -101,6 +101,31 @@ class IMRResult(pd.DataFrame):
             if k in self.columns:
                 return self[k]
 
+    @property
+    def minimum_frequency(self):
+        """Minimum frequency used in the analysis."""
+        return self.attrs.get('config', {}).get('minimum-frequency', {})
+
+    @property
+    def maximum_frequency(self):
+        """Maximum frequency used in the analysis."""
+        return self.attrs.get('config', {}).get('maximum-frequency', {})
+
+    @property
+    def trigger_time(self):
+        """Trigger time used in the analysis."""
+        return self.attrs.get('config', {}).get('trigger-time')
+
+    @property
+    def sampling_frequency(self):
+        """Sampling frequency used in the analysis."""
+        return self.attrs.get('config', {}).get('sampling-frequency')
+
+    @property
+    def duration(self):
+        """Duration of the analysis."""
+        return self.attrs.get('config', {}).get('duration')
+
     def get_kerr_frequencies(self, modes, **kws):
         """Get the Kerr QNM frequencies corresponding to the remnant mass and
         spin for a list of modes.
@@ -202,17 +227,25 @@ class IMRResult(pd.DataFrame):
         return self[keys]
 
     def _get_default_time(self, ref_key='geocent_time'):
-        tc = np.median(self[ref_key])
-        dt = 1 / 16384
-        n = 1 / dt + 1
+        # attempt get trigger time from config file
+        # default to median of geocenter time if not found
+        tc = self.trigger_time or np.median(self[ref_key])
+
+        fsamp = self.sampling_frequency or self._REFERENCE_SRATE
+        dt = 1 / fsamp
+        n = (self.duration or 1) * fsamp
         time = np.arange(n)*dt + tc - dt*(n//2)
-        logging.warning("no time array provided; defaulting to "
-                        f"{time[-1]-time[0]} s around {tc} at "
-                        f"{1/dt} Hz")
+        if not self.sampling_frequency or not self.duration:
+            logging.warning("no time array provided; defaulting to "
+                            f"{n*dt} s around {tc} at {1/dt} Hz")
         return time
 
     @property
-    def _ifos(self):
+    def ifos(self):
+        """List of detectors in the DataFrame."""
+        # try config first
+        if 'detectors' in self.attrs.get('config', {}):
+            return self.attrs['config']['detectors']
         time_keys = [k for k in self.columns if TIME_KEY in k]
         return [k.replace(TIME_KEY, '') for k in time_keys]
 
@@ -257,7 +290,7 @@ class IMRResult(pd.DataFrame):
             df = self.sample(nsamp, random_state=prng)
 
         if ifos is None:
-            ifos = self._ifos
+            ifos = self.ifos
         elif isinstance(ifos, str):
             ifos = [ifos]
 
@@ -372,7 +405,7 @@ class IMRResult(pd.DataFrame):
                       condition: dict | None = None,
                       prng: np.random.RandomState | int | None = None,
                       progress: bool = True,
-                      **kws) -> pd.DataFrame:
+                      **kws) -> data.StrainStack:
         """Get the peak times of the waveform for a given set of detectors.
 
         Arguments
@@ -404,7 +437,7 @@ class IMRResult(pd.DataFrame):
 
         # get ifos
         if ifos is None:
-            ifos = self._ifos
+            ifos = self.ifos
         elif isinstance(ifos, str):
             ifos = [ifos]
         ifos = [ifo for ifo in ifos if 'geo' not in ifo]
@@ -526,11 +559,10 @@ class IMRResult(pd.DataFrame):
         return {'ds': ds}
 
     def get_patched_psds(self, f_min=0, f_max=None):
-        c = self.attrs.get('config', {})
         psds = {}
         for ifo, psd in self.psds.items():
-            f_min = f_min or c.get('minimum-frequency', {}).get(ifo, f_min)
-            f_max = f_max or c.get('maximum-frequency', {}).get(ifo, f_max)
+            f_min = f_min or self.minimum_frequency.get(ifo, f_min)
+            f_max = f_max or self.maximum_frequency.get(ifo, f_max)
             psds[ifo] = psd.patch(f_min, f_max).gate()
         return psds
 
@@ -540,3 +572,70 @@ class IMRResult(pd.DataFrame):
         else:
             psds = self.psds
         return {ifo: psd.to_acf() for ifo, psd in psds.items()}
+
+    def estimate_analysis_length(self, acfs: dict | None = None,
+                                 start_indices: dict | None = None,
+                                 guess_start: float | None = None,
+                                 nsamp: int = 100,
+                                 q: float = 0.1,
+                                 return_wfs: bool = False,
+                                 **kws) -> int:
+        acfs = acfs or self.get_acfs()
+
+        if 'total_mass' in self:
+            m = self['total_mass']
+        elif 'mass_1' in self and 'mass_2' in self:
+            m = self['mass_1'] + self['mass_2']
+        elif 'final_mass' in self:
+            m = self['final_mass']
+        else:
+            raise KeyError("no mass scale found")
+
+        if guess_start is None:
+            # estimate based on mass scale
+            duration = 50 * np.median(m) * qnms.T_MSUN
+        else:
+            duration = guess_start
+
+        # get waveforms to compute SNRS
+        nsamp = min(nsamp, len(self))
+        waveforms = self.get_waveforms(nsamp=nsamp, **kws)
+
+        # get start times
+        if not start_indices:
+            target = self.get_best_peak_target()
+            start_times = target.get_detector_times_dict(self.ifos)
+            t = self._get_default_time()
+            start_indices = {ifo: np.argmin(np.abs(t - t0))
+                             for ifo, t0 in start_times.items()}
+
+        # get starting duration (iterate in case of different sampling rates
+        # although these should really all be the same)
+        n = 0
+        for ifo, acf in acfs.items():
+            n = max(n, int(duration // acf.delta_t))
+
+        cholesky = {}
+        stable_snr = False
+        qs = [(1 - q)/2, 0.5, 1-(1-q)/2]
+        while duration < self.duration / 2:
+            # update cholesky matrices, waveforms and compute SNRs
+            for ifo, acf in acfs.items():
+                cholesky[ifo] = acf.iloc[:n].cholesky
+            wfs = waveforms.slice(start_indices, n)
+            snrs = wfs.compute_snr(cholesky, cumulative=True, network=True)
+
+            # check if SNR at midpoint is within bounds
+            snr_l, snr_m, snr_h = np.quantile(snrs[-1, :], qs)
+            snr_halfway = np.median(snrs[len(snrs)//2, :])
+            stable_snr = np.abs(snr_halfway - snr_m) < snr_h - snr_l
+            if stable_snr:
+                break
+            n *= 2
+
+        if not stable_snr:
+            logging.warning("SNR not stable; returning maximum duration")
+
+        if return_wfs:
+            return n, wfs
+        return n
