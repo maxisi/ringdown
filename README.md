@@ -22,6 +22,8 @@ For the latest and greatest version, you can install directly from the git repo:
 pip install git+https://github.com/maxisi/ringdown.git
 ```
 
+Additionally, you may follow the [JAX documentation](https://jax.readthedocs.io/en/latest/installation.html) to install JAX with GPU support.
+
 ### Complete Environments
 
 A complete [conda](https://docs.conda.io/en/latest/) environment that includes all the prerequisites (and more!) to install `ringdown` can be found in  `environment.yml` in the current directory:
