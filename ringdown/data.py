@@ -667,7 +667,7 @@ class PowerSpectrum(FrequencySeries):
     _meta = ['ifo', 'attrs']
 
     def __init__(self, *args, delta_f=None, ifo=None, attrs=None,
-                 complete_power_of_two=True, **kwargs):
+                 fill_power_of_two=True, **kwargs):
         """Initialize power spectral density.
 
         Arguments
@@ -685,6 +685,12 @@ class PowerSpectrum(FrequencySeries):
         if ifo is not None:
             ifo = ifo.upper()
         kwargs['name'] = kwargs.get('name', ifo)
+        if len(args) == 1 and np.ndim(args[0]) == 2:
+            if 'index' not in kwargs:
+                # interpret input as (freq, psd)
+                a = np.array(args[0])
+                kwargs['index'] = a[:, 0]
+                args = [a[:, 1]]
         super().__init__(*args, **kwargs)
         if delta_f is not None:
             self.index = np.arange(len(self))*delta_f
@@ -692,20 +698,29 @@ class PowerSpectrum(FrequencySeries):
             args = [None]
         self.ifo = ifo or getattr(args[0], 'ifo', None)
         self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
-        if complete_power_of_two:
+        if fill_power_of_two and not self.empty:
             logging.info("completing power spectrum to next power of two")
-            fmax = self.freq[-1]
-            new_fmax = utils.np2(fmax)
-            if fmax % 2 and np.isclose(new_fmax - fmax, self.delta_f):
-                self[new_fmax] = self.iloc[-1]
+            self.fill_power_of_two()
+        self.sort_index(inplace=True, ascending=True)
 
     @property
     def _constructor(self):
         return PowerSpectrum
 
-    def complete_low_frequencies(self, f_min: float = 0.,
-                                 fill_value: float | None = None,
-                                 **kws) -> 'PowerSpectrum':
+    def fill_power_of_two(self) -> None:
+        """Ensure that the power spectrum is complete up to the next power of
+        two frequency.
+        """
+        if self.empty:
+            return self
+        fmax = self.freq[-1]
+        new_fmax = utils.np2(fmax)
+        if fmax % 2 and np.isclose(new_fmax - fmax, self.delta_f):
+            self[new_fmax] = self.iloc[-1]
+
+    def fill_low_frequencies(self, f_min: float = 0.,
+                             fill_value: float | None = None,
+                             **kws) -> 'PowerSpectrum':
         """Complete low frequencies in power spectrum, extending all the
         way down to `f_min`, which defaults to 0. If `fill_value` is not
         provided, it will be set to 10 times the maximum PSD value.
@@ -731,7 +746,7 @@ class PowerSpectrum(FrequencySeries):
         psd : PowerSpectrum
             power spectrum with low frequencies completed.
         """
-        if f_min > self.freq[0]:
+        if f_min >= self.freq[0]:
             logging.info("no need to complete low PSD frequencies")
             return self
 
