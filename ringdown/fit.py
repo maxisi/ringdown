@@ -1412,12 +1412,14 @@ class Fit(object):
         """
         self.modes = indexing.ModeIndexList(modes)
 
-    def set_target(self, t0: float | dict, ra: float | None = None,
+    def set_target(self, t0: float | dict | None = None,
+                   ra: float | None = None,
                    dec: float | None = None, psi: float | None = None,
                    duration: float | None = None,
                    reference_ifo: str | None = None,
                    antenna_patterns: dict | None = None,
-                   n_analyze: int | None = None):
+                   n_analyze: int | None = None,
+                   target: Target | None = None):
         """ Establish truncation target, stored to `self.target`.
 
         Provide a targeted analysis start time `t0` to serve as beginning of
@@ -1493,8 +1495,11 @@ class Fit(object):
         else:
             self._duration = float(duration)
 
-        self.target = Target.construct(t0, ra, dec, psi, reference_ifo,
-                                       antenna_patterns, ifos=self.ifos)
+        if isinstance(target, Target):
+            self.target = target
+        else:
+            self.target = Target.construct(t0, ra, dec, psi, reference_ifo,
+                                           antenna_patterns, ifos=self.ifos)
 
         # make sure that start times are encompassed by data (if data exist)
         for i, data in self.data.items():
@@ -1706,11 +1711,43 @@ class Fit(object):
         wfs = self.get_imr_templates(ifos=self.ifos, **kws)
         return wfs.slice(self.start_indices, self.n_analyze)
 
+    @property
+    def delta_t(self):
+        if self.acfs:
+            return self.acfs[self.ifos[0]].delta_t
+        elif self.data:
+            return self.data[self.ifos[0]].delta_t
+
     @classmethod
-    def from_imr_result(cls, imr_result: imr.IMRResult, **kws):
+    def from_imr_result(cls, imr_result: imr.IMRResult,
+                        load_data: bool = True, load_acfs: bool = True,
+                        condition: bool = True, set_target: bool = True,
+                        update_model: bool = True,
+                        duration: float | bool = 'auto',
+                        cache_data: bool = False,
+                        peak_kws: dict | None = None, **kws):
         """Create a new `Fit` object from an IMR result."""
         fit = cls(**kws)
-        fit.load_data(**imr_result.data_options)
-        fit.acfs = imr_result.get_acfs()
+
+        if load_data:
+            fit.load_data(channel='gwosc', cache=cache_data,
+                          **imr_result.data_options)
+
+        if set_target:
+            peak_kws = peak_kws or {}
+            t = imr_result.get_best_peak_target(**peak_kws)
+            if duration == 'auto':
+                duration = imr_result.estimate_analysis_duration()
+            fit.set_target(target=t, duration=float(duration))
+
+        if condition:
+            fit.condition_data(**imr_result.condition_options)
+
+        if load_acfs:
+            fit.acfs = imr_result.get_acfs()
+            if not condition:
+                logging.warning("ACFs derived from IMR result but data "
+                                "not conditioned!")
         # fit.update_model_settings based on IMRResult
+        fit.add_imr_result(imr_result)
         return fit

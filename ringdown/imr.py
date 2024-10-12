@@ -45,6 +45,7 @@ class IMRResult(pd.DataFrame):
             args = [None]
         self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
         self.__dict__['_psds'] = psds if psds is not None else {}
+        self.__dict__['_waveforms'] = None
 
     @property
     def reference_frequency(self) -> float | None:
@@ -316,7 +317,8 @@ class IMRResult(pd.DataFrame):
 
             peak_times_rows = []
             tqdm = get_tqdm(progress)
-            for _, sample in tqdm(df.iterrows(), total=len(df), ncols=None):
+            for _, sample in tqdm(df.iterrows(), total=len(df), ncols=None,
+                                  desc='peak'):
                 h = waveforms.Coalescence.from_parameters(
                     time, **sample, **kws)
                 tp = h.get_invariant_peak_time()
@@ -403,6 +405,7 @@ class IMRResult(pd.DataFrame):
                       ifos: list | None = None,
                       time: np.ndarray | None = None,
                       condition: dict | None = None,
+                      cache: bool = False,
                       prng: np.random.RandomState | int | None = None,
                       progress: bool = True,
                       **kws) -> data.StrainStack:
@@ -429,6 +432,9 @@ class IMRResult(pd.DataFrame):
             Additional keyword arguments to pass to the peak
             time calculation.
         """
+        if cache and self._waveforms is not None:
+            return self._waveforms
+
         # subselect samples if requested
         if nsamp is None:
             df = self
@@ -473,7 +479,10 @@ class IMRResult(pd.DataFrame):
         # waveforms array will be shaped (nifo, nsamp, ntime)
         wfs = np.array([wf_dict[ifo] for ifo in ifos])
         # swap axes to get (nifo, ntime, nsamp)
-        return data.StrainStack(np.swapaxes(wfs, 1, 2))
+        h = data.StrainStack(np.swapaxes(wfs, 1, 2))
+        if cache:
+            self._waveforms = h
+        return h
 
     @classmethod
     def from_pesummary(cls, path, group: str | None = None,
@@ -573,13 +582,13 @@ class IMRResult(pd.DataFrame):
             psds = self.psds
         return {ifo: psd.to_acf() for ifo, psd in psds.items()}
 
-    def estimate_analysis_length(self, acfs: dict | None = None,
-                                 start_indices: dict | None = None,
-                                 guess_start: float | None = None,
-                                 nsamp: int = 100,
-                                 q: float = 0.1,
-                                 return_wfs: bool = False,
-                                 **kws) -> int:
+    def estimate_analysis_duration(self, acfs: dict | None = None,
+                                   start_indices: dict | None = None,
+                                   guess_start: float | None = None,
+                                   nsamp: int = 100,
+                                   q: float = 0.1,
+                                   return_wfs: bool = False,
+                                   **kws) -> int:
         acfs = acfs or self.get_acfs()
 
         if 'total_mass' in self:
@@ -601,19 +610,34 @@ class IMRResult(pd.DataFrame):
         nsamp = min(nsamp, len(self))
         waveforms = self.get_waveforms(nsamp=nsamp, **kws)
 
+        t = self._get_default_time()
+        time = kws.get('time', t)
+        # check if time has 'get' method
+        if isinstance(time, dict):
+            time_dict = time
+        else:
+            time_dict = {i: time for i in self.ifos}
+
         # get start times
         if not start_indices:
-            target = self.get_best_peak_target()
+            target = self.get_best_peak_target(**kws)
             start_times = target.get_detector_times_dict(self.ifos)
-            t = self._get_default_time()
-            start_indices = {ifo: np.argmin(np.abs(t - t0))
+            start_indices = {ifo: np.argmin(np.abs(time_dict[ifo] - t0))
                              for ifo, t0 in start_times.items()}
 
-        # get starting duration (iterate in case of different sampling rates
-        # although these should really all be the same)
-        n = 0
+        dt = t[1] - t[0]
+        n = int(duration // dt)
+        duration = n * dt
+
+        # check all acfs have the same dt as the waveforms
         for ifo, acf in acfs.items():
-            n = max(n, int(duration // acf.delta_t))
+            dt_wf = time_dict[ifo][1] - time_dict[ifo][0]
+            if acf.delta_t != dt_wf:
+                raise ValueError(f"ACF for {ifo} has different "
+                                 "time step than waveforms")
+            if dt_wf != dt:
+                raise ValueError(f"waveform time step {dt_wf} does not "
+                                 f"match requested time step {dt}")
 
         cholesky = {}
         stable_snr = False
@@ -632,10 +656,11 @@ class IMRResult(pd.DataFrame):
             if stable_snr:
                 break
             n *= 2
+            duration = n * dt
 
         if not stable_snr:
             logging.warning("SNR not stable; returning maximum duration")
 
         if return_wfs:
-            return n, wfs
-        return n
+            return duration, wfs
+        return duration
