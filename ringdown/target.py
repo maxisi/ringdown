@@ -66,6 +66,10 @@ class Target(ABC):
         return self.sky[0] is not None
 
     @property
+    def settings(self) -> dict:
+        return self.as_dict()
+
+    @property
     def is_set(self) -> bool:
         return any([x is not None for x in self.as_dict().values()])
 
@@ -229,6 +233,13 @@ class SkyTarget(Target):
         if kws:
             logging.info(f"unused keyword arguments: {kws}")
         return cls(lal.LIGOTimeGPS(tgeo), ra, dec, psi)
+
+    @property
+    def settings(self) -> dict:
+        """Return a dictionary of settings for the target."""
+        s = {k: v for k, v in self.as_dict().items() if 'time' not in k}
+        s['t0'] = self.t0
+        return s
 
 
 @dataclass
