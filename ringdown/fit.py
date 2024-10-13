@@ -434,6 +434,16 @@ class Fit(object):
         # create fit object
         fit = cls(**model_opts)
 
+        # load reference imr result if requested
+        if config.has_section('imr'):
+            imr_opts = {k: utils.try_parse(v)
+                        for k, v in config['imr'].items()}
+            if imr_opts.get('path'):
+                fit.add_imr_result(**imr_opts)
+            else:
+                logging.warning("no path to IMR result provided; ignoring "
+                                " IMR section in config")
+
         if 'data' not in config and 'fake-data' not in config:
             # the rest of the options require loading data, so if no pointer to
             # data was provided, just exit
@@ -451,12 +461,11 @@ class Fit(object):
         # load data
         if 'data' in config:
             ifos = get_ifo_list('data')
-            path_input = config['data']['path']
 
             # NOTE: not popping in order to preserve original ConfigParser
             kws = {k: utils.try_parse(v) for k, v in config['data'].items()
-                   if k not in ['ifos', 'path']}
-            fit.load_data(path_input, ifos, **kws)
+                   if k != 'ifos'}
+            fit.load_data(ifos=ifos, **kws)
 
         # simulate data
         if 'fake-data' in config:
@@ -513,10 +522,10 @@ class Fit(object):
             fit.condition_data(**cond_kws)
 
         # load or produce ACFs
-        if config.get('acf', 'path', fallback=False):
-            kws = {k: utils.try_parse(v) for k, v in config['acf'].items()
-                   if k not in ['path']}
-            fit.load_acfs(config['acf']['path'], **kws)
+        if config.get('acf', 'path', fallback=False) or \
+                config.get('acf', 'from_imr_result', fallback=False):
+            kws = {k: utils.try_parse(v) for k, v in config['acf'].items()}
+            fit.load_acfs(**kws)
         else:
             acf_kws = {} if 'acf' not in config else config['acf']
             fit.compute_acfs(**{k: utils.try_parse(v)
