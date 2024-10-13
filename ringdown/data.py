@@ -708,7 +708,9 @@ class PowerSpectrum(FrequencySeries):
     def _constructor(self):
         return PowerSpectrum
 
-    def gate(self, max_dynamic_range=7, inplace=False):
+    _DEF_MAX_DYN_RANGE = 10
+
+    def gate(self, max_dynamic_range=_DEF_MAX_DYN_RANGE, inplace=False):
         """Gate PSD to avoid numerical issues.
 
         Arguments
