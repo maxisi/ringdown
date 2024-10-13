@@ -26,6 +26,7 @@ from .model import make_model, get_arviz, MODEL_DIMENSIONS
 from . import indexing
 from . import waveforms
 from . import imr
+from .qnms import T_MSUN
 import pandas as pd
 
 # TODO: support different samplers?
@@ -1712,42 +1713,77 @@ class Fit(object):
         return wfs.slice(self.start_indices, self.n_analyze)
 
     @property
-    def delta_t(self):
+    def delta_t(self) -> float:
+        """Time step of data series."""
         if self.acfs:
-            return self.acfs[self.ifos[0]].delta_t
+            ref = self.acfs
         elif self.data:
-            return self.data[self.ifos[0]].delta_t
+            ref = self.data
+        else:
+            return None
+        dts = [r.delta_t for r in ref.values()]
+        if len(set(dts)) > 1:
+            logging.warning("multiple delta_t values found")
+        return dts[0]
+
+    @property
+    def whitened_analysis_data(self) -> dict:
+        """Whitened analysis data for each detector.
+        """
+        return self.whiten(self.analysis_data)
 
     @classmethod
-    def from_imr_result(cls, imr_result: imr.IMRResult,
+    def from_imr_result(cls, imr_result: imr.IMRResult | str,
+                        advance_target_by_mass: float | None = None,
+                        reference_mass: float | None = None,
                         load_data: bool = True, load_acfs: bool = True,
                         condition: bool = True, set_target: bool = True,
                         update_model: bool = True,
                         duration: float | bool = 'auto',
-                        cache_data: bool = False,
-                        peak_kws: dict | None = None, **kws):
+                        data_kws: dict | None = None,
+                        peak_kws: dict | None = None,
+                        acf_kws: dict | None = None,
+                        prior_kws: dict | None = None,
+                        **kws):
         """Create a new `Fit` object from an IMR result."""
+        if isinstance(imr_result, str):
+            imr_result = imr.IMRResult.from_pesummary(imr_result)
+        elif not isinstance(imr_result, imr.IMRResult):
+            imr_result = imr.IMRResult(imr_result)
+
         fit = cls(**kws)
 
         if load_data:
-            fit.load_data(channel='gwosc', cache=cache_data,
-                          **imr_result.data_options)
+            data_opts = imr_result.data_options
+            data_opts.update(**(data_kws or {}))
+            fit.load_data(**data_opts)
 
         if set_target:
             peak_kws = peak_kws or {}
             t = imr_result.get_best_peak_target(**peak_kws)
             if duration == 'auto':
-                duration = imr_result.estimate_analysis_duration()
+                duration = imr_result.estimate_ringdown_duration(cache=True)
+            if advance_target_by_mass:
+                m = reference_mass or np.median(imr_result.remnant_mass_scale)
+                dt = advance_target_by_mass * m * T_MSUN
+                logging.info(f"advancing target time by {dt} s "
+                             f"[{advance_target_by_mass} * {m} Msun]")
+                t.geocenter_time += dt
             fit.set_target(target=t, duration=float(duration))
 
         if condition:
             fit.condition_data(**imr_result.condition_options)
 
         if load_acfs:
-            fit.acfs = imr_result.get_acfs()
+            fit.acfs = imr_result.get_acfs(**(acf_kws or {}))
             if not condition:
                 logging.warning("ACFs derived from IMR result but data "
                                 "not conditioned!")
-        # fit.update_model_settings based on IMRResult
+
+        if update_model:
+            opts = imr_result.estimate_ringdown_prior(modes=fit.modes,
+                                                      cache=True,
+                                                      **(prior_kws or {}))
+            fit.update_model(**opts)
         fit.add_imr_result(imr_result)
         return fit

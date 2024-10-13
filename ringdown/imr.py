@@ -9,6 +9,7 @@ from . import qnms
 from . import waveforms
 from . import target
 from . import data
+from . indexing import ModeIndexList
 from .utils import get_tqdm, get_hdf5_value
 import lal
 import multiprocessing as mp
@@ -64,7 +65,7 @@ class IMRResult(pd.DataFrame):
             del self.attrs['f_ref']
 
     @property
-    def psds(self) -> dict:
+    def psds(self) -> dict[data.PowerSpectrum]:
         """Power Spectral Densities used in the analysis."""
         return self.__dict__['_psds'] or {}
 
@@ -126,6 +127,19 @@ class IMRResult(pd.DataFrame):
     def duration(self):
         """Duration of the analysis."""
         return self.attrs.get('config', {}).get('duration')
+
+    @property
+    def remnant_mass_scale(self) -> pd.Series:
+        """Get best available remmnant mass scale from samples."""
+        if self.final_mass is not None:
+            return self.final_mass
+        logging.info("no remnant mass found; using total mass")
+        if 'total_mass' in self:
+            return self['total_mass']
+        elif 'mass_1' in self and 'mass_2' in self:
+            return self['mass_1'] + self['mass_2']
+        else:
+            raise KeyError("no mass scale found")
 
     def get_kerr_frequencies(self, modes, **kws):
         """Get the Kerr QNM frequencies corresponding to the remnant mass and
@@ -318,7 +332,7 @@ class IMRResult(pd.DataFrame):
             peak_times_rows = []
             tqdm = get_tqdm(progress)
             for _, sample in tqdm(df.iterrows(), total=len(df), ncols=None,
-                                  desc='peak'):
+                                  desc='peak time'):
                 h = waveforms.Coalescence.from_parameters(
                     time, **sample, **kws)
                 tp = h.get_invariant_peak_time()
@@ -485,10 +499,28 @@ class IMRResult(pd.DataFrame):
         return h
 
     @classmethod
-    def from_pesummary(cls, path, group: str | None = None,
+    def from_pesummary(cls, path: str, group: str | None = None,
                        pesummary_read: bool = False,
-                       posterior_key='posterior_samples'):
+                       posterior_key: str = 'posterior_samples'):
         """Create an IMRResult from a pesummary result.
+
+        Arguments
+        ---------
+        path : str
+            Path to the pesummary result file.
+        group : str | None
+            Group label to read in from the pesummary result; if None, takes
+            the first group in the file.
+        pesummary_read : bool
+            If True, uses the pesummary reader to read the file; this requires
+            the ``pesummary`` package to be installed.
+        posterior_keys : str
+            Key of group containing posterior samples.
+
+        Returns
+        -------
+        result : IMRResult
+            IMRResult object containing the posterior samples.
         """
         if not os.path.isfile(path):
             raise FileNotFoundError(f"file not found: {path}")
@@ -546,6 +578,9 @@ class IMRResult(pd.DataFrame):
             else:
                 logging.warning(f"missing {v} in config")
         options['sample_rate'] = self._REFERENCE_SRATE
+        # TODO: add ability to discover local data (i.e., if file cited in
+        # config exist locally, use them)
+        options['channel'] = 'gwosc'
         return options
 
     @property
@@ -567,38 +602,105 @@ class IMRResult(pd.DataFrame):
             ds = None
         return {'ds': ds}
 
-    def get_patched_psds(self, f_min=0, f_max=None):
+    def get_patched_psds(self, f_min: float | None = 0,
+                         f_max: float | None = None,
+                         max_dynamic_range: float = 7,
+                         **kws) -> dict[data.PowerSpectrum]:
+        """Patch the PSDs to the minimum and maximum frequencies used in the
+        analysis.
+
+        Arguments
+        ---------
+        f_min : float
+            Minimum frequency to patch to; if None, uses the minimum frequency
+            in the analysis.
+        f_max : float
+            Maximum frequency to patch to; if None, uses the maximum frequency
+            in the analysis.
+
+        """
         psds = {}
         for ifo, psd in self.psds.items():
             f_min = f_min or self.minimum_frequency.get(ifo, f_min)
             f_max = f_max or self.maximum_frequency.get(ifo, f_max)
-            psds[ifo] = psd.patch(f_min, f_max).gate()
+            psds[ifo] = psd.patch(f_min, f_max, **kws).gate(max_dynamic_range)
         return psds
 
-    def get_acfs(self, patch_psd=True):
+    def get_acfs(self, patch_psd: bool = True, **kws) \
+            -> dict[data.AutoCovariance]:
+        """Get the AutoCorrelation Functions corresponding to the Power
+        Spectral Densities used in the analysis.
+
+        Arguments
+        ---------
+        patch_psd : bool
+            If True, patches the PSDs to the minimum and maximum frequencies
+            used in the analysis.
+        **kws : dict
+            Additional keyword arguments to pass to the PSD computation.
+        """
         if patch_psd:
-            psds = self.get_patched_psds()
+            psds = self.get_patched_psds(**kws)
         else:
             psds = self.psds
         return {ifo: psd.to_acf() for ifo, psd in psds.items()}
 
-    def estimate_analysis_duration(self, acfs: dict | None = None,
+    def _ringdown_start_indices(self, time=None, **kws):
+        if time is None:
+            time = self._get_default_time()
+        # check if time has 'get' method
+        if isinstance(time, dict):
+            time_dict = time
+        else:
+            time_dict = {i: time for i in self.ifos}
+        target = self.get_best_peak_target(**kws)
+        start_times = target.get_detector_times_dict(self.ifos)
+        start_indices = {ifo: np.argmin(np.abs(time_dict[ifo] - t0))
+                         for ifo, t0 in start_times.items()}
+        return start_indices
+
+    def estimate_ringdown_duration(self, acfs: dict | None = None,
                                    start_indices: dict | None = None,
                                    guess_start: float | None = None,
                                    nsamp: int = 100,
                                    q: float = 0.1,
                                    return_wfs: bool = False,
+                                   acf_kws: dict | None = None,
                                    **kws) -> int:
-        acfs = acfs or self.get_acfs()
+        """Estimate the duration of the ringdown analysis required to obtain
+        stable SNRs.
 
-        if 'total_mass' in self:
-            m = self['total_mass']
-        elif 'mass_1' in self and 'mass_2' in self:
-            m = self['mass_1'] + self['mass_2']
-        elif 'final_mass' in self:
-            m = self['final_mass']
-        else:
-            raise KeyError("no mass scale found")
+        Arguments
+        ---------
+        acfs : dict | None
+            ACFs to use for the analysis; if None, computes the ACFs from the
+            PSDs.
+        start_indices : dict | None
+            Start indices for the waveforms; if None, uses the peak times.
+        guess_start : float | None
+            Initial guess for the duration of the analysis in seconds; if None,
+            estimates based on the mass scale.
+        nsamp : int
+            Number of posterior draws to use to estimate SNR distribution.
+        q : float
+            Credible level at which to require stable network SNRs: median SNR
+            at the midpoint must be within the ``q`` symmetric CL of the final
+            median value.
+        return_wfs : bool
+            If True, returns the waveforms used to estimate the duration.
+        acf_kws : dict | None
+            Additional keyword arguments to pass to the ACF computation.
+        **kws : dict
+            Additional keyword arguments to pass to the waveform computation.
+
+        Returns
+        -------
+        duration : int
+            Estimated duration of the analysis in seconds.
+        """
+        acfs = acfs or self.get_acfs(**(acf_kws or {}))
+
+        m = self.remnant_mass_scale
 
         if guess_start is None:
             # estimate based on mass scale
@@ -620,10 +722,7 @@ class IMRResult(pd.DataFrame):
 
         # get start times
         if not start_indices:
-            target = self.get_best_peak_target(**kws)
-            start_times = target.get_detector_times_dict(self.ifos)
-            start_indices = {ifo: np.argmin(np.abs(time_dict[ifo] - t0))
-                             for ifo, t0 in start_times.items()}
+            start_indices = self._ringdown_start_indices(time_dict, **kws)
 
         dt = t[1] - t[0]
         n = int(duration // dt)
@@ -664,3 +763,93 @@ class IMRResult(pd.DataFrame):
         if return_wfs:
             return duration, wfs
         return duration
+
+    def estimate_ringdown_prior(self, a_scale_factor: float = 50,
+                                frequency_scale_factor: float = 10,
+                                reference_cl: float = 0.99,
+                                modes: ModeIndexList | str | None = None,
+                                start_indices: dict | None = None,
+                                nsamp: float = 100, **kws):
+        """Estimate the prior settings for a ringdown analysis.
+
+        Arguments
+        ---------
+        a_scale_factor : float
+            scale by which to multiply maximum strain in order to obtain
+            maximum amplitude scale for prior.
+        frequency_scale_factor : float
+            scale by which to multiply the posterior range for the remnant
+            mass (if Kerr modes are passed) or the 220 mode frequency (if
+            generic modes are passed) to obtain the prior range; this works
+            by expanding the IMR posterior range (computed at the
+            ``reference_cl`` level) by this factor on each side.
+        reference_cl : float
+            Credible level at which to compute the posterior range for the
+            remnant mass or 220 mode to be used as reference for mass or
+            frequency prior.
+        modes : ModeIndexList | str | None
+            List of modes to use to decide how to set frequency or mass prior;
+            if Kerr indices are passed, sets a mass prior; if 'generic' index
+            is passed, sets a frequency prior; if None, returns amplitude
+            settings only.
+        start_indices : dict | None
+            Start indices for the waveforms; if None, uses the peak times.
+        nsamp : int
+            Number of samples to draw from posterior.
+
+        Returns
+        -------
+        opts : dict
+            Dictionary of prior settings.
+        """
+        waveforms = self.get_waveforms(nsamp=nsamp, **kws)
+        if start_indices is None:
+            start_indices = self._ringdown_start_indices(nsamp=nsamp, **kws)
+        # get value of waveforms at the start of the analysis segment
+        h = waveforms.slice(start_indices, n=1)
+        opts = {
+            'a_scale_max': a_scale_factor * float(np.max(np.abs(h)))
+        }
+        # get mode-dependent settings
+        if not modes:
+            # we have no mode information so just return amplitude settings
+            return opts
+        elif isinstance(modes, ModeIndexList):
+            generic_modes = modes.is_generic
+        else:
+            generic_modes = modes == 'generic' or isinstance(modes, int)
+
+        q = 0.5*(1 - reference_cl)
+        qs = [q, 0.5, 1-q]
+        if generic_modes:
+            logging.info("estimating frequency prior based on 220 mode")
+            mode = (1, -2, 2, 2, 0)
+            f = self.sample(nsamp).get_kerr_frequencies([mode])['f_220']
+            l, m, h = np.quantile(f, qs)
+            logging.info(f"quantiles {qs}: {l}, {m}, {h}")
+            fmax = 0.5 * self.sampling_frequency
+            fmin = 1 / self.duration
+            for k in ['f', 'g']:
+                opts.update({
+                    f'{k}_max': min(2*m, m + frequency_scale_factor*(h - m)),
+                    f'{k}_min': max(m/2, m - frequency_scale_factor*(m - l))
+                })
+                # round to nearest integer
+                for kk in [f'{k}_min', f'{k}_max']:
+                    opts[kk] = np.round(opts[kk])
+                # check values for safety
+                if opts[f'{k}_max'] >= fmax:
+                    logging.warning("upper frequency bound set to Nyquist")
+                    opts[f'{k}_max'] = fmax
+                if opts[f'{k}_min'] <= fmin:
+                    logging.warning("lower frequency bound set to 1/T")
+                    opts[f'{k}_min'] = fmin
+        else:
+            logging.info("estimating mass prior")
+            l, m, h = np.quantile(self.remnant_mass_scale, qs)
+            logging.info(f"quantiles {qs}: {l}, {m}, {h}")
+            opts.update({
+                'm_max': np.ceil(m + frequency_scale_factor*(h - m)),
+                'm_min': np.floor(max(m/2, m - frequency_scale_factor*(m - l)))
+            })
+        return opts

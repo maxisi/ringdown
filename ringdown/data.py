@@ -698,7 +698,8 @@ class PowerSpectrum(FrequencySeries):
             args = [None]
         self.ifo = ifo or getattr(args[0], 'ifo', None)
         self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
-        if fill_power_of_two and not self.empty:
+        x = self.index[-1]
+        if fill_power_of_two and not self.empty and not utils.isp2(x):
             logging.info("completing power spectrum to next power of two")
             self.fill_power_of_two()
         self.sort_index(inplace=True, ascending=True)
@@ -707,7 +708,7 @@ class PowerSpectrum(FrequencySeries):
     def _constructor(self):
         return PowerSpectrum
 
-    def gate(self, max_dynamic_range=6, inplace=False):
+    def gate(self, max_dynamic_range=7, inplace=False):
         """Gate PSD to avoid numerical issues.
 
         Arguments

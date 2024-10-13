@@ -63,6 +63,15 @@ def np2(x):
     return p
 
 
+def isp2(x):
+    """Returns True if x is a power of two."""
+    is_pow2 = x == int(x)
+    if is_pow2:
+        x = int(x)
+        is_pow2 &= x & (x - 1) == 0
+    return is_pow2
+
+
 def get_dict_from_pattern(path, ifos=None, abspath=False):
     if isinstance(path, str):
         path_dict = try_parse(path)
