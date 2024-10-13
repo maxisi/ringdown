@@ -110,7 +110,8 @@ class Fit(object):
         precision.
     """
 
-    def __init__(self, modes=None, strain_scale='auto', **kws):
+    def __init__(self, modes=None, strain_scale='auto', imr_result=None,
+                 **kws):
         self.info = {}
         self.data = {}
         self.injections = {}
@@ -119,6 +120,8 @@ class Fit(object):
         self.result = None
         self.prior = None
         self.imr_result = None
+        if imr_result is not None:
+            self.add_imr_result(imr_result)
         self._n_analyze = None
         self._duration = None
         self._raw_data = None
@@ -1127,7 +1130,8 @@ class Fit(object):
             new_d = Data(np.roll(d, int(dt / d.delta_t)), index=d.time, **m)
             self.add_data(new_d)
         # record data provenance
-        settings['path'] = path_dict
+        if path is not None:
+            settings['path'] = path_dict
         self.update_info('data', **settings)
 
     def fake_data(self, ifos: list[str] | str | None = None,
@@ -1333,7 +1337,8 @@ class Fit(object):
         # record ACF computation options
         self.update_info('acf', **settings)
 
-    def load_acfs(self, path, ifos=None, from_psd=False, **kws):
+    def load_acfs(self, path=None, ifos=None, from_psd=False,
+                  from_imr_result=False, **kws):
         """Load autocovariances from disk. Can read in a PSD, instead of an
         ACF, if using the `from_psd` argument.
 
@@ -1361,6 +1366,14 @@ class Fit(object):
         settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kws').items():
             settings[k] = v
+
+        if from_imr_result:
+            if self.imr_result is None:
+                raise ValueError("no IMR result available; load using "
+                                 "Fit.load_imr_result")
+            self.acfs = self.imr_result.get_acfs(**kws)
+            self.update_info('acf', **settings)
+            return
 
         if isinstance(path, str) and ifos is None:
             ifos = self.ifos
@@ -1503,6 +1516,8 @@ class Fit(object):
 
         if isinstance(target, Target):
             self.target = target
+            settings.update(self.target.settings)
+            del settings['target']
         else:
             self.target = Target.construct(t0, ra, dec, psi, reference_ifo,
                                            antenna_patterns, ifos=self.ifos)
@@ -1570,6 +1585,13 @@ class Fit(object):
             return min([len(d.iloc[i0s[i]:]) for i, d in self.data.items()])
         else:
             return self._n_analyze
+
+    @property
+    def psds(self) -> dict:
+        """Dictionary of power spectral densities for each detector, derived
+        from ACFs.
+        """
+        return {i: a.to_psd() for i, a in self.acfs.items()}
 
     def whiten(self, datas: dict) -> dict:
         """Return whiten data for all detectors using ACFs stored in
@@ -1639,11 +1661,16 @@ class Fit(object):
                        approximant: str | None = None,
                        reference_frequency: float | None = None):
         """Add reference inspiral-merger-ringdown (IMR) result to fit."""
-        self.imr_result = imr.IMRResult(imr_result)
+        settings = {k: v for k, v in locals().items() if k != 'self'}
+
+        self.imr_result = imr.IMRResult.construct(imr_result)
         if approximant is not None:
             self.imr_result.set_approximant(approximant)
         if reference_frequency is not None:
             self.imr_result.set_reference_frequency(reference_frequency)
+        # record settings
+        settings['imr_result'] = self.imr_result.path
+        self.update_info('imr-result', **settings)
 
     def get_imr_templates(self, condition: bool = True,
                           ifos: list | None = None,
@@ -1751,13 +1778,8 @@ class Fit(object):
                         prior_kws: dict | None = None,
                         **kws):
         """Create a new `Fit` object from an IMR result."""
-        settings = {k: v for k, v in locals().items() if k != 'cls'}
-        if isinstance(imr_result, str):
-            imr_result = imr.IMRResult.from_pesummary(imr_result)
-        elif not isinstance(imr_result, imr.IMRResult):
-            imr_result = imr.IMRResult(imr_result)
-
-        fit = cls(**kws)
+        fit = cls(imr_result=imr_result, **kws)
+        imr_result = fit.imr_result
 
         if load_data:
             data_opts = imr_result.data_options
@@ -1781,7 +1803,7 @@ class Fit(object):
             fit.condition_data(**imr_result.condition_options)
 
         if load_acfs:
-            fit.acfs = imr_result.get_acfs(**(acf_kws or {}))
+            fit.load_acfs(from_imr_result=True, **(acf_kws or {}))
             if not condition:
                 logging.warning("ACFs derived from IMR result but data "
                                 "not conditioned!")
@@ -1791,6 +1813,5 @@ class Fit(object):
                                                       cache=True,
                                                       **(prior_kws or {}))
             fit.update_model(**opts)
-        fit.add_imr_result(imr_result)
-        fit.update_info('from-imr-result', **settings)
+
         return fit
