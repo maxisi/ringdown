@@ -447,6 +447,7 @@ class IMRResult(pd.DataFrame):
             time calculation.
         """
         if cache and self._waveforms is not None:
+            logging.info("using cached waveforms")
             return self._waveforms
 
         # subselect samples if requested
@@ -495,7 +496,11 @@ class IMRResult(pd.DataFrame):
         # swap axes to get (nifo, ntime, nsamp)
         h = data.StrainStack(np.swapaxes(wfs, 1, 2))
         if cache:
+            logging.info("caching waveforms")
             self._waveforms = h
+        elif self._waveforms is not None:
+            logging.info("wiping waveform cache")
+            self._waveforms = None
         return h
 
     _FAVORED_APPROXIMANT = 'NRSur7dq4'
