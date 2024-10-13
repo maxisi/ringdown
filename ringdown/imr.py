@@ -498,6 +498,8 @@ class IMRResult(pd.DataFrame):
             self._waveforms = h
         return h
 
+    _FAVORED_APPROXIMANT = 'NRSur7dq4'
+
     @classmethod
     def from_pesummary(cls, path: str, group: str | None = None,
                        pesummary_read: bool = False,
@@ -533,6 +535,10 @@ class IMRResult(pd.DataFrame):
             pe = read(path)
             if group is None:
                 group = pe.labels[0]
+                for g in pe.labels:
+                    if cls._FAVORED_APPROXIMANT in g:
+                        group = g
+                        break
                 logging.warning(f"no group provided; using {group}")
             config = pe.config.get(group, {}).get('config', {})
             p = {i: data.PowerSpectrum(p).fill_low_frequencies().gate()
@@ -544,6 +550,10 @@ class IMRResult(pd.DataFrame):
             with h5py.File(path, 'r') as f:
                 if group is None:
                     group = list(f.keys())[0]
+                    for g in f.keys():
+                        if cls._FAVORED_APPROXIMANT in g:
+                            group = g
+                            break
                     logging.warning(f"no group provided; using {group}")
                 if group not in f:
                     raise ValueError(f"group {group} not found")
@@ -604,7 +614,8 @@ class IMRResult(pd.DataFrame):
 
     def get_patched_psds(self, f_min: float | None = 0,
                          f_max: float | None = None,
-                         max_dynamic_range: float = 7,
+                         max_dynamic_range: float =
+                         data.PowerSpectrum._DEF_MAX_DYN_RANGE,
                          **kws) -> dict[data.PowerSpectrum]:
         """Patch the PSDs to the minimum and maximum frequencies used in the
         analysis.
@@ -853,3 +864,22 @@ class IMRResult(pd.DataFrame):
                 'm_min': np.floor(max(m/2, m - frequency_scale_factor*(m - l)))
             })
         return opts
+
+    @classmethod
+    def construct(cls, input, **kws):
+        if isinstance(input, str):
+            try:
+                r = cls.from_pesummary(input, **kws)
+            except Exception as e:
+                logging.info(f"failed to read pesummary file: {e}")
+                r = cls.read(input, **kws)
+            path = os.path.abspath(input)
+            r.attrs['path'] = path
+        else:
+            r = cls(input, **kws)
+        return r
+
+    @property
+    def path(self):
+        """Path to the file from which the result was read."""
+        return self.attrs.get('path', '')
