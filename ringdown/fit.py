@@ -95,14 +95,19 @@ class Fit(object):
     sky : tuple
         tuple with source right ascension, declination and polarization angle.
     analysis_data : dict
-        dictionary of truncated analysis data that will be fed to Stan model.
-    model_data : dict
-        arguments passed to Stan model internally.
+        dictionary of truncated analysis data that will be fed to the sampler.
     info : dict
         information that can be used to reproduce a fit (e.g., data provenance,
         or conditioning options), stored as dictionary of dictionaries whose
         outer (inner) keys will be interpreted as sections (options) when
         creating a configuration file through :meth:`Fit.to_config`.
+    injections : dict
+        dictionary containing injected signals, indexed by detector name.
+    imr_result : Result, arviz.data.inference_data.InferenceData
+        reference IMR posterior, if one has been loaded.
+    auto_scale : bool
+        whether to automatically scale strain data when sampling using single
+        precision.
     """
 
     def __init__(self, modes=None, strain_scale='auto', **kws):
@@ -268,8 +273,8 @@ class Fit(object):
 
     def update_model(self, **kws):
         """Set or modify prior options or other model settings.  For example,
-        ``fit.update_model(A_scale=1e-21)`` sets the `A_scale` parameter to
-        `1e-21`.
+        ``fit.update_model(a_scale_max=1e-21)`` sets the `a_scale_max`
+        parameter to `1e-21`.
 
         Valid arguments for the selected model can be found in
         :attr:`Fit.valid_model_settings`.
@@ -1746,6 +1751,7 @@ class Fit(object):
                         prior_kws: dict | None = None,
                         **kws):
         """Create a new `Fit` object from an IMR result."""
+        settings = {k: v for k, v in locals().items() if k != 'cls'}
         if isinstance(imr_result, str):
             imr_result = imr.IMRResult.from_pesummary(imr_result)
         elif not isinstance(imr_result, imr.IMRResult):
@@ -1786,4 +1792,5 @@ class Fit(object):
                                                       **(prior_kws or {}))
             fit.update_model(**opts)
         fit.add_imr_result(imr_result)
+        fit.update_info('from-imr-result', **settings)
         return fit
