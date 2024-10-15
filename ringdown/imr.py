@@ -10,7 +10,7 @@ from . import waveforms
 from . import target
 from . import data
 from . indexing import ModeIndexList
-from .utils import get_tqdm, get_hdf5_value
+from .utils import get_tqdm, get_hdf5_value, get_bilby_dict
 import lal
 import multiprocessing as mp
 from lalsimulation import nrfits
@@ -47,6 +47,11 @@ class IMRResult(pd.DataFrame):
         self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
         self.__dict__['_psds'] = psds if psds is not None else {}
         self.__dict__['_waveforms'] = None
+
+    @property
+    def config(self):
+        """Configuration settings used in the analysis."""
+        return self.attrs.get('config', {})
 
     @property
     def reference_frequency(self) -> float | None:
@@ -106,12 +111,14 @@ class IMRResult(pd.DataFrame):
     @property
     def minimum_frequency(self):
         """Minimum frequency used in the analysis."""
-        return self.attrs.get('config', {}).get('minimum-frequency', {})
+        x = self.attrs.get('config', {}).get('minimum-frequency', {})
+        return {k: float(v) for k, v in get_bilby_dict(x).items()}
 
     @property
     def maximum_frequency(self):
         """Maximum frequency used in the analysis."""
-        return self.attrs.get('config', {}).get('maximum-frequency', {})
+        x = self.attrs.get('config', {}).get('maximum-frequency', {})
+        return {k: float(v) for k, v in get_bilby_dict(x).items()}
 
     @property
     def trigger_time(self):
@@ -562,8 +569,15 @@ class IMRResult(pd.DataFrame):
                     logging.warning(f"no group provided; using {group}")
                 if group not in f:
                     raise ValueError(f"group {group} not found")
-                c = {k: get_hdf5_value(v[()]) for k, v in
+                c = {k.replace('_', '-'): get_hdf5_value(v[()]) for k, v in
                      f[group].get('config_file', {}).get('config', {}).items()}
+                if 'meta_data' in f[group]:
+                    if 'other' in f[group]['meta_data']:
+                        if 'config_file' in f[group]['meta_data']['other']:
+                            x = f[group]['meta_data']['other']['config_file']
+                            c.update({k.replace('_', '-'):
+                                      get_hdf5_value(v[()])
+                                      for k, v in x.items()})
                 if 'psds' in f[group]:
                     p = {i: data.PowerSpectrum(p).fill_low_frequencies().gate()
                          for i, p in f[group]['psds'].items()}
@@ -581,9 +595,9 @@ class IMRResult(pd.DataFrame):
     def data_options(self):
         """Return a dictionary of options to obtain data used in the analysis.
         """
-        if 'config' not in self.attrs:
+        if not self.config:
             return {}
-        config = self.attrs['config']
+        config = self.config
         key_map = {'t0': 'trigger-time', 'ifos': 'detectors',
                    'seglen': 'duration'}
         options = {}
@@ -593,10 +607,30 @@ class IMRResult(pd.DataFrame):
             else:
                 logging.warning(f"missing {v} in config")
         options['sample_rate'] = self._REFERENCE_SRATE
-        # TODO: add ability to discover local data (i.e., if file cited in
-        # config exist locally, use them)
+
         options['channel'] = 'gwosc'
+        if self._data_dict and self._channel_dict:
+            path = {}
+            for ifo, p in self._data_dict.items():
+                if os.path.isfile(p):
+                    logging.info(f"using local data for {ifo}: {p}")
+                    path[ifo] = p
+                else:
+                    logging.info(f"missing local data for {ifo}: {p}")
+                    return options
+            options['path'] = path
+            options['channel'] = self._channel_dict
         return options
+
+    @property
+    def _data_dict(self):
+        """Return a dictionary of paths to data used in the analysis."""
+        return get_bilby_dict(self.config.get('data-dict', {}))
+
+    @property
+    def _channel_dict(self):
+        """Return the channel used for the analysis."""
+        return get_bilby_dict(self.config.get('channel-dict', {}))
 
     @property
     def condition_options(self):
@@ -876,8 +910,8 @@ class IMRResult(pd.DataFrame):
             try:
                 r = cls.from_pesummary(input, **kws)
             except Exception as e:
-                logging.info(f"failed to read pesummary file: {e}")
-                r = cls.read(input, **kws)
+                logging.warning(f"failed to read pesummary file: {e}")
+                r = pd.read_hdf(input, **kws)
             path = os.path.abspath(input)
             r.attrs['path'] = path
         else:

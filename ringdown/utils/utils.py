@@ -47,8 +47,10 @@ def try_parse(x):
 
 def get_hdf5_value(x):
     """Attempt to parse a string as a number, dict, or list."""
-    while isinstance(x, np.ndarray) and len(x) > 0:
+    while isinstance(x, np.ndarray) and len(x) == 1:
         x = x[0]
+    if isinstance(x, np.ndarray) and len(x) > 1:
+        return [get_hdf5_value(i) for i in x]
     if isinstance(x, (bytes, np.bytes_)):
         return try_parse(x.decode('utf-8'))
     else:
@@ -232,3 +234,14 @@ class MultiIndexCollection(object):
                 idx = (idx,)
             _new_index.append(idx)
         self._index = _new_index
+
+
+def get_bilby_dict(d):
+    """Parse bilby-style data dict string.
+    """
+    if isinstance(d, str):
+        chars_to_remove = "'{}"
+        translation_table = str.maketrans('', '', chars_to_remove)
+        d = {k.translate(translation_table): v.translate(translation_table)
+             for k, v in [i.split(':') for i in d.split(',')]}
+    return d
