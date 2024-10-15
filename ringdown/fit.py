@@ -432,14 +432,19 @@ class Fit(object):
                 model_opts['mode_ordering'] = 'g'
 
         # create fit object
-        fit = cls(**model_opts)
+        if config.get('imr', {}).get('initialize_fit', False):
+            imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
+                   if k != 'initialize_fit'}
+            fit = cls.from_imr_result(**imr, **model_opts)
+        else:
+            fit = cls(**model_opts)
 
         # load reference imr result if requested
-        if config.has_section('imr'):
-            imr_opts = {k: utils.try_parse(v)
-                        for k, v in config['imr'].items()}
-            if imr_opts.get('path'):
-                fit.add_imr_result(**imr_opts)
+        if config.has_section('imr') and not fit.imr_result:
+            imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
+                   if k != 'initialize_fit'}
+            if imr.get('path'):
+                fit.add_imr_result(**imr)
             else:
                 logging.warning("no path to IMR result provided; ignoring "
                                 " IMR section in config")
@@ -1668,11 +1673,12 @@ class Fit(object):
     def add_imr_result(self,
                        imr_result: pd.DataFrame | dict | np.ndarray,
                        approximant: str | None = None,
-                       reference_frequency: float | None = None):
+                       reference_frequency: float | None = None,
+                       **kws):
         """Add reference inspiral-merger-ringdown (IMR) result to fit."""
         settings = {k: v for k, v in locals().items() if k != 'self'}
 
-        self.imr_result = imr.IMRResult.construct(imr_result)
+        self.imr_result = imr.IMRResult.construct(imr_result, **kws)
         if approximant is not None:
             self.imr_result.set_approximant(approximant)
         if reference_frequency is not None:
