@@ -432,7 +432,7 @@ class Fit(object):
                 model_opts['mode_ordering'] = 'g'
 
         # create fit object
-        if config.get('imr', {}).get('initialize_fit', False):
+        if config.has_option('imr', 'initialize_fit'):
             imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
                    if k != 'initialize_fit'}
             fit = cls.from_imr_result(**imr, **model_opts)
