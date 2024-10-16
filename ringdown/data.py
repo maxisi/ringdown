@@ -667,7 +667,7 @@ class PowerSpectrum(FrequencySeries):
     _meta = ['ifo', 'attrs']
 
     def __init__(self, *args, delta_f=None, ifo=None, attrs=None,
-                 complete_power_of_two=True, **kwargs):
+                 fill_power_of_two=True, **kwargs):
         """Initialize power spectral density.
 
         Arguments
@@ -685,6 +685,12 @@ class PowerSpectrum(FrequencySeries):
         if ifo is not None:
             ifo = ifo.upper()
         kwargs['name'] = kwargs.get('name', ifo)
+        if len(args) == 1 and np.ndim(args[0]) == 2:
+            if 'index' not in kwargs:
+                # interpret input as (freq, psd)
+                a = np.array(args[0])
+                kwargs['index'] = a[:, 0]
+                args = [a[:, 1]]
         super().__init__(*args, **kwargs)
         if delta_f is not None:
             self.index = np.arange(len(self))*delta_f
@@ -692,20 +698,55 @@ class PowerSpectrum(FrequencySeries):
             args = [None]
         self.ifo = ifo or getattr(args[0], 'ifo', None)
         self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
-        if complete_power_of_two:
+        x = self.index[-1]
+        if fill_power_of_two and not self.empty and not utils.isp2(x):
             logging.info("completing power spectrum to next power of two")
-            fmax = self.freq[-1]
-            new_fmax = utils.np2(fmax)
-            if fmax % 2 and np.isclose(new_fmax - fmax, self.delta_f):
-                self[new_fmax] = self.iloc[-1]
+            self.fill_power_of_two()
+        self.sort_index(inplace=True, ascending=True)
 
     @property
     def _constructor(self):
         return PowerSpectrum
 
-    def complete_low_frequencies(self, f_min: float = 0.,
-                                 fill_value: float | None = None,
-                                 **kws) -> 'PowerSpectrum':
+    _DEF_MAX_DYN_RANGE = 10
+
+    def gate(self, max_dynamic_range=_DEF_MAX_DYN_RANGE, inplace=False):
+        """Gate PSD to avoid numerical issues.
+
+        Arguments
+        ---------
+        max_dynamic_range : float
+            maximum dynamic range in decades to allow in the PSD.
+
+        Returns
+        -------
+        psd : PowerSpectrum
+            gated power spectrum.
+        """
+        log_psd = np.log10(self)
+        min_log_psd = log_psd.min()
+        max_log_psd = max_dynamic_range + min_log_psd
+        if inplace:
+            self.iloc[log_psd > max_log_psd] = 10**max_log_psd
+        else:
+            p = self.copy()
+            p.iloc[log_psd > max_log_psd] = 10**max_log_psd
+            return p
+
+    def fill_power_of_two(self) -> None:
+        """Ensure that the power spectrum is complete up to the next power of
+        two frequency.
+        """
+        if self.empty:
+            return self
+        fmax = self.freq[-1]
+        new_fmax = utils.np2(fmax)
+        if fmax % 2 and np.isclose(new_fmax - fmax, self.delta_f):
+            self[new_fmax] = self.iloc[-1]
+
+    def fill_low_frequencies(self, f_min: float = 0.,
+                             fill_value: float | None = None,
+                             **kws) -> 'PowerSpectrum':
         """Complete low frequencies in power spectrum, extending all the
         way down to `f_min`, which defaults to 0. If `fill_value` is not
         provided, it will be set to 10 times the maximum PSD value.
@@ -731,7 +772,7 @@ class PowerSpectrum(FrequencySeries):
         psd : PowerSpectrum
             power spectrum with low frequencies completed.
         """
-        if f_min > self.freq[0]:
+        if f_min >= self.freq[0]:
             logging.info("no need to complete low PSD frequencies")
             return self
 
@@ -1340,12 +1381,12 @@ class StrainStack(np.ndarray):
         matching_axes = [i for i, n in enumerate(h.shape) if n == ntime]
         if len(matching_axes) == 0:
             raise ValueError("No matching time axis found:"
-                             f"strain shape {h.shape}, acfs shape "
-                             f"{np.dim(cholesky)}")
+                             f"strain shape {h.shape}, cholesky shape "
+                             f"{np.shape(cholesky)}")
         elif len(matching_axes) > 1:
             raise ValueError("Multiple matching time axes found:"
-                             f"strain shape {h.shape}, acfs shape "
-                             f"{np.dim(cholesky)}")
+                             f"strain shape {h.shape}, cholesky shape "
+                             f"{np.shape(cholesky)}")
         return matching_axes[0]
 
     @staticmethod
@@ -1354,12 +1395,12 @@ class StrainStack(np.ndarray):
         matching_axes = [i for i, n in enumerate(h.shape) if n == nifo]
         if len(matching_axes) == 0:
             raise ValueError("No matching detector axis found:"
-                             f"strain shape {h.shape}, acfs shape "
-                             f"{np.dim(cholesky)}")
+                             f"strain shape {h.shape}, cholesky shape "
+                             f"{np.shape(cholesky)}")
         elif len(matching_axes) > 1:
             raise ValueError("Multiple matching detector axes found:"
-                             f"strain shape {h.shape}, acfs shape "
-                             f"{np.dim(cholesky)}")
+                             f"strain shape {h.shape}, cholesky shape "
+                             f"{np.shape(cholesky)}")
         return matching_axes[0]
 
     def whiten(self, cholesky: list | np.ndarray | dict,

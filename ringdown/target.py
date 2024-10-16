@@ -34,6 +34,8 @@ class Target(ABC):
     dictionary or keyword arguments.
     """
 
+    duration: float
+
     def as_dict(self) -> dict:
         return asdict(self)
 
@@ -64,6 +66,10 @@ class Target(ABC):
     @property
     def has_sky(self) -> bool:
         return self.sky[0] is not None
+
+    @property
+    def settings(self) -> dict:
+        return self.as_dict()
 
     @property
     def is_set(self) -> bool:
@@ -124,6 +130,7 @@ class SkyTarget(Target):
     ra: float | None = None
     dec: float | None = None
     psi: float | None = None
+    duration: float = 0
 
     def __post_init__(self):
         # validate input: floats or None
@@ -197,7 +204,8 @@ class SkyTarget(Target):
 
     @classmethod
     def construct(cls, t0: float, ra: float, dec: float, psi: float,
-                  reference_ifo: str | None = None, **kws):
+                  reference_ifo: str | None = None, duration: float = 0.,
+                  **kws):
         """Create a sky location from a reference time, either a specific
         detector or geocenter.
 
@@ -213,6 +221,8 @@ class SkyTarget(Target):
             source polarization angle.
         reference_ifo : str, None
             detector name, or `None` for geocenter (default `None`)
+        duration : float
+            analysis duration (default 0.)
 
         Returns
         -------
@@ -228,7 +238,14 @@ class SkyTarget(Target):
             tgeo = t0 - dt
         if kws:
             logging.info(f"unused keyword arguments: {kws}")
-        return cls(lal.LIGOTimeGPS(tgeo), ra, dec, psi)
+        return cls(lal.LIGOTimeGPS(tgeo), ra, dec, psi, duration)
+
+    @property
+    def settings(self) -> dict:
+        """Return a dictionary of settings for the target."""
+        s = {k: v for k, v in self.as_dict().items() if 'time' not in k}
+        s['t0'] = self.t0
+        return s
 
 
 @dataclass
@@ -238,6 +255,7 @@ class DetectorTarget(Target):
     """
     detector_times: dict | None = None
     antenna_patterns: dict | None = None
+    duration: float = 0
 
     def __post_init__(self):
 
@@ -316,7 +334,8 @@ class DetectorTarget(Target):
     @classmethod
     def construct(cls, detector_times: dict | float | list,
                   antenna_patterns: dict | list[tuple[float]] |
-                  tuple[float, float], ifos: list | str = None):
+                  tuple[float, float], ifos: list | str = None,
+                  duration: float = 0.):
         """Create a target object from a set of detector times and antenna
         patterns.
 
@@ -385,7 +404,7 @@ class DetectorTarget(Target):
                                  "ifos, or a single tuple for a single ifo")
         elif ifos:
             logging.info("ignoring ifos argument")
-        return cls(detector_times, antenna_patterns)
+        return cls(detector_times, antenna_patterns, duration)
 
 
 class TargetCollection(utils.MultiIndexCollection):
@@ -551,6 +570,35 @@ class TargetCollection(utils.MultiIndexCollection):
             if all([k in config[t0_sect] for k in opt_names]):
                 raise ValueError(
                     "incompatible T0 options: {}".format(opt_names))
+
+        # Check if we are to get reference values from IMR result
+        if config.getboolean(t0_sect, 'reference_imr', fallback=False):
+            if not config.has_section('imr'):
+                raise ValueError("IMR reference requested but no IMR section "
+                                 "in config file")
+            # get the IMR result
+            from .imr import IMRResult
+            imr = {k: utils.try_parse(v) for k, v in config['imr'].items()}
+            imr_result = IMRResult.construct(**imr)
+            imr_target = imr_result.get_best_peak_target().as_dict()
+            # set the reference mass and time
+            if MREF_KEY in config[t0_sect]:
+                if config[t0_sect][MREF_KEY].lower() == 'auto':
+                    logging.info("using IMR result for reference mass")
+                else:
+                    logging.warning("overwriting reference mass")
+                config[t0_sect][MREF_KEY] = \
+                    imr_result.remnant_mass_scale_reference
+            else:
+                logging.warning("no reference mass requested")
+
+            if config.get(t0_sect, T0_KEYS['ref'], fallback='auto') == 'auto':
+                logging.info("using IMR result for reference time")
+            else:
+                logging.warning("overwriting reference time")
+            config[t0_sect][T0_KEYS['ref']] = imr_target.pop('t0')
+
+            config[sky_sect].update(imr_target)
 
         # Look for a reference mass, to be used when stepping in time
         m_ref = config.getfloat(t0_sect, MREF_KEY, fallback=None)

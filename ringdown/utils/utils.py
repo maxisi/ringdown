@@ -45,12 +45,33 @@ def try_parse(x):
                 return x
 
 
+def get_hdf5_value(x):
+    """Attempt to parse a string as a number, dict, or list."""
+    while isinstance(x, np.ndarray) and len(x) == 1:
+        x = x[0]
+    if isinstance(x, np.ndarray) and len(x) > 1:
+        return [get_hdf5_value(i) for i in x]
+    if isinstance(x, (bytes, np.bytes_)):
+        return try_parse(x.decode('utf-8'))
+    else:
+        return try_parse(x)
+
+
 def np2(x):
     """Returns the next power of two as big as or larger than x."""
     p = 1
     while p < x:
         p = p << 1
     return p
+
+
+def isp2(x):
+    """Returns True if x is a power of two."""
+    is_pow2 = x == int(x)
+    if is_pow2:
+        x = int(x)
+        is_pow2 &= x & (x - 1) == 0
+    return is_pow2
 
 
 def get_dict_from_pattern(path, ifos=None, abspath=False):
@@ -213,3 +234,14 @@ class MultiIndexCollection(object):
                 idx = (idx,)
             _new_index.append(idx)
         self._index = _new_index
+
+
+def get_bilby_dict(d):
+    """Parse bilby-style data dict string.
+    """
+    if isinstance(d, str):
+        chars_to_remove = "'{}"
+        translation_table = str.maketrans('', '', chars_to_remove)
+        d = {k.translate(translation_table): v.translate(translation_table)
+             for k, v in [i.split(':') for i in d.split(',')]}
+    return d
