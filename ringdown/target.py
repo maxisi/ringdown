@@ -238,7 +238,7 @@ class SkyTarget(Target):
             tgeo = t0 - dt
         if kws:
             logging.info(f"unused keyword arguments: {kws}")
-        return cls(lal.LIGOTimeGPS(tgeo), ra, dec, psi)
+        return cls(lal.LIGOTimeGPS(tgeo), ra, dec, psi, duration)
 
     @property
     def settings(self) -> dict:
