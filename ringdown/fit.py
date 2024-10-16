@@ -1451,7 +1451,6 @@ class Fit(object):
                    duration: float | None = None,
                    reference_ifo: str | None = None,
                    antenna_patterns: dict | None = None,
-                   n_analyze: int | None = None,
                    target: Target | None = None):
         """ Establish truncation target, stored to `self.target`.
 
@@ -1518,23 +1517,14 @@ class Fit(object):
         if self.result is not None:
             raise ValueError("cannot set target with preexisting results")
 
-        if n_analyze:
-            if duration:
-                logging.warning("ignoring duration in favor of n_analyze")
-                duration = None
-            self._n_analyze = int(n_analyze)
-        elif not duration:
-            logging.warning("no duration or n_analyze specified")
-        else:
-            self._duration = float(duration)
-
         if isinstance(target, Target):
             self.target = target
             settings.update(self.target.settings)
             del settings['target']
         else:
             self.target = Target.construct(t0, ra, dec, psi, reference_ifo,
-                                           antenna_patterns, ifos=self.ifos)
+                                           antenna_patterns, ifos=self.ifos,
+                                           duration=duration)
 
         # make sure that start times are encompassed by data (if data exist)
         for i, data in self.data.items():
@@ -1553,7 +1543,7 @@ class Fit(object):
         (:attr:`n_analyze`) and :math:`\\Delta t` is the time
         sample spacing.
         """
-        if self._n_analyze and not self._duration:
+        if self._n_analyze and not self.target.duration:
             if self.data:
                 return self._n_analyze*self.data[self.ifos[0]].delta_t
             else:
@@ -1561,7 +1551,7 @@ class Fit(object):
                                 "(n_analyze = {})".format(self._n_analyze))
                 return None
         else:
-            return self._duration
+            return self.target.duration
 
     @property
     def start_indices(self) -> dict:

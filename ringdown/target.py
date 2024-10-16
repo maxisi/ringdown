@@ -34,6 +34,8 @@ class Target(ABC):
     dictionary or keyword arguments.
     """
 
+    duration: float
+
     def as_dict(self) -> dict:
         return asdict(self)
 
@@ -128,6 +130,7 @@ class SkyTarget(Target):
     ra: float | None = None
     dec: float | None = None
     psi: float | None = None
+    duration: float = 0
 
     def __post_init__(self):
         # validate input: floats or None
@@ -201,7 +204,8 @@ class SkyTarget(Target):
 
     @classmethod
     def construct(cls, t0: float, ra: float, dec: float, psi: float,
-                  reference_ifo: str | None = None, **kws):
+                  reference_ifo: str | None = None, duration: float = 0.,
+                  **kws):
         """Create a sky location from a reference time, either a specific
         detector or geocenter.
 
@@ -217,6 +221,8 @@ class SkyTarget(Target):
             source polarization angle.
         reference_ifo : str, None
             detector name, or `None` for geocenter (default `None`)
+        duration : float
+            analysis duration (default 0.)
 
         Returns
         -------
@@ -249,6 +255,7 @@ class DetectorTarget(Target):
     """
     detector_times: dict | None = None
     antenna_patterns: dict | None = None
+    duration: float = 0
 
     def __post_init__(self):
 
@@ -327,7 +334,8 @@ class DetectorTarget(Target):
     @classmethod
     def construct(cls, detector_times: dict | float | list,
                   antenna_patterns: dict | list[tuple[float]] |
-                  tuple[float, float], ifos: list | str = None):
+                  tuple[float, float], ifos: list | str = None,
+                  duration: float = 0.):
         """Create a target object from a set of detector times and antenna
         patterns.
 
@@ -396,7 +404,7 @@ class DetectorTarget(Target):
                                  "ifos, or a single tuple for a single ifo")
         elif ifos:
             logging.info("ignoring ifos argument")
-        return cls(detector_times, antenna_patterns)
+        return cls(detector_times, antenna_patterns, duration)
 
 
 class TargetCollection(utils.MultiIndexCollection):
