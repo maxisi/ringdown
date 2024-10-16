@@ -1807,7 +1807,7 @@ class Fit(object):
             if duration == 'auto':
                 duration = imr_result.estimate_ringdown_duration(cache=True)
             if advance_target_by_mass:
-                m = reference_mass or np.median(imr_result.remnant_mass_scale)
+                m = reference_mass or imr_result.remnant_mass_scale_reference
                 dt = advance_target_by_mass * m * T_MSUN
                 logging.info(f"advancing target time by {dt} s "
                              f"[{advance_target_by_mass} * {m} Msun]")

@@ -147,6 +147,11 @@ class IMRResult(pd.DataFrame):
             return self['mass_1'] + self['mass_2']
         else:
             raise KeyError("no mass scale found")
+    
+    @property
+    def remnant_mass_scale_reference(self) -> float:
+        """Get the reference remnant mass scale."""
+        return np.median(self.remnant_mass_scale)
 
     def get_kerr_frequencies(self, modes, **kws):
         """Get the Kerr QNM frequencies corresponding to the remnant mass and
@@ -750,11 +755,9 @@ class IMRResult(pd.DataFrame):
         """
         acfs = acfs or self.get_acfs(**(acf_kws or {}))
 
-        m = self.remnant_mass_scale
-
         if guess_start is None:
             # estimate based on mass scale
-            duration = 50 * np.median(m) * qnms.T_MSUN
+            duration = 50 * self.remnant_mass_scale_reference * qnms.T_MSUN
         else:
             duration = guess_start
 
