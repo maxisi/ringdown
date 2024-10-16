@@ -119,7 +119,7 @@ class Fit(object):
         self.target = None
         self.result = None
         self.prior = None
-        self.imr_result = None
+        self.imr_result: imr.IMRResult = imr.IMRResult()
         if imr_result is not None:
             self.add_imr_result(imr_result)
         self._n_analyze = None
