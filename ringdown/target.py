@@ -563,6 +563,35 @@ class TargetCollection(utils.MultiIndexCollection):
                 raise ValueError(
                     "incompatible T0 options: {}".format(opt_names))
 
+        # Check if we are to get reference values from IMR result
+        if config.getboolean(t0_sect, 'reference_imr', fallback=False):
+            if not config.has_section('imr'):
+                raise ValueError("IMR reference requested but no IMR section "
+                                 "in config file")
+            # get the IMR result
+            from .imr import IMRResult
+            imr = {k: utils.try_parse(v) for k, v in config['imr'].items()}
+            imr_result = IMRResult.construct(**imr)
+            imr_target = imr_result.get_best_peak_target().as_dict()
+            # set the reference mass and time
+            if MREF_KEY in config[t0_sect]:
+                if config[t0_sect][MREF_KEY].lower() == 'auto':
+                    logging.info("using IMR result for reference mass")
+                else:
+                    logging.warning("overwriting reference mass")
+                config[t0_sect][MREF_KEY] = \
+                    imr_result.remnant_mass_scale_reference
+            else:
+                logging.warning("no reference mass requested")
+
+            if config.get(t0_sect, T0_KEYS['ref'], fallback='auto') == 'auto':
+                logging.info("using IMR result for reference time")
+            else:
+                logging.warning("overwriting reference time")
+            config[t0_sect][T0_KEYS['ref']] = imr_target.pop('t0')
+
+            config[sky_sect].update(imr_target)
+
         # Look for a reference mass, to be used when stepping in time
         m_ref = config.getfloat(t0_sect, MREF_KEY, fallback=None)
         if m_ref:
