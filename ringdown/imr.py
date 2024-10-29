@@ -112,12 +112,16 @@ class IMRResult(pd.DataFrame):
     def minimum_frequency(self):
         """Minimum frequency used in the analysis."""
         x = self.attrs.get('config', {}).get('minimum-frequency', {})
+        if isinstance(x, float):
+            return {k: x for k in self.ifos}
         return {k: float(v) for k, v in get_bilby_dict(x).items()}
 
     @property
     def maximum_frequency(self):
         """Maximum frequency used in the analysis."""
         x = self.attrs.get('config', {}).get('maximum-frequency', {})
+        if isinstance(x, float):
+            return {k: x for k in self.ifos}
         return {k: float(v) for k, v in get_bilby_dict(x).items()}
 
     @property
@@ -407,11 +411,13 @@ class IMRResult(pd.DataFrame):
         iloc = (peak_times[best_ifo] - tp).idxmin()
         return peak_times.loc[iloc], best_ifo
 
-    def get_best_peak_target(self, **kws) -> target.SkyTarget:
+    def get_best_peak_target(self, duration=0, **kws) -> target.SkyTarget:
         """Get the target corresponding to the best-measured peak time.
 
         Arguments
         ---------
+        duration : float
+            Duration of the analysis in seconds (optional).
         kws : dict
             Additional keyword arguments to pass to the peak
             time calculation.
@@ -425,7 +431,8 @@ class IMRResult(pd.DataFrame):
         sample = self.loc[peak_times.name]
         skyloc = {k: sample[k] for k in ['ra', 'dec', 'psi']}
         t0 = peak_times[ref_ifo]
-        return target.Target.construct(t0, reference_ifo=ref_ifo, **skyloc)
+        return target.Target.construct(t0, reference_ifo=ref_ifo,
+                                       duration=duration, **skyloc)
 
     def get_waveforms(self, nsamp: int | None = None,
                       ifos: list | None = None,
@@ -753,7 +760,8 @@ class IMRResult(pd.DataFrame):
         duration : int
             Estimated duration of the analysis in seconds.
         """
-        acfs = acfs or self.get_acfs(**(acf_kws or {}))
+        if acfs is None:
+            acfs = self.get_acfs(**(acf_kws or {}))
 
         if guess_start is None:
             # estimate based on mass scale

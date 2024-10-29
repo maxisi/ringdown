@@ -866,6 +866,7 @@ class Fit(object):
         ms = cp.deepcopy(self.model_settings)
         if 'a_scale_max' in ms:
             ms['a_scale_max'] = ms['a_scale_max'] / self.strain_scale
+        logging.info('making model')
         model = make_model(self.modes.value, prior=prior, predictive=False,
                            store_h_det=False, store_h_det_mode=False, **ms)
         if return_model:
@@ -1668,7 +1669,10 @@ class Fit(object):
         """Add reference inspiral-merger-ringdown (IMR) result to fit."""
         settings = {k: v for k, v in locals().items() if k != 'self'}
 
-        self.imr_result = imr.IMRResult.construct(imr_result, **kws)
+        if isinstance(imr_result, imr.IMRResult):
+            self.imr_result = imr_result
+        else:
+            self.imr_result = imr.IMRResult.construct(imr_result, **kws)
         if approximant is not None:
             self.imr_result.set_approximant(approximant)
         if reference_frequency is not None:
@@ -1748,6 +1752,29 @@ class Fit(object):
         """
         wfs = self.get_imr_templates(ifos=self.ifos, **kws)
         return wfs.slice(self.start_indices, self.n_analyze)
+    
+    def compute_imr_snr(self, optimal=False, cumulative=False, network=False,
+                        **kws) -> dict:
+        """Compute SNR of IMR templates for each detector.
+
+        Arguments
+        ---------
+        **kws :
+            all keyword arguments passed to
+            :meth:`ringdown.Fit.get_imr_analysis_templates`.
+
+        Returns
+        -------
+        snrs : dict
+            dictionary of IMR SNRs for each detector.
+        """
+        wfs = self.get_imr_analysis_templates(**kws)
+        if optimal:
+            data = None
+        else:
+            data = self.analysis_data
+        return wfs.compute_snr(self.cholesky_factors, data=data,
+                               cumulative=cumulative, network=network)
 
     @property
     def delta_t(self) -> float:
@@ -1792,17 +1819,19 @@ class Fit(object):
             fit.load_data(**data_opts)
 
         if set_target:
-            peak_kws = peak_kws or {}
-            t = imr_result.get_best_peak_target(**peak_kws)
             if duration == 'auto':
                 duration = imr_result.estimate_ringdown_duration(cache=True)
+                logging.info(f"estimated duration: {duration}")
+            peak_kws = peak_kws or {}
+            t = imr_result.get_best_peak_target(**peak_kws, duration=duration)
             if advance_target_by_mass:
                 m = reference_mass or imr_result.remnant_mass_scale_reference
                 dt = advance_target_by_mass * m * T_MSUN
                 logging.info(f"advancing target time by {dt} s "
                              f"[{advance_target_by_mass} * {m} Msun]")
                 t.geocenter_time += dt
-            fit.set_target(target=t, duration=float(duration))
+            logging.info(f"setting target: {t}")
+            fit.set_target(target=t)
 
         if condition:
             fit.condition_data(**imr_result.condition_options)
