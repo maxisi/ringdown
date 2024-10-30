@@ -1551,8 +1551,10 @@ class Fit(object):
                 logging.warning("add data to compute duration "
                                 "(n_analyze = {})".format(self._n_analyze))
                 return None
-        else:
+        elif self.has_target:
             return self.target.duration
+        else:
+            return None
 
     @property
     def start_indices(self) -> dict:
@@ -1752,7 +1754,7 @@ class Fit(object):
         """
         wfs = self.get_imr_templates(ifos=self.ifos, **kws)
         return wfs.slice(self.start_indices, self.n_analyze)
-    
+
     def compute_imr_snr(self, optimal=False, cumulative=False, network=False,
                         **kws) -> dict:
         """Compute SNR of IMR templates for each detector.
@@ -1808,7 +1810,7 @@ class Fit(object):
                         peak_kws: dict | None = None,
                         acf_kws: dict | None = None,
                         prior_kws: dict | None = None,
-                        psds: dict | None = None, 
+                        psds: dict | None = None,
                         **kws):
         """Create a new `Fit` object from an IMR result."""
         fit = cls(imr_result=imr_result, **kws)
