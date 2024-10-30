@@ -77,7 +77,13 @@ class IMRResult(pd.DataFrame):
     def set_psds(self, psds: dict) -> None:
         """Set the PSDs used in the analysis."""
         for i, p in psds.items():
-            self.__dict__['_psds'][i] = data.PowerSpectrum(p)
+            if isinstance(p, str):
+                if os.path.isfile(p):
+                    p = np.loadtxt(p)
+                else:
+                    raise FileNotFoundError(f"PSD file not found: {p}")
+            p = data.PowerSpectrum(p).fill_low_frequencies().gate()
+            self.__dict__['_psds'][i] = p
 
     @property
     def approximant(self) -> str | None:

@@ -47,6 +47,8 @@ RUNTIME_MODEL_ARGS = ['modes', 'prior', 'predictive', 'store_h_det',
 DEF_RUN_KWS = dict(dense_mass=True, num_warmup=1000, num_samples=1000,
                    num_chains=4)
 
+IMR_CONFIG_SECTION = 'imr'
+
 
 class Fit(object):
     """ A ringdown fit. Contains all the information required to setup and run
@@ -401,7 +403,7 @@ class Fit(object):
         for new, old in legacy.items():
             for k in old:
                 if k in model_opts:
-                    warnings.warn(f"'{k}' depreacted, replacing with {new}")
+                    warnings.warn(f"'{k}' deprecated, replacing with {new}")
                     model_opts[new] = model_opts.pop(k)
 
         if 'perturb_f' in model_opts:
@@ -432,7 +434,7 @@ class Fit(object):
                 model_opts['mode_ordering'] = 'g'
 
         # create fit object
-        if config.has_option('imr', 'initialize_fit'):
+        if config.has_option(IMR_CONFIG_SECTION, 'initialize_fit'):
             imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
                    if k != 'initialize_fit'}
             fit = cls.from_imr_result(**imr, **model_opts)
@@ -1819,6 +1821,7 @@ class Fit(object):
         imr_result = fit.imr_result
 
         if load_data:
+            logging.info("loading data based on IMR result")
             data_opts = imr_result.data_options
             data_opts.update(**(data_kws or {}))
             fit.load_data(**data_opts)
@@ -1826,7 +1829,7 @@ class Fit(object):
         if set_target:
             if duration == 'auto':
                 duration = imr_result.estimate_ringdown_duration(cache=True)
-                logging.info(f"estimated duration: {duration}")
+                logging.info(f"estimated duration automatically: {duration}")
             peak_kws = peak_kws or {}
             t = imr_result.get_best_peak_target(**peak_kws, duration=duration)
             if advance_target_by_mass:
@@ -1839,9 +1842,11 @@ class Fit(object):
             fit.set_target(target=t)
 
         if condition:
+            logging.info("conditioning data based on IMR result")
             fit.condition_data(**imr_result.condition_options)
 
         if load_acfs:
+            logging.info("loading ACFs based on IMR result")
             fit.load_acfs(from_imr_result=True, **(acf_kws or {}))
             if not condition:
                 logging.warning("ACFs derived from IMR result but data "
@@ -1852,5 +1857,6 @@ class Fit(object):
                                                       cache=True,
                                                       **(prior_kws or {}))
             fit.update_model(**opts)
+            logging.info(f"updated model: {opts}")
 
         return fit
