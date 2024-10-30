@@ -414,7 +414,7 @@ class IMRResult(pd.DataFrame):
             tp = peak_times[best_ifo].median()
         else:
             raise ValueError(f'invalid average method: {average}')
-        iloc = (peak_times[best_ifo] - tp).idxmin()
+        iloc = (peak_times[best_ifo] - tp).abs().idxmin()
         return peak_times.loc[iloc], best_ifo
 
     def get_best_peak_target(self, duration=0, **kws) -> target.SkyTarget:
