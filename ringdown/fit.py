@@ -1808,9 +1808,12 @@ class Fit(object):
                         peak_kws: dict | None = None,
                         acf_kws: dict | None = None,
                         prior_kws: dict | None = None,
+                        psds: dict | None = None, 
                         **kws):
         """Create a new `Fit` object from an IMR result."""
         fit = cls(imr_result=imr_result, **kws)
+        if psds is not None:
+            fit.imr_result.set_psds(psds)
         imr_result = fit.imr_result
 
         if load_data:
