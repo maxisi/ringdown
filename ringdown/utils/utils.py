@@ -25,10 +25,24 @@ def get_tqdm(progress: bool = True):
     return tqdm
 
 
-def form_opt(x):
+def form_opt(x, key=None, **kws) -> str:
     """Utility to format options in config.
+
+    Parameters
+    ----------
+    x : str, list, or dict
+        The option to format.
+    kws : dict
+        Additional keyword arguments to pass to np.array2string.
+
+    Returns
+    -------
+    str
+        The formatted option.
     """
-    return np.array2string(np.array(x), separator=', ')
+    if key == 't0' and 'precision' not in kws:
+        kws['precision'] = 16
+    return np.array2string(np.array(x), separator=', ', **kws)
 
 
 def try_parse(x):

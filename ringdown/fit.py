@@ -603,14 +603,15 @@ class Fit(object):
         config['model'] = {}
         config['model']['modes'] = str(self.modes)
         # prior options
-        config['model'].update({k: utils.form_opt(v) for k, v
+        config['model'].update({k: utils.form_opt(v, key=k) for k, v
                                 in self.model_settings.items()})
         # rest of options require data, so exit of none were added
         if not self.ifos:
             return config
         # data, injection, conditioning and acf options
         for sec, opts in self.info.items():
-            config[sec] = {k: utils.form_opt(v) for k, v in opts.items()}
+            config[sec] = {k: utils.form_opt(v, key=k)
+                           for k, v in opts.items()}
         config['target'] = {k: str(v) for k, v in self.info['target'].items()}
         # write file to disk if requested
         if path is not None:
@@ -1533,7 +1534,8 @@ class Fit(object):
         for i, data in self.data.items():
             t0_i = self.start_times[i]
             if t0_i < data.time[0] or t0_i > data.time[-1]:
-                raise ValueError("{} start time not in data".format(i))
+                raise ValueError(f"{i} start time ({t0_i}) not in data "
+                                 f"[{data.time[0]}, {data.time[-1]}]")
         # record state
         self.update_info('target', **settings)
 
