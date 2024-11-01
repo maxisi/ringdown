@@ -157,7 +157,7 @@ class IMRResult(pd.DataFrame):
             return self['mass_1'] + self['mass_2']
         else:
             raise KeyError("no mass scale found")
-    
+
     @property
     def remnant_mass_scale_reference(self) -> float:
         """Get the reference remnant mass scale."""
