@@ -69,22 +69,44 @@ class KerrMode(object):
         return self._cache[i]
 
     @staticmethod
-    def compute_coefficients(mode, n_chi=4096, **kws):
+    def compute_coefficients(mode, **kws):
         p, s, l, m, n = mode
-        # chis = np.linspace(0, 1, n_chi, endpoint=False)
-        # logchis = np.log1p(-chis)
-        logchis = np.linspace(0, -10, n_chi)
-        chis = 1 - np.exp(logchis)
-        M = np.column_stack((chis, np.ones_like(chis), logchis, logchis**2,
-                             logchis**3, logchis**4))
-
+        sgn = p if m == 0 else p * np.sign(m)
         q = qnm.modes_cache(s, l, p*abs(m), n)
-        sgn = 1 if m == 0 else np.sign(m)
-        f = sgn*np.array([q(c)[0].real for c in chis])/(2*np.pi)
-        g = np.array([abs(q(c)[0].imag) for c in chis])
-
+        
+        # Only use spins pre-computed by qnm package
+        chis = np.array(q.a)
+        log_1m_chis = np.log1p(-chis)
+        log_1m_chis_2 = log_1m_chis*log_1m_chis
+        log_1m_chis_3 = log_1m_chis_2*log_1m_chis
+        log_1m_chis_4 = log_1m_chis_2*log_1m_chis_2
+        log_sqrt_1m_chis2 = 0.5*np.log1p(-chis**2)
+        log_sqrt_1m_chis2_2 = log_sqrt_1m_chis2*log_sqrt_1m_chis2
+        log_sqrt_1m_chis2_3 = log_sqrt_1m_chis2_2*log_sqrt_1m_chis2
+        log_sqrt_1m_chis2_4 = log_sqrt_1m_chis2_2*log_sqrt_1m_chis2_2
+        log_sqrt_1m_chis2_5 = log_sqrt_1m_chis2_3*log_sqrt_1m_chis2_2
+        log_sqrt_1m_chis2_6 = log_sqrt_1m_chis2_3*log_sqrt_1m_chis2_3
+        
+        M = np.column_stack((
+            np.ones_like(log_1m_chis),
+            log_1m_chis,
+            log_1m_chis_2,
+            log_1m_chis_3,
+            log_1m_chis_4,
+            log_sqrt_1m_chis2,
+            log_sqrt_1m_chis2_2,
+            log_sqrt_1m_chis2_3,
+            log_sqrt_1m_chis2_4,
+            log_sqrt_1m_chis2_5,
+            log_sqrt_1m_chis2_6
+        ))
+        
+        f = sgn*np.array([q(chi)[0].real for chi in chis])/(2*np.pi)
+        g = np.array([abs(q(chi)[0].imag) for chi in chis])
+        
         coeff_f = np.linalg.lstsq(M, f, rcond=None, **kws)[0]
         coeff_g = np.linalg.lstsq(M, g, rcond=None, **kws)[0]
+        
         return coeff_f, coeff_g
 
     def __call__(self, *args, **kwargs):
@@ -93,10 +115,32 @@ class KerrMode(object):
 
     def fgamma(self, chi, m_msun=None, approx=False):
         if approx:
-            logchi = np.log1p(-chi)
-            c = (chi, np.ones_like(chi), logchi,
-                 logchi**2, logchi**3, logchi**4)
-            f, g = [np.dot(coeff, c) for coeff in self.coefficients]
+            log_1m_chi = np.log1p(-chi)
+            log_1m_chi_2 = log_1m_chi*log_1m_chi
+            log_1m_chi_3 = log_1m_chi_2*log_1m_chi
+            log_1m_chi_4 = log_1m_chi_2*log_1m_chi_2
+            log_sqrt_1m_chi2 = 0.5*np.log1p(-chi**2)
+            log_sqrt_1m_chi2_2 = log_sqrt_1m_chi2*log_sqrt_1m_chi2
+            log_sqrt_1m_chi2_3 = log_sqrt_1m_chi2_2*log_sqrt_1m_chi2
+            log_sqrt_1m_chi2_4 = log_sqrt_1m_chi2_2*log_sqrt_1m_chi2_2
+            log_sqrt_1m_chi2_5 = log_sqrt_1m_chi2_3*log_sqrt_1m_chi2_2
+            log_sqrt_1m_chi2_6 = log_sqrt_1m_chi2_3*log_sqrt_1m_chi2_3
+            
+            v = np.stack([
+                1.,
+                log_1m_chi,
+                log_1m_chi_2,
+                log_1m_chi_3,
+                log_1m_chi_4,
+                log_sqrt_1m_chi2,
+                log_sqrt_1m_chi2_2,
+                log_sqrt_1m_chi2_3,
+                log_sqrt_1m_chi2_4,
+                log_sqrt_1m_chi2_5,
+                log_sqrt_1m_chi2_6
+            ])
+
+            f, g = [np.dot(coeff, v) for coeff in self.coefficients]
         else:
             p, s, l, m, n = self.index
             q = qnm.modes_cache(s, l, p*abs(m), n)
