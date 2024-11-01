@@ -175,12 +175,31 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, aligned=False,
 
 
 def chi_factors(chi, coeffs):
-    log1mc = jnp.log1p(-chi)
-    log1mc2 = log1mc*log1mc
-    log1mc3 = log1mc2*log1mc
-    log1mc4 = log1mc2*log1mc2
-    v = jnp.stack([chi, jnp.ones_like(chi), log1mc, log1mc2,
-                   log1mc3, log1mc4])
+    log_1m_chi = jnp.log1p(-chi)
+    log_1m_chi_2 = log_1m_chi*log_1m_chi
+    log_1m_chi_3 = log_1m_chi_2*log_1m_chi
+    log_1m_chi_4 = log_1m_chi_2*log_1m_chi_2
+    log_sqrt_1m_chi2 = 0.5*jnp.log1p(-chi**2)
+    log_sqrt_1m_chi2_2 = log_sqrt_1m_chi2*log_sqrt_1m_chi2
+    log_sqrt_1m_chi2_3 = log_sqrt_1m_chi2_2*log_sqrt_1m_chi2
+    log_sqrt_1m_chi2_4 = log_sqrt_1m_chi2_2*log_sqrt_1m_chi2_2
+    log_sqrt_1m_chi2_5 = log_sqrt_1m_chi2_3*log_sqrt_1m_chi2_2
+    log_sqrt_1m_chi2_6 = log_sqrt_1m_chi2_3*log_sqrt_1m_chi2_3
+        
+    v = jnp.stack([
+        1.,
+        log_1m_chi,
+        log_1m_chi_2,
+        log_1m_chi_3,
+        log_1m_chi_4,
+        log_sqrt_1m_chi2,
+        log_sqrt_1m_chi2_2,
+        log_sqrt_1m_chi2_3,
+        log_sqrt_1m_chi2_4,
+        log_sqrt_1m_chi2_5,
+        log_sqrt_1m_chi2_6
+    ])
+    
     return jnp.dot(coeffs, v)
 
 
