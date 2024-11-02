@@ -26,6 +26,7 @@ from .model import make_model, get_arviz, MODEL_DIMENSIONS
 from . import indexing
 from . import waveforms
 from . import imr
+from .qnms import T_MSUN
 import pandas as pd
 
 # TODO: support different samplers?
@@ -45,6 +46,8 @@ RUNTIME_MODEL_ARGS = ['modes', 'prior', 'predictive', 'store_h_det',
 
 DEF_RUN_KWS = dict(dense_mass=True, num_warmup=1000, num_samples=1000,
                    num_chains=4)
+
+IMR_CONFIG_SECTION = 'imr'
 
 
 class Fit(object):
@@ -94,17 +97,23 @@ class Fit(object):
     sky : tuple
         tuple with source right ascension, declination and polarization angle.
     analysis_data : dict
-        dictionary of truncated analysis data that will be fed to Stan model.
-    model_data : dict
-        arguments passed to Stan model internally.
+        dictionary of truncated analysis data that will be fed to the sampler.
     info : dict
         information that can be used to reproduce a fit (e.g., data provenance,
         or conditioning options), stored as dictionary of dictionaries whose
         outer (inner) keys will be interpreted as sections (options) when
         creating a configuration file through :meth:`Fit.to_config`.
+    injections : dict
+        dictionary containing injected signals, indexed by detector name.
+    imr_result : Result, arviz.data.inference_data.InferenceData
+        reference IMR posterior, if one has been loaded.
+    auto_scale : bool
+        whether to automatically scale strain data when sampling using single
+        precision.
     """
 
-    def __init__(self, modes=None, strain_scale='auto', **kws):
+    def __init__(self, modes=None, strain_scale='auto', imr_result=None,
+                 **kws):
         self.info = {}
         self.data = {}
         self.injections = {}
@@ -112,7 +121,9 @@ class Fit(object):
         self.target = None
         self.result = None
         self.prior = None
-        self.imr_result = None
+        self.imr_result: imr.IMRResult = imr.IMRResult()
+        if imr_result is not None:
+            self.add_imr_result(imr_result)
         self._n_analyze = None
         self._duration = None
         self._raw_data = None
@@ -267,8 +278,8 @@ class Fit(object):
 
     def update_model(self, **kws):
         """Set or modify prior options or other model settings.  For example,
-        ``fit.update_model(A_scale=1e-21)`` sets the `A_scale` parameter to
-        `1e-21`.
+        ``fit.update_model(a_scale_max=1e-21)`` sets the `a_scale_max`
+        parameter to `1e-21`.
 
         Valid arguments for the selected model can be found in
         :attr:`Fit.valid_model_settings`.
@@ -392,7 +403,7 @@ class Fit(object):
         for new, old in legacy.items():
             for k in old:
                 if k in model_opts:
-                    warnings.warn(f"'{k}' depreacted, replacing with {new}")
+                    warnings.warn(f"'{k}' deprecated, replacing with {new}")
                     model_opts[new] = model_opts.pop(k)
 
         if 'perturb_f' in model_opts:
@@ -423,7 +434,22 @@ class Fit(object):
                 model_opts['mode_ordering'] = 'g'
 
         # create fit object
-        fit = cls(**model_opts)
+        if config.has_option(IMR_CONFIG_SECTION, 'initialize_fit'):
+            imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
+                   if k != 'initialize_fit'}
+            fit = cls.from_imr_result(**imr, **model_opts)
+        else:
+            fit = cls(**model_opts)
+
+        # load reference imr result if requested
+        if config.has_section('imr') and not fit.imr_result:
+            imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
+                   if k != 'initialize_fit'}
+            if imr.get('path'):
+                fit.add_imr_result(**imr)
+            else:
+                logging.warning("no path to IMR result provided; ignoring "
+                                " IMR section in config")
 
         if 'data' not in config and 'fake-data' not in config:
             # the rest of the options require loading data, so if no pointer to
@@ -442,12 +468,11 @@ class Fit(object):
         # load data
         if 'data' in config:
             ifos = get_ifo_list('data')
-            path_input = config['data']['path']
 
             # NOTE: not popping in order to preserve original ConfigParser
             kws = {k: utils.try_parse(v) for k, v in config['data'].items()
-                   if k not in ['ifos', 'path']}
-            fit.load_data(path_input, ifos, **kws)
+                   if k != 'ifos'}
+            fit.load_data(ifos=ifos, **kws)
 
         # simulate data
         if 'fake-data' in config:
@@ -504,10 +529,10 @@ class Fit(object):
             fit.condition_data(**cond_kws)
 
         # load or produce ACFs
-        if config.get('acf', 'path', fallback=False):
-            kws = {k: utils.try_parse(v) for k, v in config['acf'].items()
-                   if k not in ['path']}
-            fit.load_acfs(config['acf']['path'], **kws)
+        if config.get('acf', 'path', fallback=False) or \
+                config.get('acf', 'from_imr_result', fallback=False):
+            kws = {k: utils.try_parse(v) for k, v in config['acf'].items()}
+            fit.load_acfs(**kws)
         else:
             acf_kws = {} if 'acf' not in config else config['acf']
             fit.compute_acfs(**{k: utils.try_parse(v)
@@ -578,14 +603,15 @@ class Fit(object):
         config['model'] = {}
         config['model']['modes'] = str(self.modes)
         # prior options
-        config['model'].update({k: utils.form_opt(v) for k, v
+        config['model'].update({k: utils.form_opt(v, key=k) for k, v
                                 in self.model_settings.items()})
         # rest of options require data, so exit of none were added
         if not self.ifos:
             return config
         # data, injection, conditioning and acf options
         for sec, opts in self.info.items():
-            config[sec] = {k: utils.form_opt(v) for k, v in opts.items()}
+            config[sec] = {k: utils.form_opt(v, key=k)
+                           for k, v in opts.items()}
         config['target'] = {k: str(v) for k, v in self.info['target'].items()}
         # write file to disk if requested
         if path is not None:
@@ -843,6 +869,7 @@ class Fit(object):
         ms = cp.deepcopy(self.model_settings)
         if 'a_scale_max' in ms:
             ms['a_scale_max'] = ms['a_scale_max'] / self.strain_scale
+        logging.info('making model')
         model = make_model(self.modes.value, prior=prior, predictive=False,
                            store_h_det=False, store_h_det_mode=False, **ms)
         if return_model:
@@ -1121,7 +1148,8 @@ class Fit(object):
             new_d = Data(np.roll(d, int(dt / d.delta_t)), index=d.time, **m)
             self.add_data(new_d)
         # record data provenance
-        settings['path'] = path_dict
+        if path is not None:
+            settings['path'] = path_dict
         self.update_info('data', **settings)
 
     def fake_data(self, ifos: list[str] | str | None = None,
@@ -1327,7 +1355,8 @@ class Fit(object):
         # record ACF computation options
         self.update_info('acf', **settings)
 
-    def load_acfs(self, path, ifos=None, from_psd=False, **kws):
+    def load_acfs(self, path=None, ifos=None, from_psd=False,
+                  from_imr_result=False, **kws):
         """Load autocovariances from disk. Can read in a PSD, instead of an
         ACF, if using the `from_psd` argument.
 
@@ -1355,6 +1384,14 @@ class Fit(object):
         settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kws').items():
             settings[k] = v
+
+        if from_imr_result:
+            if self.imr_result is None:
+                raise ValueError("no IMR result available; load using "
+                                 "Fit.load_imr_result")
+            self.acfs = self.imr_result.get_acfs(**kws)
+            self.update_info('acf', **settings)
+            return
 
         if isinstance(path, str) and ifos is None:
             ifos = self.ifos
@@ -1412,12 +1449,13 @@ class Fit(object):
         """
         self.modes = indexing.ModeIndexList(modes)
 
-    def set_target(self, t0: float | dict, ra: float | None = None,
+    def set_target(self, t0: float | dict | None = None,
+                   ra: float | None = None,
                    dec: float | None = None, psi: float | None = None,
                    duration: float | None = None,
                    reference_ifo: str | None = None,
                    antenna_patterns: dict | None = None,
-                   n_analyze: int | None = None):
+                   target: Target | None = None):
         """ Establish truncation target, stored to `self.target`.
 
         Provide a targeted analysis start time `t0` to serve as beginning of
@@ -1483,24 +1521,21 @@ class Fit(object):
         if self.result is not None:
             raise ValueError("cannot set target with preexisting results")
 
-        if n_analyze:
-            if duration:
-                logging.warning("ignoring duration in favor of n_analyze")
-                duration = None
-            self._n_analyze = int(n_analyze)
-        elif not duration:
-            logging.warning("no duration or n_analyze specified")
+        if isinstance(target, Target):
+            self.target = target
+            settings.update(self.target.settings)
+            del settings['target']
         else:
-            self._duration = float(duration)
-
-        self.target = Target.construct(t0, ra, dec, psi, reference_ifo,
-                                       antenna_patterns, ifos=self.ifos)
+            self.target = Target.construct(t0, ra, dec, psi, reference_ifo,
+                                           antenna_patterns, ifos=self.ifos,
+                                           duration=duration)
 
         # make sure that start times are encompassed by data (if data exist)
         for i, data in self.data.items():
             t0_i = self.start_times[i]
             if t0_i < data.time[0] or t0_i > data.time[-1]:
-                raise ValueError("{} start time not in data".format(i))
+                raise ValueError(f"{i} start time ({t0_i}) not in data "
+                                 f"[{data.time[0]}, {data.time[-1]}]")
         # record state
         self.update_info('target', **settings)
 
@@ -1513,15 +1548,17 @@ class Fit(object):
         (:attr:`n_analyze`) and :math:`\\Delta t` is the time
         sample spacing.
         """
-        if self._n_analyze and not self._duration:
+        if self._n_analyze and not self.target.duration:
             if self.data:
                 return self._n_analyze*self.data[self.ifos[0]].delta_t
             else:
                 logging.warning("add data to compute duration "
                                 "(n_analyze = {})".format(self._n_analyze))
                 return None
+        elif self.has_target:
+            return self.target.duration
         else:
-            return self._duration
+            return None
 
     @property
     def start_indices(self) -> dict:
@@ -1559,6 +1596,13 @@ class Fit(object):
             return min([len(d.iloc[i0s[i]:]) for i, d in self.data.items()])
         else:
             return self._n_analyze
+
+    @property
+    def psds(self) -> dict:
+        """Dictionary of power spectral densities for each detector, derived
+        from ACFs.
+        """
+        return {i: a.to_psd() for i, a in self.acfs.items()}
 
     def whiten(self, datas: dict) -> dict:
         """Return whiten data for all detectors using ACFs stored in
@@ -1626,13 +1670,22 @@ class Fit(object):
     def add_imr_result(self,
                        imr_result: pd.DataFrame | dict | np.ndarray,
                        approximant: str | None = None,
-                       reference_frequency: float | None = None):
+                       reference_frequency: float | None = None,
+                       **kws):
         """Add reference inspiral-merger-ringdown (IMR) result to fit."""
-        self.imr_result = imr.IMRResult(imr_result)
+        settings = {k: v for k, v in locals().items() if k != 'self'}
+
+        if isinstance(imr_result, imr.IMRResult):
+            self.imr_result = imr_result
+        else:
+            self.imr_result = imr.IMRResult.construct(imr_result, **kws)
         if approximant is not None:
             self.imr_result.set_approximant(approximant)
         if reference_frequency is not None:
             self.imr_result.set_reference_frequency(reference_frequency)
+        # record settings
+        settings['imr_result'] = self.imr_result.path
+        self.update_info('imr-result', **settings)
 
     def get_imr_templates(self, condition: bool = True,
                           ifos: list | None = None,
@@ -1705,3 +1758,107 @@ class Fit(object):
         """
         wfs = self.get_imr_templates(ifos=self.ifos, **kws)
         return wfs.slice(self.start_indices, self.n_analyze)
+
+    def compute_imr_snrs(self, optimal=False, cumulative=False, network=False,
+                         **kws) -> dict:
+        """Compute SNR of IMR templates for each detector.
+
+        Arguments
+        ---------
+        **kws :
+            all keyword arguments passed to
+            :meth:`ringdown.Fit.get_imr_analysis_templates`.
+
+        Returns
+        -------
+        snrs : dict
+            dictionary of IMR SNRs for each detector.
+        """
+        wfs = self.get_imr_analysis_templates(**kws)
+        if optimal:
+            data = None
+        else:
+            data = self.analysis_data
+        return wfs.compute_snr(self.cholesky_factors, data=data,
+                               cumulative=cumulative, network=network)
+
+    @property
+    def delta_t(self) -> float:
+        """Time step of data series."""
+        if self.acfs:
+            ref = self.acfs
+        elif self.data:
+            ref = self.data
+        else:
+            return None
+        dts = [r.delta_t for r in ref.values()]
+        if len(set(dts)) > 1:
+            logging.warning("multiple delta_t values found")
+        return dts[0]
+
+    @property
+    def whitened_analysis_data(self) -> dict:
+        """Whitened analysis data for each detector.
+        """
+        return self.whiten(self.analysis_data)
+
+    @classmethod
+    def from_imr_result(cls, imr_result: imr.IMRResult | str,
+                        advance_target_by_mass: float | None = None,
+                        reference_mass: float | None = None,
+                        load_data: bool = True, load_acfs: bool = True,
+                        condition: bool = True, set_target: bool = True,
+                        update_model: bool = True,
+                        duration: float | bool = 'auto',
+                        data_kws: dict | None = None,
+                        peak_kws: dict | None = None,
+                        acf_kws: dict | None = None,
+                        prior_kws: dict | None = None,
+                        psds: dict | None = None,
+                        **kws):
+        """Create a new `Fit` object from an IMR result."""
+        fit = cls(imr_result=imr_result, **kws)
+        if psds is not None:
+            fit.imr_result.set_psds(psds)
+        imr_result = fit.imr_result
+
+        if load_data:
+            logging.info("loading data based on IMR result")
+            data_opts = imr_result.data_options
+            data_opts.update(**(data_kws or {}))
+            fit.load_data(**data_opts)
+
+        if set_target:
+            if duration == 'auto':
+                duration = imr_result.estimate_ringdown_duration(cache=True)
+                logging.info(f"estimated duration automatically: {duration}")
+            peak_kws = peak_kws or {}
+            t = imr_result.get_best_peak_target(**peak_kws, duration=duration)
+            if advance_target_by_mass:
+                m = reference_mass or imr_result.remnant_mass_scale_reference
+                dt = advance_target_by_mass * m * T_MSUN
+                logging.info(f"advancing target time by {dt} s "
+                             f"[{advance_target_by_mass} * {m} Msun]")
+                t.geocenter_time += dt
+            logging.info(f"setting target: {t}")
+            fit.set_target(target=t)
+
+        if condition:
+            logging.info("conditioning data based on IMR result")
+            fit.condition_data(**imr_result.condition_options)
+
+        if load_acfs:
+            logging.info("loading ACFs based on IMR result")
+            fit.load_acfs(from_imr_result=True, **(acf_kws or {}))
+            if not condition:
+                logging.warning("ACFs derived from IMR result but data "
+                                "not conditioned!")
+
+        if update_model:
+            opts = imr_result.estimate_ringdown_prior(modes=fit.modes,
+                                                      cache=True,
+                                                      **(prior_kws or {}))
+            fit.update_model(**opts)
+            logging.info(f"updated model: {opts}")
+
+        return fit

@@ -1,5 +1,7 @@
 __all__ = ['IMRResult']
 
+import h5py
+import os
 import numpy as np
 import pandas as pd
 from . import indexing
@@ -7,7 +9,8 @@ from . import qnms
 from . import waveforms
 from . import target
 from . import data
-from .utils import get_tqdm
+from . indexing import ModeIndexList
+from .utils import get_tqdm, get_hdf5_value, get_bilby_dict
 import lal
 import multiprocessing as mp
 from lalsimulation import nrfits
@@ -35,18 +38,30 @@ class IMRResult(pd.DataFrame):
     _f_key = 'f_{mode}'
     _g_key = 'g_{mode}'
 
-    _meta = ['attrs']
+    _meta = ['attrs', '_psds']
 
-    def __init__(self, *args, attrs=None, **kwargs):
+    def __init__(self, *args, attrs=None, psds=None, **kwargs):
         super().__init__(*args, **kwargs)
         if len(args) == 0:
             args = [None]
         self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
+        self.__dict__['_psds'] = psds if psds is not None else {}
+        self.__dict__['_waveforms'] = None
+
+    @property
+    def config(self):
+        """Configuration settings used in the analysis."""
+        return self.attrs.get('config', {})
 
     @property
     def reference_frequency(self) -> float | None:
         """Reference frequency used in analysis in Hz."""
-        return self.attrs.get('reference_frequency', self.attrs.get('f_ref'))
+        config_fref = self.attrs.get('config', {}).get('reference-frequency')
+        fref = self.attrs.get('reference_frequency',
+                              self.attrs.get('f_ref', config_fref))
+        if fref is not None:
+            return float(fref)
+        return None
 
     def set_reference_frequency(self, f_ref: float) -> None:
         """Set the reference frequency used in analysis in Hz."""
@@ -55,9 +70,27 @@ class IMRResult(pd.DataFrame):
             del self.attrs['f_ref']
 
     @property
+    def psds(self) -> dict[data.PowerSpectrum]:
+        """Power Spectral Densities used in the analysis."""
+        return self.__dict__['_psds'] or {}
+
+    def set_psds(self, psds: dict) -> None:
+        """Set the PSDs used in the analysis."""
+        for i, p in psds.items():
+            if isinstance(p, str):
+                if os.path.isfile(p):
+                    p = np.loadtxt(p)
+                else:
+                    raise FileNotFoundError(f"PSD file not found: {p}")
+            p = data.PowerSpectrum(p).fill_low_frequencies().gate()
+            self.__dict__['_psds'][i] = p
+
+    @property
     def approximant(self) -> str | None:
         """Waveform approximant used in analysis."""
-        return self.attrs.get('approximant')
+        config_approx = self.attrs.get(
+            'config', {}).get('waveform-approximant')
+        return self.attrs.get('approximant', config_approx)
 
     def set_approximant(self, approximant: str) -> None:
         """Set the waveform approximant used in analysis."""
@@ -80,6 +113,55 @@ class IMRResult(pd.DataFrame):
         for k in SPIN_ALIASES:
             if k in self.columns:
                 return self[k]
+
+    @property
+    def minimum_frequency(self):
+        """Minimum frequency used in the analysis."""
+        x = self.attrs.get('config', {}).get('minimum-frequency', {})
+        if isinstance(x, float):
+            return {k: x for k in self.ifos}
+        return {k: float(v) for k, v in get_bilby_dict(x).items()}
+
+    @property
+    def maximum_frequency(self):
+        """Maximum frequency used in the analysis."""
+        x = self.attrs.get('config', {}).get('maximum-frequency', {})
+        if isinstance(x, float):
+            return {k: x for k in self.ifos}
+        return {k: float(v) for k, v in get_bilby_dict(x).items()}
+
+    @property
+    def trigger_time(self):
+        """Trigger time used in the analysis."""
+        return self.attrs.get('config', {}).get('trigger-time')
+
+    @property
+    def sampling_frequency(self):
+        """Sampling frequency used in the analysis."""
+        return self.attrs.get('config', {}).get('sampling-frequency')
+
+    @property
+    def duration(self):
+        """Duration of the analysis."""
+        return self.attrs.get('config', {}).get('duration')
+
+    @property
+    def remnant_mass_scale(self) -> pd.Series:
+        """Get best available remmnant mass scale from samples."""
+        if self.final_mass is not None:
+            return self.final_mass
+        logging.info("no remnant mass found; using total mass")
+        if 'total_mass' in self:
+            return self['total_mass']
+        elif 'mass_1' in self and 'mass_2' in self:
+            return self['mass_1'] + self['mass_2']
+        else:
+            raise KeyError("no mass scale found")
+
+    @property
+    def remnant_mass_scale_reference(self) -> float:
+        """Get the reference remnant mass scale."""
+        return np.median(self.remnant_mass_scale)
 
     def get_kerr_frequencies(self, modes, **kws):
         """Get the Kerr QNM frequencies corresponding to the remnant mass and
@@ -182,17 +264,25 @@ class IMRResult(pd.DataFrame):
         return self[keys]
 
     def _get_default_time(self, ref_key='geocent_time'):
-        tc = np.median(self[ref_key])
-        dt = 1 / 16384
-        n = 1 / dt + 1
+        # attempt get trigger time from config file
+        # default to median of geocenter time if not found
+        tc = self.trigger_time or np.median(self[ref_key])
+
+        fsamp = self.sampling_frequency or self._REFERENCE_SRATE
+        dt = 1 / fsamp
+        n = (self.duration or 1) * fsamp
         time = np.arange(n)*dt + tc - dt*(n//2)
-        logging.warning("no time array provided; defaulting to "
-                        f"{time[-1]-time[0]} s around {tc} at "
-                        f"{1/dt} Hz")
+        if not self.sampling_frequency or not self.duration:
+            logging.warning("no time array provided; defaulting to "
+                            f"{n*dt} s around {tc} at {1/dt} Hz")
         return time
 
     @property
-    def _ifos(self):
+    def ifos(self):
+        """List of detectors in the DataFrame."""
+        # try config first
+        if 'detectors' in self.attrs.get('config', {}):
+            return self.attrs['config']['detectors']
         time_keys = [k for k in self.columns if TIME_KEY in k]
         return [k.replace(TIME_KEY, '') for k in time_keys]
 
@@ -237,7 +327,7 @@ class IMRResult(pd.DataFrame):
             df = self.sample(nsamp, random_state=prng)
 
         if ifos is None:
-            ifos = self._ifos
+            ifos = self.ifos
         elif isinstance(ifos, str):
             ifos = [ifos]
 
@@ -263,7 +353,8 @@ class IMRResult(pd.DataFrame):
 
             peak_times_rows = []
             tqdm = get_tqdm(progress)
-            for _, sample in tqdm(df.iterrows(), total=len(df), ncols=None):
+            for _, sample in tqdm(df.iterrows(), total=len(df), ncols=None,
+                                  desc='peak time'):
                 h = waveforms.Coalescence.from_parameters(
                     time, **sample, **kws)
                 tp = h.get_invariant_peak_time()
@@ -323,14 +414,16 @@ class IMRResult(pd.DataFrame):
             tp = peak_times[best_ifo].median()
         else:
             raise ValueError(f'invalid average method: {average}')
-        iloc = (peak_times[best_ifo] - tp).idxmin()
+        iloc = (peak_times[best_ifo] - tp).abs().idxmin()
         return peak_times.loc[iloc], best_ifo
 
-    def get_best_peak_target(self, **kws) -> target.SkyTarget:
+    def get_best_peak_target(self, duration=0, **kws) -> target.SkyTarget:
         """Get the target corresponding to the best-measured peak time.
 
         Arguments
         ---------
+        duration : float
+            Duration of the analysis in seconds (optional).
         kws : dict
             Additional keyword arguments to pass to the peak
             time calculation.
@@ -344,15 +437,17 @@ class IMRResult(pd.DataFrame):
         sample = self.loc[peak_times.name]
         skyloc = {k: sample[k] for k in ['ra', 'dec', 'psi']}
         t0 = peak_times[ref_ifo]
-        return target.Target.construct(t0, reference_ifo=ref_ifo, **skyloc)
+        return target.Target.construct(t0, reference_ifo=ref_ifo,
+                                       duration=duration, **skyloc)
 
     def get_waveforms(self, nsamp: int | None = None,
                       ifos: list | None = None,
                       time: np.ndarray | None = None,
                       condition: dict | None = None,
+                      cache: bool = False,
                       prng: np.random.RandomState | int | None = None,
                       progress: bool = True,
-                      **kws) -> pd.DataFrame:
+                      **kws) -> data.StrainStack:
         """Get the peak times of the waveform for a given set of detectors.
 
         Arguments
@@ -376,6 +471,10 @@ class IMRResult(pd.DataFrame):
             Additional keyword arguments to pass to the peak
             time calculation.
         """
+        if cache and self._waveforms is not None:
+            logging.info("using cached waveforms")
+            return self._waveforms
+
         # subselect samples if requested
         if nsamp is None:
             df = self
@@ -384,7 +483,7 @@ class IMRResult(pd.DataFrame):
 
         # get ifos
         if ifos is None:
-            ifos = self._ifos
+            ifos = self.ifos
         elif isinstance(ifos, str):
             ifos = [ifos]
         ifos = [ifo for ifo in ifos if 'geo' not in ifo]
@@ -409,7 +508,7 @@ class IMRResult(pd.DataFrame):
                                                **sample, **kws)
             for ifo in ifos:
                 if condition:
-                    # look for target time 't0' which can be a dict with 
+                    # look for target time 't0' which can be a dict with
                     # entries for each ifo or just a float for all ifos
                     if isinstance(t0, dict):
                         t0 = t0.get(ifo)
@@ -420,4 +519,423 @@ class IMRResult(pd.DataFrame):
         # waveforms array will be shaped (nifo, nsamp, ntime)
         wfs = np.array([wf_dict[ifo] for ifo in ifos])
         # swap axes to get (nifo, ntime, nsamp)
-        return data.StrainStack(np.swapaxes(wfs, 1, 2))
+        h = data.StrainStack(np.swapaxes(wfs, 1, 2))
+        if cache:
+            logging.info("caching waveforms")
+            self._waveforms = h
+        elif self._waveforms is not None:
+            logging.info("wiping waveform cache")
+            self._waveforms = None
+        return h
+
+    _FAVORED_APPROXIMANT = 'NRSur7dq4'
+
+    @classmethod
+    def from_pesummary(cls, path: str, group: str | None = None,
+                       pesummary_read: bool = False,
+                       posterior_key: str = 'posterior_samples'):
+        """Create an IMRResult from a pesummary result.
+
+        Arguments
+        ---------
+        path : str
+            Path to the pesummary result file.
+        group : str | None
+            Group label to read in from the pesummary result; if None, takes
+            the first group in the file.
+        pesummary_read : bool
+            If True, uses the pesummary reader to read the file; this requires
+            the ``pesummary`` package to be installed.
+        posterior_keys : str
+            Key of group containing posterior samples.
+
+        Returns
+        -------
+        result : IMRResult
+            IMRResult object containing the posterior samples.
+        """
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"file not found: {path}")
+
+        if pesummary_read:
+            try:
+                from pesummary.io import read
+            except ImportError:
+                raise ImportError("missing optional dependency: pesummary")
+            pe = read(path)
+            if group is None:
+                group = pe.labels[0]
+                for g in pe.labels:
+                    if cls._FAVORED_APPROXIMANT in g:
+                        group = g
+                        break
+                logging.warning(f"no group provided; using {group}")
+            config = pe.config.get(group, {}).get('config', {})
+            p = {i: data.PowerSpectrum(p).fill_low_frequencies().gate()
+                 for i, p in pe.psd.get(group, {}).items()}
+            return cls(pe.samples_dict[group], attrs={'config': config},
+                       psds=p)
+
+        if os.path.splitext(path)[1] in ['.hdf5', '.h5']:
+            with h5py.File(path, 'r') as f:
+                if group is None:
+                    group = list(f.keys())[0]
+                    for g in f.keys():
+                        if cls._FAVORED_APPROXIMANT in g:
+                            group = g
+                            break
+                    logging.warning(f"no group provided; using {group}")
+                if group not in f:
+                    raise ValueError(f"group {group} not found")
+                c = {k.replace('_', '-'): get_hdf5_value(v[()]) for k, v in
+                     f[group].get('config_file', {}).get('config', {}).items()}
+                if 'meta_data' in f[group]:
+                    if 'other' in f[group]['meta_data']:
+                        if 'config_file' in f[group]['meta_data']['other']:
+                            x = f[group]['meta_data']['other']['config_file']
+                            c.update({k.replace('_', '-'):
+                                      get_hdf5_value(v[()])
+                                      for k, v in x.items()})
+                if 'psds' in f[group]:
+                    p = {i: data.PowerSpectrum(p).fill_low_frequencies().gate()
+                         for i, p in f[group]['psds'].items()}
+                else:
+                    p = {}
+                if posterior_key in f[group]:
+                    return cls(f[group][posterior_key][()],
+                               attrs={'config': c}, psds=p)
+                else:
+                    raise ValueError("no {posterior_key} found")
+
+    _REFERENCE_SRATE = 16384
+
+    @property
+    def data_options(self):
+        """Return a dictionary of options to obtain data used in the analysis.
+        """
+        if not self.config:
+            return {}
+        config = self.config
+        key_map = {'t0': 'trigger-time', 'ifos': 'detectors',
+                   'seglen': 'duration'}
+        options = {}
+        for k, v in key_map.items():
+            if v in config:
+                options[k] = config[v]
+            else:
+                logging.warning(f"missing {v} in config")
+        options['sample_rate'] = self._REFERENCE_SRATE
+
+        options['channel'] = 'gwosc'
+        if self._data_dict and self._channel_dict:
+            path = {}
+            for ifo, p in self._data_dict.items():
+                if os.path.isfile(p):
+                    logging.info(f"using local data for {ifo}: {p}")
+                    path[ifo] = p
+                else:
+                    logging.info(f"missing local data for {ifo}: {p}")
+                    return options
+            options['path'] = path
+            options['channel'] = self._channel_dict
+        return options
+
+    @property
+    def _data_dict(self):
+        """Return a dictionary of paths to data used in the analysis."""
+        return get_bilby_dict(self.config.get('data-dict', {}))
+
+    @property
+    def _channel_dict(self):
+        """Return the channel used for the analysis."""
+        return get_bilby_dict(self.config.get('channel-dict', {}))
+
+    @property
+    def condition_options(self):
+        """Return a dictionary of options to condition the data used in the
+        analysis.
+        """
+        if 'config' not in self.attrs:
+            return {}
+        config = self.attrs['config']
+        if self.psds:
+            sample_rate = self.psds[list(self.psds.keys())[0]].f_samp
+            ds = self._REFERENCE_SRATE / sample_rate
+        elif 'sampling-frequency' in config:
+            sample_rate = config['sampling-frequency']
+            ds = self._REFERENCE_SRATE / sample_rate
+        else:
+            logging.warning("missing sampling frequency in config")
+            ds = None
+        return {'ds': ds}
+
+    def get_patched_psds(self, f_min: float | None = 0,
+                         f_max: float | None = None,
+                         max_dynamic_range: float =
+                         data.PowerSpectrum._DEF_MAX_DYN_RANGE,
+                         **kws) -> dict[data.PowerSpectrum]:
+        """Patch the PSDs to the minimum and maximum frequencies used in the
+        analysis.
+
+        Arguments
+        ---------
+        f_min : float
+            Minimum frequency to patch to; if None, uses the minimum frequency
+            in the analysis.
+        f_max : float
+            Maximum frequency to patch to; if None, uses the maximum frequency
+            in the analysis.
+
+        """
+        psds = {}
+        for ifo, psd in self.psds.items():
+            f_min = f_min or self.minimum_frequency.get(ifo, f_min)
+            f_max = f_max or self.maximum_frequency.get(ifo, f_max)
+            psds[ifo] = psd.patch(f_min, f_max, **kws).gate(max_dynamic_range)
+        return psds
+
+    def get_acfs(self, patch_psd: bool = True, **kws) \
+            -> dict[data.AutoCovariance]:
+        """Get the AutoCorrelation Functions corresponding to the Power
+        Spectral Densities used in the analysis.
+
+        Arguments
+        ---------
+        patch_psd : bool
+            If True, patches the PSDs to the minimum and maximum frequencies
+            used in the analysis.
+        **kws : dict
+            Additional keyword arguments to pass to the PSD computation.
+        """
+        if patch_psd:
+            psds = self.get_patched_psds(**kws)
+        else:
+            psds = self.psds
+        return {ifo: psd.to_acf() for ifo, psd in psds.items()}
+
+    def _ringdown_start_indices(self, time=None, **kws):
+        if time is None:
+            time = self._get_default_time()
+        # check if time has 'get' method
+        if isinstance(time, dict):
+            time_dict = time
+        else:
+            time_dict = {i: time for i in self.ifos}
+        target = self.get_best_peak_target(**kws)
+        start_times = target.get_detector_times_dict(self.ifos)
+        start_indices = {ifo: np.argmin(np.abs(time_dict[ifo] - t0))
+                         for ifo, t0 in start_times.items()}
+        return start_indices
+
+    def estimate_ringdown_duration(self, acfs: dict | None = None,
+                                   start_indices: dict | None = None,
+                                   guess_start: float | None = None,
+                                   nsamp: int = 100,
+                                   q: float = 0.1,
+                                   return_wfs: bool = False,
+                                   acf_kws: dict | None = None,
+                                   **kws) -> int:
+        """Estimate the duration of the ringdown analysis required to obtain
+        stable SNRs.
+
+        Arguments
+        ---------
+        acfs : dict | None
+            ACFs to use for the analysis; if None, computes the ACFs from the
+            PSDs.
+        start_indices : dict | None
+            Start indices for the waveforms; if None, uses the peak times.
+        guess_start : float | None
+            Initial guess for the duration of the analysis in seconds; if None,
+            estimates based on the mass scale.
+        nsamp : int
+            Number of posterior draws to use to estimate SNR distribution.
+        q : float
+            Credible level at which to require stable network SNRs: median SNR
+            at the midpoint must be within the ``q`` symmetric CL of the final
+            median value.
+        return_wfs : bool
+            If True, returns the waveforms used to estimate the duration.
+        acf_kws : dict | None
+            Additional keyword arguments to pass to the ACF computation.
+        **kws : dict
+            Additional keyword arguments to pass to the waveform computation.
+
+        Returns
+        -------
+        duration : int
+            Estimated duration of the analysis in seconds.
+        """
+        if acfs is None:
+            acfs = self.get_acfs(**(acf_kws or {}))
+
+        if guess_start is None:
+            # estimate based on mass scale
+            duration = 50 * self.remnant_mass_scale_reference * qnms.T_MSUN
+        else:
+            duration = guess_start
+
+        # get waveforms to compute SNRS
+        nsamp = min(nsamp, len(self))
+        waveforms = self.get_waveforms(nsamp=nsamp, **kws)
+
+        t = self._get_default_time()
+        time = kws.get('time', t)
+        # check if time has 'get' method
+        if isinstance(time, dict):
+            time_dict = time
+        else:
+            time_dict = {i: time for i in self.ifos}
+
+        # get start times
+        if not start_indices:
+            start_indices = self._ringdown_start_indices(time_dict, **kws)
+
+        dt = t[1] - t[0]
+        n = int(duration // dt)
+        duration = n * dt
+
+        # check all acfs have the same dt as the waveforms
+        for ifo, acf in acfs.items():
+            dt_wf = time_dict[ifo][1] - time_dict[ifo][0]
+            if acf.delta_t != dt_wf:
+                raise ValueError(f"ACF for {ifo} has different "
+                                 "time step than waveforms")
+            if dt_wf != dt:
+                raise ValueError(f"waveform time step {dt_wf} does not "
+                                 f"match requested time step {dt}")
+
+        cholesky = {}
+        stable_snr = False
+        qs = [(1 - q)/2, 0.5, 1-(1-q)/2]
+        while duration < self.duration / 2:
+            # update cholesky matrices, waveforms and compute SNRs
+            for ifo, acf in acfs.items():
+                cholesky[ifo] = acf.iloc[:n].cholesky
+            wfs = waveforms.slice(start_indices, n)
+            snrs = wfs.compute_snr(cholesky, cumulative=True, network=True)
+
+            # check if SNR at midpoint is within bounds
+            snr_l, snr_m, snr_h = np.quantile(snrs[-1, :], qs)
+            snr_halfway = np.median(snrs[len(snrs)//2, :])
+            stable_snr = np.abs(snr_halfway - snr_m) < snr_h - snr_l
+            if stable_snr:
+                break
+            n *= 2
+            duration = n * dt
+
+        if not stable_snr:
+            logging.warning("SNR not stable; returning maximum duration")
+
+        if return_wfs:
+            return duration, wfs
+        return duration
+
+    def estimate_ringdown_prior(self, a_scale_factor: float = 50,
+                                frequency_scale_factor: float = 10,
+                                reference_cl: float = 0.99,
+                                modes: ModeIndexList | str | None = None,
+                                start_indices: dict | None = None,
+                                nsamp: float = 100, **kws):
+        """Estimate the prior settings for a ringdown analysis.
+
+        Arguments
+        ---------
+        a_scale_factor : float
+            scale by which to multiply maximum strain in order to obtain
+            maximum amplitude scale for prior.
+        frequency_scale_factor : float
+            scale by which to multiply the posterior range for the remnant
+            mass (if Kerr modes are passed) or the 220 mode frequency (if
+            generic modes are passed) to obtain the prior range; this works
+            by expanding the IMR posterior range (computed at the
+            ``reference_cl`` level) by this factor on each side.
+        reference_cl : float
+            Credible level at which to compute the posterior range for the
+            remnant mass or 220 mode to be used as reference for mass or
+            frequency prior.
+        modes : ModeIndexList | str | None
+            List of modes to use to decide how to set frequency or mass prior;
+            if Kerr indices are passed, sets a mass prior; if 'generic' index
+            is passed, sets a frequency prior; if None, returns amplitude
+            settings only.
+        start_indices : dict | None
+            Start indices for the waveforms; if None, uses the peak times.
+        nsamp : int
+            Number of samples to draw from posterior.
+
+        Returns
+        -------
+        opts : dict
+            Dictionary of prior settings.
+        """
+        waveforms = self.get_waveforms(nsamp=nsamp, **kws)
+        if start_indices is None:
+            start_indices = self._ringdown_start_indices(nsamp=nsamp, **kws)
+        # get value of waveforms at the start of the analysis segment
+        h = waveforms.slice(start_indices, n=1)
+        opts = {
+            'a_scale_max': a_scale_factor * float(np.max(np.abs(h)))
+        }
+        # get mode-dependent settings
+        if not modes:
+            # we have no mode information so just return amplitude settings
+            return opts
+        elif isinstance(modes, ModeIndexList):
+            generic_modes = modes.is_generic
+        else:
+            generic_modes = modes == 'generic' or isinstance(modes, int)
+
+        q = 0.5*(1 - reference_cl)
+        qs = [q, 0.5, 1-q]
+        if generic_modes:
+            logging.info("estimating frequency prior based on 220 mode")
+            mode = (1, -2, 2, 2, 0)
+            f = self.sample(nsamp).get_kerr_frequencies([mode])['f_220']
+            l, m, h = np.quantile(f, qs)
+            logging.info(f"quantiles {qs}: {l}, {m}, {h}")
+            fmax = 0.5 * self.sampling_frequency
+            fmin = 1 / self.duration
+            for k in ['f', 'g']:
+                opts.update({
+                    f'{k}_max': min(2*m, m + frequency_scale_factor*(h - m)),
+                    f'{k}_min': max(m/2, m - frequency_scale_factor*(m - l))
+                })
+                # round to nearest integer
+                for kk in [f'{k}_min', f'{k}_max']:
+                    opts[kk] = np.round(opts[kk])
+                # check values for safety
+                if opts[f'{k}_max'] >= fmax:
+                    logging.warning("upper frequency bound set to Nyquist")
+                    opts[f'{k}_max'] = fmax
+                if opts[f'{k}_min'] <= fmin:
+                    logging.warning("lower frequency bound set to 1/T")
+                    opts[f'{k}_min'] = fmin
+        else:
+            logging.info("estimating mass prior")
+            l, m, h = np.quantile(self.remnant_mass_scale, qs)
+            logging.info(f"quantiles {qs}: {l}, {m}, {h}")
+            opts.update({
+                'm_max': np.ceil(m + frequency_scale_factor*(h - m)),
+                'm_min': np.floor(max(m/2, m - frequency_scale_factor*(m - l)))
+            })
+        return opts
+
+    @classmethod
+    def construct(cls, input, **kws):
+        if isinstance(input, str):
+            try:
+                r = cls.from_pesummary(input, **kws)
+            except Exception as e:
+                logging.warning(f"failed to read pesummary file: {e}")
+                r = pd.read_hdf(input, **kws)
+            path = os.path.abspath(input)
+            r.attrs['path'] = path
+        else:
+            r = cls(input, **kws)
+        return r
+
+    @property
+    def path(self):
+        """Path to the file from which the result was read."""
+        return self.attrs.get('path', '')
