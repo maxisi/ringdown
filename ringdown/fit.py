@@ -1759,8 +1759,8 @@ class Fit(object):
         wfs = self.get_imr_templates(ifos=self.ifos, **kws)
         return wfs.slice(self.start_indices, self.n_analyze)
 
-    def compute_imr_snr(self, optimal=False, cumulative=False, network=False,
-                        **kws) -> dict:
+    def compute_imr_snrs(self, optimal=False, cumulative=False, network=False,
+                         **kws) -> dict:
         """Compute SNR of IMR templates for each detector.
 
         Arguments
