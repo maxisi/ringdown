@@ -10,3 +10,4 @@ For a more comprehensive list of features, please refer to the API documentation
     examples/GW150914
     examples/GW190521
     examples/imr_injection
+    examples/fit_from_imr_result
