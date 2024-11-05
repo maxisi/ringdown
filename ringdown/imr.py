@@ -729,7 +729,7 @@ class IMRResult(pd.DataFrame):
 
     def estimate_ringdown_duration(self, acfs: dict | None = None,
                                    start_indices: dict | None = None,
-                                   guess_start: float | None = None,
+                                   initial_guess: float | None = None,
                                    nsamp: int = 100,
                                    q: float = 0.1,
                                    return_wfs: bool = False,
@@ -745,7 +745,7 @@ class IMRResult(pd.DataFrame):
             PSDs.
         start_indices : dict | None
             Start indices for the waveforms; if None, uses the peak times.
-        guess_start : float | None
+        initial_guess : float | None
             Initial guess for the duration of the analysis in seconds; if None,
             estimates based on the mass scale.
         nsamp : int
@@ -769,11 +769,11 @@ class IMRResult(pd.DataFrame):
         if acfs is None:
             acfs = self.get_acfs(**(acf_kws or {}))
 
-        if guess_start is None:
+        if initial_guess is None:
             # estimate based on mass scale
             duration = 50 * self.remnant_mass_scale_reference * qnms.T_MSUN
         else:
-            duration = guess_start
+            duration = initial_guess
 
         # get waveforms to compute SNRS
         nsamp = min(nsamp, len(self))
