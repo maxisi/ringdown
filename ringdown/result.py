@@ -578,7 +578,11 @@ class Result(az.InferenceData):
     def stacked_samples(self):
         """Stacked samples for all parameters in the result.
         """
-        return self.posterior.stack(sample=('chain', 'draw'))
+        if 'chain' in self.posterior.dims and 'draw' in self.posterior.dims:
+            return self.posterior.stack(sample=('chain', 'draw'))
+        else:
+            logging.info("No chain or draw dimensions found in posterior.")
+            return self.posterior
 
     def set_dataframe_parameters(self, parameters: list[str]) -> None:
         """Set the parameters to be included in DataFrames derived
@@ -828,6 +832,40 @@ class Result(az.InferenceData):
             return hdict
         else:
             return None
+
+    def reweight_amplitude(self, nsamp: int | None = None,
+                           prng: int | np.random.Generator | None = None):
+        """Reweight the posterior to a uniform amplitude prior.
+
+        Arguments
+        ---------
+        nsamp : int
+            number of samples to draw from the posterior (optional, defaults
+            to all samples).
+        prng : numpy.random.Generator | int
+            random number generator or seed (optional).
+        """
+        samples = self.stacked_samples
+        # get amplitudes and scales
+        a = samples.a
+        a_scale = samples.a_scale
+        n = len([k for k in samples.keys() if k.endswith('_unit')])
+        # compute weights
+        w = 1 / (a**(n-1) * np.exp(-0.5*(a/a_scale)**2) / a_scale**n).values
+        w = np.prod(w, axis=0)
+        w /= np.sum(w)
+        # draw samples
+        if nsamp is None:
+            nsamp = samples.sizes['sample']
+        if isinstance(prng, int):
+            prng = np.random.default_rng(prng)
+        elif prng is None:
+            prng = np.random.default_rng()
+        idxs = prng.choice(samples.sizes['sample'], nsamp, p=w)
+        # create updated result
+        new_result = self.copy()
+        new_result.posterior = samples.isel(sample=idxs)
+        return new_result
 
 
 class ResultCollection(utils.MultiIndexCollection):
