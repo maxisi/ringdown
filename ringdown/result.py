@@ -873,7 +873,7 @@ class Result(az.InferenceData):
         Returns
         -------
         new_result : Result
-            result with samples reweighted to a uniform amplitude prior; 
+            result with samples reweighted to a uniform amplitude prior;
             posterior will have stacked chains and draws.
         """
         samples = self.stacked_samples
