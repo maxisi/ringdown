@@ -223,6 +223,15 @@ class Result(az.InferenceData):
         shape = (self.posterior.sizes['ifo'], 1)
         return self.constant_data.time + np.array(self.epoch).reshape(shape)
 
+    @property
+    def a_scale_max(self) -> float:
+        """Maximum amplitude scale assumed in the analysis."""
+        amax = self.config.get('model', {}).get('a_scale_max')
+        if amax is None:
+            logging.warning('No maximum amplitude scale found in config')
+            amax = self.posterior.a_scale.max().values
+        return float(amax)
+
     def get_fit(self, **kwargs):
         """Get a Fit object from the result."""
         if self.config:
@@ -578,7 +587,11 @@ class Result(az.InferenceData):
     def stacked_samples(self):
         """Stacked samples for all parameters in the result.
         """
-        return self.posterior.stack(sample=('chain', 'draw'))
+        if 'chain' in self.posterior.dims and 'draw' in self.posterior.dims:
+            return self.posterior.stack(sample=('chain', 'draw'))
+        else:
+            logging.info("No chain or draw dimensions found in posterior.")
+            return self.posterior
 
     def set_dataframe_parameters(self, parameters: list[str]) -> None:
         """Set the parameters to be included in DataFrames derived
@@ -828,6 +841,65 @@ class Result(az.InferenceData):
             return hdict
         else:
             return None
+
+    def resample_to_uniform_amplitude(self, nsamp: int | None = None,
+                                      prng: int | np.random.Generator
+                                      | None = None) -> 'Result':
+        """Reweight the posterior to a uniform amplitude prior.
+
+        The “primal” posterior has a density :math:`p(a, a_{\\rm scale}) =
+        N(a; 0, a_{\\rm scale}) 1/a_{\\rm scale max}`. The target posterior
+        we want has a density :math:`p(a, a_{\\rm scale}) \\propto
+        \\frac{1}{|a|^{n-1}} \\frac{1}{a_{\\rm scale max}}` for :math:`n`
+        quadratures.
+
+        Therefore the importance weighs are
+
+        .. math::
+                w = \\frac{1}{|a|^{n-1} N(a; 0, a_{\\rm scale})}
+
+        WARNING: this method can be unstable unless you have an extremely
+        large number of samples; we do not recommend it when the model has
+        more than 2 quadratures (as in the z-parity symmetric models).
+
+        Arguments
+        ---------
+        nsamp : int
+            number of samples to draw from the posterior (optional, defaults to
+            all samples).
+        prng : numpy.random.Generator | int
+            random number generator or seed (optional).
+
+        Returns
+        -------
+        new_result : Result
+            result with samples reweighted to a uniform amplitude prior;
+            posterior will have stacked chains and draws.
+        """
+        samples = self.stacked_samples
+        # get amplitudes and scales
+        a = samples.a
+        a_scale = samples.a_scale
+        n = len([k for k in samples.keys() if k.endswith('_unit')])
+        # compute weights
+        w = 1 / (a**(n-1) * np.exp(-0.5*(a/a_scale)**2) / a_scale**n).values
+        w = np.prod(w, axis=0)
+        # zero out weights for samples with amplitudes above the maximum
+        a_max = self.a_scale_max / self.strain_scale
+        w[np.any(a > a_max, axis=0)] = 0
+        w /= np.sum(w)
+        # draw samples
+        if nsamp is None:
+            nsamp = samples.sizes['sample']
+        if isinstance(prng, int):
+            prng = np.random.default_rng(prng)
+        elif prng is None:
+            prng = np.random.default_rng()
+        idxs = prng.choice(samples.sizes['sample'], nsamp, p=w, replace=False)
+        # create updated result
+        new_result = self.copy()
+        new_result.posterior = samples.isel(sample=idxs)
+        return new_result
 
 
 class ResultCollection(utils.MultiIndexCollection):
