@@ -847,6 +847,17 @@ class Result(az.InferenceData):
                                       | None = None) -> 'Result':
         """Reweight the posterior to a uniform amplitude prior.
 
+        The “primal” posterior has a density :math:`p(a, a_{\\rm scale}) =
+        N(a; 0, a_{\\rm scale}) 1/a_{\\rm scale max}`. The target posterior
+        we want has a density :math:`p(a, a_{\\rm scale}) \\propto
+        \\frac{1}{|a|^{n-1}} \\frac{1}{a_{\\rm scale max}}` for :math:`n`
+        quadratures.
+
+        Therefore the importance weighs are
+
+        .. math::
+                w = \\frac{1}{|a|^{n-1} N(a; 0, a_{\\rm scale})}
+
         WARNING: this method can be unstable unless you have an extremely
         large number of samples; we do not recommend it when the model has
         more than 2 quadratures (as in the z-parity symmetric models).
