@@ -223,6 +223,15 @@ class Result(az.InferenceData):
         shape = (self.posterior.sizes['ifo'], 1)
         return self.constant_data.time + np.array(self.epoch).reshape(shape)
 
+    @property
+    def a_scale_max(self) -> float:
+        """Maximum amplitude scale assumed in the analysis."""
+        amax = self.config.get('model', {}).get('a_scale_max')
+        if amax is None:
+            logging.warning('No maximum amplitude scale found in config')
+            amax = self.posterior.a_scale.max().values
+        return float(amax)
+    
     def get_fit(self, **kwargs):
         """Get a Fit object from the result."""
         if self.config:
@@ -853,6 +862,9 @@ class Result(az.InferenceData):
         # compute weights
         w = 1 / (a**(n-1) * np.exp(-0.5*(a/a_scale)**2) / a_scale**n).values
         w = np.prod(w, axis=0)
+        # zero out weights for samples with amplitudes above the maximum
+        a_max = self.a_scale_max / self.strain_scale
+        w[np.any(a > a_max, axis=0)] = 0
         w /= np.sum(w)
         # draw samples
         if nsamp is None:
