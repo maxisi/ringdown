@@ -842,17 +842,28 @@ class Result(az.InferenceData):
         else:
             return None
 
-    def reweight_amplitude(self, nsamp: int | None = None,
-                           prng: int | np.random.Generator | None = None):
+    def reweight_to_uniform_amplitude(self, nsamp: int | None = None,
+                                      prng: int | np.random.Generator
+                                      | None = None) -> 'Result':
         """Reweight the posterior to a uniform amplitude prior.
+
+        WARNING: this method can be unstable unless you have an extremely
+        large number of samples; we do not recommend it when the model has
+        more than 2 quadratures (as in the z-parity symmetric models).
 
         Arguments
         ---------
         nsamp : int
-            number of samples to draw from the posterior (optional, defaults
-            to all samples).
+            number of samples to draw from the posterior (optional, defaults to
+            all samples).
         prng : numpy.random.Generator | int
             random number generator or seed (optional).
+
+        Returns
+        -------
+        new_result : Result
+            result with samples reweighted to a uniform amplitude prior; 
+            posterior will have stacked chains and draws.
         """
         samples = self.stacked_samples
         # get amplitudes and scales
@@ -873,7 +884,7 @@ class Result(az.InferenceData):
             prng = np.random.default_rng(prng)
         elif prng is None:
             prng = np.random.default_rng()
-        idxs = prng.choice(samples.sizes['sample'], nsamp, p=w)
+        idxs = prng.choice(samples.sizes['sample'], nsamp, p=w, replace=False)
         # create updated result
         new_result = self.copy()
         new_result.posterior = samples.isel(sample=idxs)
