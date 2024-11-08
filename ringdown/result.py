@@ -842,7 +842,7 @@ class Result(az.InferenceData):
         else:
             return None
 
-    def reweight_to_uniform_amplitude(self, nsamp: int | None = None,
+    def resample_to_uniform_amplitude(self, nsamp: int | None = None,
                                       prng: int | np.random.Generator
                                       | None = None) -> 'Result':
         """Reweight the posterior to a uniform amplitude prior.
