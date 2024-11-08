@@ -231,7 +231,7 @@ class Result(az.InferenceData):
             logging.warning('No maximum amplitude scale found in config')
             amax = self.posterior.a_scale.max().values
         return float(amax)
-    
+
     def get_fit(self, **kwargs):
         """Get a Fit object from the result."""
         if self.config:
