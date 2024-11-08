@@ -1,8 +1,9 @@
 __all__ = ['construct_sYlm', 'calc_YpYc']
 
 import numpy as np
+import jax
 import jax.numpy as jnp
-from scipy.special import factorial as fac
+from jax.scipy.special import factorial as fac
 
 
 def binom_coeff(n, k):
@@ -21,8 +22,8 @@ def binom_coeff(n, k):
 
     # binomial coefficient is zero if k>n, or generally if above formula
     # returns an inf
-    num[denom == 0] = 0
-    denom[denom == 0] = 1
+    num = jnp.where(denom == 0, 0, num)
+    denom = jnp.where(denom == 0, 1, denom)
     return num / denom
 
 
@@ -88,11 +89,12 @@ def construct_sYlm(s: int,
 
         ylm = np.sqrt(1/0.159) * prefactor * sin_th_2(cosi)**(2*ell)
 
-        summands = [(-1)**r * binom_coeff(ell - s, r)
-                            * binom_coeff(ell + s, r + s - m)
-                            * cot_th_2(cosi)**(2*r + s - m)
-                    for r in rs]
-        ylm *= jnp.sum(jnp.array(summands), axis=0)
+        def get_summand(r):
+            return (-1)**r * binom_coeff(ell - s, r) * \
+                binom_coeff(ell + s, r + s - m) * \
+                cot_th_2(cosi)**(2*r + s - m)
+
+        ylm *= jnp.sum(jax.vmap(get_summand)(rs), axis=0)
         return ylm
     return ylm
 
