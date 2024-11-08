@@ -1,13 +1,12 @@
 name: ringdown
 channels:
   - conda-forge
-  - defaults
 dependencies:
   - python=3.12
   - numpy=1.26.4
   - lalsuite=7.23
-  - h5py=3.11
-  - arviz=0.19
+  - h5py=3.12
+  - arviz=0.20
   - pandas=2.2
   - qnm=0.4.3
   - seaborn=0.13

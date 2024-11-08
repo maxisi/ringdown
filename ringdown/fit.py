@@ -870,8 +870,7 @@ class Fit(object):
         if 'a_scale_max' in ms:
             ms['a_scale_max'] = ms['a_scale_max'] / self.strain_scale
         logging.info('making model')
-        model = make_model(self.modes.value, prior=prior, predictive=False,
-                           store_h_det=False, store_h_det_mode=False, **ms)
+        model = make_model(self.modes.value, prior=prior, **ms)
         if return_model:
             return model
 
