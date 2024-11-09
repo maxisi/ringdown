@@ -21,7 +21,7 @@ import logging
 from .data import Data, AutoCovariance, PowerSpectrum, StrainStack
 from . import utils
 from .target import Target
-from .result import Result
+from .result import Result, ResultCollection
 from .model import make_model, get_arviz, MODEL_DIMENSIONS
 from . import indexing
 from . import waveforms
@@ -1862,3 +1862,113 @@ class Fit(object):
             logging.info(f"updated model: {opts}")
 
         return fit
+
+
+class FitScan(Fit):
+
+    def __init__(self, *args, **kws):
+        # initialize parent class
+        super().__init__(*args, **kws)
+        self.grid = None
+
+    def set_target(self, *args, grid=None, grid_spacing=None,
+                   grid_size=None, **kws):
+
+        if grid is not None:
+            grid = np.array(grid)
+            if 'start_time' not in kws:
+                kws['start_time'] = grid[0]
+        elif np.isscalar(grid_spacing):
+            n_times = self.duration // float(grid_spacing)
+            grid = np.arange(n_times)*float(grid_spacing) + self.start_time
+        elif np.isscalar(grid_size):
+            grid = np.linspace(self.start_time, self.end_time, grid_size,
+                               endpoint=False)
+        elif grid is None and grid_spacing is None and grid_size is None:
+            grid = np.array([self.start_time])
+
+        super().set_target(*args, **kws)
+        self.grid = grid
+
+    @property
+    def analysis_index_bounds(self) -> list[tuple]:
+        if self.has_target:
+            idx2 = np.argmin(abs(self.time - self.end_time)) + 1
+            idxs = []
+            for start_time in self.grid:
+                idx1 = np.argmin(abs(self.time - start_time))
+
+                idxs.append((idx1, idx2))
+            return idxs
+        else:
+            raise ValueError("no target set")
+
+    @property
+    def run_input(self) -> list:
+        """Arguments to be passed to model function at runtime:
+        [times, strains, noise_scales].
+        """
+        if not self.has_data:
+            raise ValueError("no data loaded")
+        if not self.has_target:
+            raise ValueError("no target set")
+
+        if not self.noise_scales:
+            logging.warning("computing variances with default settings")
+            self.set_noise_scales()
+
+        run_inputs = []
+        for t0, (idx1, idx2) in zip(self.grid, self.analysis_index_bounds):
+            # arguments to be passed to function returned by `model` function
+            # output by `make_model`---make sure this agrees with that function
+            # call! [times, strains, ls]
+            noise_scales = self._get_noise_scales(idx1, idx2)
+            input = [
+                [self.time[idx1:idx2] - t0]*len(self.ylms),
+                [self.data[ylm].values[idx1:idx2] for ylm in self.ylms],
+                [noise_scales[ylm] for ylm in self.ylms],
+            ]
+            run_inputs.append(input)
+
+        return run_inputs
+
+    def run(self, predictive: bool = True,
+            store_h_ylm: bool = False,
+            store_h_ylm_qnm: bool = True,
+            store_residuals: bool = False,
+            suppress_warnings: bool = True,
+            min_ess: int | None = None,
+            prng: jaxlib.xla_extension.ArrayImpl | int | None = None,
+            validation_enabled: bool = False,
+            individual_progress_bar: bool = False,
+            **kwargs):
+        # record all arguments
+        settings = {k: v for k, v in locals().items() if k != 'self'}
+        for k, v in settings.pop('kwargs').items():
+            settings[k] = v
+        self.update_info('run', **settings)
+
+        # get model and runtime settings
+        model, kernel_kws, sampler_kws, run_kws = self._make_model(
+            False, store_h_ylm, store_h_ylm_qnm, **kwargs)
+
+        # check whether to suppress individual-run progress bars in favor
+        # of a single progress bar for the entire scan
+        tqdm = utils.get_tqdm(not individual_progress_bar)
+        if not individual_progress_bar:
+            sampler_kws.update({'progress_bar': False})
+
+        results = []
+        for run_input in tqdm(self.run_input):
+            # fit model as many times as required by the min-ess criterion
+            result, _, _ = self._run_ess(
+                model, kernel_kws=kernel_kws, sampler_kws=sampler_kws,
+                run_input=run_input, run_kws=run_kws, prior=False,
+                suppress_warnings=suppress_warnings, min_ess=min_ess,
+                prng=prng, validation_enabled=validation_enabled,
+                predictive=predictive, store_h_ylm=store_h_ylm,
+                store_h_ylm_qnm=store_h_ylm_qnm,
+                store_residuals=store_residuals)
+            results.append(result)
+        self.result = ResultCollection(results, index=self.grid)
+    run.__doc__ = Fit.run.__doc__
