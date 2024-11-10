@@ -529,7 +529,7 @@ class TargetCollection(utils.MultiIndexCollection):
         return mstep
 
     @classmethod
-    def construct(cls, reference_mass: float | None = None,
+    def construct(cls, *args, reference_mass: float | None = None,
                   info: dict | None = None, **kws) -> 'TargetCollection':
         """Construct a collection of targets from a set of keyword arguments.
         There are three ways to specify the start times:
@@ -563,6 +563,15 @@ class TargetCollection(utils.MultiIndexCollection):
         targets : TargetCollection
             collection of target objects.
         """
+        if len(args) == 1:
+            if isinstance(args[0], TargetCollection):
+                return args[0]
+            else:
+                return cls(targets=args[0], reference_mass=reference_mass,
+                           info=info)
+        elif len(args) > 1:
+            raise ValueError("too many arguments")
+
         t0kws = {k: kws.pop(k) for k in T0_KWARGS.values() if k in kws}
         for bad_set in T0_INCOMPATIBLE_OPTS:
             opt_names = [T0_KEYS[k] for k in bad_set]

@@ -349,6 +349,13 @@ class Fit(object):
             logging.warning("computing ACFs with default settings")
             self.compute_acfs()
 
+        # ensure delta_t of ACFs is equal to delta_t of data
+        for ifo in self.ifos:
+            if not np.isclose(self.acfs[ifo].delta_t, self.data[ifo].delta_t):
+                e = "{} ACF delta_t ({:.1e}) does not match data ({:.1e})."
+                raise AssertionError(e.format(ifo, self.acfs[ifo].delta_t,
+                                              self.data[ifo].delta_t))
+
         data_dict = self.analysis_data
 
         fpfc = [self.antenna_patterns[i] for i in self.ifos]
@@ -670,7 +677,8 @@ class Fit(object):
         self.info[section] = self.info.get(section, {})
         self.info[section].update(**kws)
 
-    def condition_data(self, preserve_acfs: bool = False, **kwargs):
+    def condition_data(self, preserve_acfs: bool = False,
+                       silent: bool = False, **kwargs):
         """Condition data for all detectors by calling
         :meth:`ringdown.data.Data.condition`. Docstring for that function
         below.
@@ -678,12 +686,20 @@ class Fit(object):
         The `preserve_acfs` argument determines whether to preserve original
         ACFs in fit after conditioning (default False).
 
+        The `silent` argument determines whether to suppress warnings.
+
         """
+        if silent:
+            warn = logging.info
+        else:
+            warn = logging.warning
+
         if self.info.get('condition'):
-            logging.warning("data has already been conditioned")
+            warn("data has already been conditioned")
 
         # record all arguments
-        settings = {k: v for k, v in locals().items() if k != 'self'}
+        settings = {k: v for k, v in locals().items()
+                    if k not in ['self', 'warn']}
         for k, v in settings.pop('kwargs').items():
             settings[k] = v
 
@@ -695,10 +711,10 @@ class Fit(object):
         self.data = new_data
         if not preserve_acfs:
             if self.acfs:
-                logging.warning("discarding existing ACFs after conditioning")
+                warn("discarding existing ACFs after conditioning")
             self.acfs = {}  # Just to be sure that these stay consistent
         elif self.acfs:
-            logging.warning("preserving existing ACFs after conditioning")
+            warn("preserving existing ACFs after conditioning")
         # record conditioning settings
         self.update_info('condition', **settings)
     condition_data.__doc__ += Data.condition.__doc__
@@ -806,7 +822,7 @@ class Fit(object):
             hdict = {}
         return hdict
 
-    def _make_model(self, prior: bool):
+    def _make_model(self, prior: bool = False):
         """Utility function to create model from settings.
         """
 
@@ -828,7 +844,7 @@ class Fit(object):
 
         return model
 
-    def _run_ess(self, model, kernel_kws, sampler_kws, run_kws, rescale_strain,
+    def _run_ess(self, model, kernel, sampler_kws, run_kws, rescale_strain,
                  prior, suppress_warnings, min_ess, prng, validation_enabled,
                  predictive, store_h_det, store_h_det_mode, store_residuals,
                  ):
@@ -841,6 +857,8 @@ class Fit(object):
         ess_run = -1.0  # ess after sampling finishes, to be set by loop below
         min_ess = 0.0 if min_ess is None else min_ess
 
+        logging.info("running model with min_ess = {}".format(min_ess))
+
         # split PRNG key for predictive
         # create random number generator (it's BAD to reuse jax PRNG keys)
         if isinstance(prng, int):
@@ -850,6 +868,7 @@ class Fit(object):
         prng, prng_pred = jax.random.split(prng)
 
         # get run input and run
+        logging.info("getting input data")
         run_input = self.run_input
         start_times = self.start_times
         epoch = [start_times[i] for i in self.ifos]
@@ -863,24 +882,27 @@ class Fit(object):
         with warnings.catch_warnings():
             warnings.simplefilter(filter)
             while ess_run < min_ess:
-                if not np.isscalar(min_ess):
-                    raise ValueError("min_ess is not a number")
+                if not np.isscalar(ess_run):
+                    raise ValueError("ess_run is not a number")
 
                 # split keys again in case we are looping
                 prng, _ = jax.random.split(prng)
 
                 # make kernel, sampler and run
-                kernel = KERNEL(model, **kernel_kws)
+                logging.info("making sampler from kernel")
                 sampler = SAMPLER(kernel, **sampler_kws)
 
                 if validation_enabled:
+                    logging.info("running with validation enabled")
                     with numpyro.validation_enabled():
                         sampler.run(prng, *run_input, **run_kws)
                 else:
+                    logging.info("running")
                     sampler.run(prng, *run_input, **run_kws)
 
                 # turn sampler into Result object and store
                 # (recall that Result is a wrapper for arviz.InferenceData)
+                logging.info("creating arViz object")
                 result = get_arviz(sampler, ifos=self.ifos, modes=self.modes,
                                    injections=inj, epoch=epoch,
                                    scale=scale, attrs=self.attrs,
@@ -1013,23 +1035,12 @@ class Fit(object):
             settings[k] = v
         self.update_info('run', **settings)
 
-        # validate ACFs
-        if not self.acfs:
-            logging.warning("computing ACFs with default settings")
-            self.compute_acfs()
-
-        # ensure delta_t of ACFs is equal to delta_t of data
-        for ifo in self.ifos:
-            if not np.isclose(self.acfs[ifo].delta_t, self.data[ifo].delta_t):
-                e = "{} ACF delta_t ({:.1e}) does not match data ({:.1e})."
-                raise AssertionError(e.format(ifo, self.acfs[ifo].delta_t,
-                                              self.data[ifo].delta_t))
-
         # create model function
         model = self._make_model(prior)
 
-        # parse keyword arguments
+        # parse keyword arguments and get kernel
         kernel_kws, sampler_kws, run_kws = get_sampling_kwargs(**kwargs)
+        kernel = KERNEL(model, **kernel_kws)
 
         # log some runtime information
         jax_device_count = jax.device_count()
@@ -1042,17 +1053,21 @@ class Fit(object):
         logging.info('kernel settings: {}'.format(kernel_kws))
         logging.info('sampler settings: {}'.format(sampler_kws))
 
+        # run the model!
         result, sampler, sampler_kws = self._run_ess(
-            model, kernel_kws, sampler_kws, run_kws, rescale_strain, prior,
+            model, kernel, sampler_kws, run_kws, rescale_strain, prior,
             suppress_warnings, min_ess, prng, validation_enabled, predictive,
             store_h_det, store_h_det_mode, store_residuals
         )
 
+        # store result and sampler
         if prior:
             self.prior = result
         else:
             self.result = result
         self._numpyro_sampler = sampler
+        # update info to reflect the last-used sampler settings
+        self.update_info('run', **sampler_kws)
     run.__doc__ = run.__doc__.format(DEF_RUN_KWS)
 
     @property
@@ -1499,7 +1514,8 @@ class Fit(object):
                    duration: float | None = None,
                    reference_ifo: str | None = None,
                    antenna_patterns: dict | None = None,
-                   target: Target | None = None):
+                   target: Target | None = None,
+                   force: bool = False):
         """ Establish truncation target, stored to `self.target`.
 
         Provide a targeted analysis start time `t0` to serve as beginning of
@@ -1563,7 +1579,10 @@ class Fit(object):
         settings = {k: v for k, v in locals().items() if k != 'self'}
 
         if self.result is not None:
-            raise ValueError("cannot set target with preexisting results")
+            if force:
+                logging.info("resetting target with preexisting results")
+            else:
+                raise ValueError("cannot set target with preexisting results")
 
         if isinstance(target, Target):
             self.target = target
@@ -1910,31 +1929,34 @@ class Fit(object):
 
 class FitSequence(Fit):
 
-    def __init__(self, *args, **kws):
+    def __init__(self, *args, target_collection=None, **kws):
         # initialize parent class
         super().__init__(*args, **kws)
         self.target_collection: TargetCollection = TargetCollection()
+        if target_collection is not None:
+            self.set_target_collection(target_collection)
+
+    def __len__(self):
+        return len(self.target_collection)
 
     def set_target_collection(self, *args, **kws):
-        if len(args) == 1 and isinstance(args[0], TargetCollection):
-            self.target_collection = args[0]
-        else:
-            self.target_collection = TargetCollection.construct(*args, **kws)
+        self.target_collection = TargetCollection.construct(*args, **kws)
+        # initialize to first target
+        self.set_target(target=self.target_collection[0])
         logging.info(f"set target collection: {self.target_collection}")
 
     def run(self,
-            prior: bool = False,
             predictive: bool = True,
-            store_h_ylm: bool = False,
-            store_h_ylm_qnm: bool = True,
+            store_h_det: bool = False,
+            store_h_det_mode: bool = True,
             store_residuals: bool = False,
             rescale_strain: bool = True,
             suppress_warnings: bool = True,
             min_ess: int | None = None,
             prng: jaxlib.xla_extension.ArrayImpl | int | None = None,
             validation_enabled: bool = False,
-            return_model: bool = False,
             individual_progress_bar: bool = False,
+            recondition: bool = True,
             **kwargs):
         # record all arguments
         settings = {k: v for k, v in locals().items() if k != 'self'}
@@ -1942,9 +1964,25 @@ class FitSequence(Fit):
             settings[k] = v
         self.update_info('run', **settings)
 
-        # get model and runtime settings
-        model, kernel_kws, sampler_kws, run_kws = self._make_model(
-            False, store_h_ylm, store_h_ylm_qnm, **kwargs)
+        logging.info(f"running sequence of {len(self)} targets")
+
+        # create model function
+        model = self._make_model(False)
+
+        # parse keyword arguments and get kernel
+        kernel_kws, sampler_kws, run_kws = get_sampling_kwargs(**kwargs)
+        kernel = KERNEL(model, **kernel_kws)
+
+        # log some runtime information
+        jax_device_count = jax.device_count()
+        platform = jax.lib.xla_bridge.get_backend().platform.upper()
+        omp_num_threads = int(os.environ.get("OMP_NUM_THREADS", 1))
+        logging.info(f"running on {jax_device_count} {platform} using "
+                     f"{omp_num_threads} OMP threads")
+
+        logging.info('run settings: {}'.format(run_kws))
+        logging.info('kernel settings: {}'.format(kernel_kws))
+        logging.info('sampler settings: {}'.format(sampler_kws))
 
         # check whether to suppress individual-run progress bars in favor
         # of a single progress bar for the entire scan
@@ -1952,17 +1990,28 @@ class FitSequence(Fit):
         if not individual_progress_bar:
             sampler_kws.update({'progress_bar': False})
 
-        results = []
-        for run_input in tqdm(self.run_input):
-            # fit model as many times as required by the min-ess criterion
-            result, _, _ = self._run_ess(
-                model, kernel_kws=kernel_kws, sampler_kws=sampler_kws,
-                run_input=run_input, run_kws=run_kws, prior=False,
-                suppress_warnings=suppress_warnings, min_ess=min_ess,
-                prng=prng, validation_enabled=validation_enabled,
-                predictive=predictive, store_h_ylm=store_h_ylm,
-                store_h_ylm_qnm=store_h_ylm_qnm,
-                store_residuals=store_residuals)
-            results.append(result)
-        self.result = ResultCollection(results, index=self.grid)
+        r = []
+        for t0, target in tqdm(self.target_collection.items(), desc='targets',
+                               total=len(self.target_collection), ncols=None):
+            logging.info(f"setting target: {t0}")
+            self.set_target(target=target, force=True)
+
+            if recondition:
+                logging.info("reconditioning data to new target")
+                self.data = self._raw_data
+                ckws = self.info['condition']
+                ckws.update({'preserve_acfs': True, 'silent': True})
+                self.condition_data(**ckws)
+
+            logging.info(f"running target: {t0}")
+            result, sampler, sampler_kws = self._run_ess(
+                model, kernel, sampler_kws, run_kws, rescale_strain, False,
+                suppress_warnings, min_ess, prng, validation_enabled,
+                predictive, store_h_det, store_h_det_mode, store_residuals
+            )
+            r.append(result)
+        self.result = ResultCollection(r, index=self.target_collection.index)
+        self._numpyro_sampler = sampler
+        # update info to reflect the last-used sampler settings
+        self.update_info('run', **sampler_kws)
     run.__doc__ = Fit.run.__doc__
