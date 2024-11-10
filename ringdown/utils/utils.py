@@ -176,7 +176,7 @@ class MultiIndexCollection(object):
     @property
     def index(self):
         if self._index is None:
-            self._index = [(i,) for i in range(len(self.data))]
+            self._index = [(i,) for i, _ in enumerate(self.data)]
         return self._index
 
     def __getitem__(self, i):
@@ -207,6 +207,9 @@ class MultiIndexCollection(object):
     def __len__(self):
         return len(self.data)
 
+    def __bool__(self):
+        return bool(self.data)
+
     def keys(self):
         return self.index
 
@@ -222,20 +225,38 @@ class MultiIndexCollection(object):
 
     @property
     def reference_mass(self):
+        """Reference time relative to which to compute time differences."""
         return self._reference_mass
 
     @property
+    def reference_mass_seconds(self) -> float | None:
+        """Reference mass in units of seconds."""
+        if self.reference_mass:
+            from ..qnms import T_MSUN
+            return self.reference_mass * T_MSUN
+        else:
+            return None
+
+    @property
     def reference_time(self):
+        """Reference mass in solar masses to use for time steps in units of
+        mass."""
         return self._reference_time
 
     def set_reference_mass(self, reference_mass):
         if reference_mass is not None:
             reference_mass = float(reference_mass)
+        if self._reference_mass is not None:
+            logging.warning(
+                f"overwriting reference mass ({self._reference_mass})")
         self._reference_mass = reference_mass
 
     def set_reference_time(self, reference_time):
         if reference_time is not None:
             reference_time = float(reference_time)
+        if self._reference_time is not None:
+            logging.warning(
+                f"overwriting reference time ({self._reference_time})")
         self._reference_time = reference_time
 
     def reindex(self, new_index):
