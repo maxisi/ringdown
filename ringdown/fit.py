@@ -20,7 +20,7 @@ import lal
 import logging
 from .data import Data, AutoCovariance, PowerSpectrum, StrainStack
 from . import utils
-from .target import Target
+from .target import Target, TargetCollection
 from .result import Result, ResultCollection
 from .model import make_model, get_arviz, MODEL_DIMENSIONS
 from . import indexing
@@ -1864,12 +1864,12 @@ class Fit(object):
         return fit
 
 
-class FitScan(Fit):
+class FitSequence(Fit):
 
     def __init__(self, *args, **kws):
         # initialize parent class
         super().__init__(*args, **kws)
-        self.grid = None
+        self.target_collection: TargetCollection = TargetCollection()
 
     def set_target(self, *args, grid=None, grid_spacing=None,
                    grid_size=None, **kws):
