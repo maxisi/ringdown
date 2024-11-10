@@ -1939,6 +1939,16 @@ class FitSequence(Fit):
     def __len__(self):
         return len(self.target_collection)
 
+    @property
+    def results(self):
+        """An alias for the `result` attribute."""
+        return self.result
+
+    @property
+    def targets(self):
+        """An alias for the `target_collection` attribute."""
+        return self.target_collection
+
     def set_target_collection(self, *args, **kws):
         self.target_collection = TargetCollection.construct(*args, **kws)
         # initialize to first target
@@ -2014,4 +2024,34 @@ class FitSequence(Fit):
         self._numpyro_sampler = sampler
         # update info to reflect the last-used sampler settings
         self.update_info('run', **sampler_kws)
-    run.__doc__ = Fit.run.__doc__
+
+    @classmethod
+    def from_config(cls, config_input: str | dict, **kws):
+        """Create a `FitSequence` object from a configuration file or
+        dictionary.
+
+        See `Fit.from_config` for additional keyword arguments.
+
+        Arguments
+        ---------
+        config_input : str, dict
+            path to configuration file or dictionary.
+        **kws :
+            additional keyword arguments passed to `FitSequence` constructor.
+
+        Returns
+        -------
+        fit : FitSequence
+            `FitSequence` object.
+        """
+        config = utils.load_config(config_input)
+        targets = TargetCollection.from_config(config)
+        config['target']['t0'] = str(targets[0].t0)
+
+        fits = super().from_config(config, **kws)
+        fits.set_target_collection(targets)
+
+        # record pipe info in config
+        fits.update_info('pipe', **config['pipe'])
+
+        return fits

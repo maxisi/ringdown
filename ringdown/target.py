@@ -673,6 +673,5 @@ class TargetCollection(utils.MultiIndexCollection):
                       for k, v in config[t0_sect].items()},
             sky_sect: sky_dict
         }
-
         return cls.construct(reference_mass=m_ref, info=info, **t0kws,
                              **sky_dict)
