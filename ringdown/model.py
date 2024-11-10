@@ -185,7 +185,7 @@ def chi_factors(chi, coeffs):
     log_sqrt_1m_chi2_4 = log_sqrt_1m_chi2_2*log_sqrt_1m_chi2_2
     log_sqrt_1m_chi2_5 = log_sqrt_1m_chi2_3*log_sqrt_1m_chi2_2
     log_sqrt_1m_chi2_6 = log_sqrt_1m_chi2_3*log_sqrt_1m_chi2_3
-        
+
     v = jnp.stack([
         1.,
         log_1m_chi,
@@ -199,7 +199,7 @@ def chi_factors(chi, coeffs):
         log_sqrt_1m_chi2_5,
         log_sqrt_1m_chi2_6
     ])
-    
+
     return jnp.dot(coeffs, v)
 
 
@@ -311,9 +311,9 @@ def make_model(modes: int | list[(int, int, int, int)],
                mode_ordering: None | str = None,
                single_polarization: bool = False,
                prior: bool = False,
-               predictive: bool = True,
-               store_h_det: bool = True,
-               store_h_det_mode: bool = True):
+               predictive: bool = False,
+               store_h_det: bool = False,
+               store_h_det_mode: bool = False):
     """
     Arguments
     ---------

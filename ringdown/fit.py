@@ -1,7 +1,7 @@
 """Module defining the core :class:`Fit` class.
 """
 
-__all__ = ['Fit']
+__all__ = ['Fit', 'FitSequence']
 
 import numpy as np
 import arviz as az
@@ -48,6 +48,26 @@ DEF_RUN_KWS = dict(dense_mass=True, num_warmup=1000, num_samples=1000,
                    num_chains=4)
 
 IMR_CONFIG_SECTION = 'imr'
+
+
+def get_sampling_kwargs(**kwargs):
+    # parse keyword arguments to be passed to KERNEL and SAMPLER, with
+    # defaults based on DEF_RUN_KWS
+    kws = cp.deepcopy(DEF_RUN_KWS)
+    kws.update(kwargs)
+
+    # tease out kernel options dynamically
+    kernel_kws = kws.pop('kernel', {})
+    kernel_kws.update({k: v for k, v in kws.items() if k in KERNEL_ARGS})
+
+    # tease out sampler options dynamically
+    sampler_kws = kws.pop('sampler', {})
+    sampler_kws.update({k: v for k, v in kws.items() if k in SAMPLER_ARGS})
+
+    # assume leftover arguments will be passed to run method
+    run_kws = {k: v for k, v in kws.items() if k not in SAMPLER_ARGS and
+               k not in KERNEL_ARGS}
+    return kernel_kws, sampler_kws, run_kws
 
 
 class Fit(object):
@@ -186,6 +206,12 @@ class Fit(object):
         return self.target is not None
 
     @property
+    def has_data(self) -> bool:
+        """Whether data has been loaded with :meth:`Fit.load_data`.
+        """
+        return bool(self.data)
+
+    @property
     def has_injections(self) -> bool:
         """Whether injections have been added with :meth:`Fit.inject`.
         """
@@ -309,9 +335,10 @@ class Fit(object):
         """Arguments to be passed to model function at runtime:
         [times, strains, ls, fp, fc].
         """
-        # check float precision and rescale strain if needed
-        if not jax.config.x64_enabled:
-            logging.warning("running with float32 precision")
+        if not self.has_data:
+            raise ValueError("no data loaded")
+        if not self.has_target:
+            raise ValueError("no target set")
 
         # temporarily rescale strain if needed (this will just be by default
         # if running on float64)
@@ -779,6 +806,145 @@ class Fit(object):
             hdict = {}
         return hdict
 
+    def _make_model(self, prior: bool):
+        """Utility function to create model from settings.
+        """
+
+        # check float precision
+        if not jax.config.x64_enabled:
+            logging.warning("running with float32 precision")
+
+        # create model (specifying prior and other settings)
+        ms = cp.deepcopy(self.model_settings)
+        if 'a_scale_max' in ms:
+            ms['a_scale_max'] = ms['a_scale_max'] / self.strain_scale
+
+        logging.info('making model')
+        model = make_model(self.modes.value, prior=prior, **ms)
+
+        logging.info('running {} mode fit'.format(self.modes))
+        logging.info('prior run: {}'.format(prior))
+        logging.info('model settings: {}'.format(self._model_settings))
+
+        return model
+
+    def _run_ess(self, model, kernel_kws, sampler_kws, run_kws, rescale_strain,
+                 prior, suppress_warnings, min_ess, prng, validation_enabled,
+                 predictive, store_h_det, store_h_det_mode, store_residuals,
+                 ):
+        """Utility function to run model until effective sample size exceeds
+        `min_ess` threshold
+
+        WARNING: NOT TO BE CALLED DIRECTLY! Use :meth:`Fit.run` instead.
+        """
+        filter = 'ignore' if suppress_warnings else 'default'
+        ess_run = -1.0  # ess after sampling finishes, to be set by loop below
+        min_ess = 0.0 if min_ess is None else min_ess
+
+        # split PRNG key for predictive
+        # create random number generator (it's BAD to reuse jax PRNG keys)
+        if isinstance(prng, int):
+            prng = jax.random.PRNGKey(prng)
+        elif prng is None:
+            prng = jax.random.PRNGKey(np.random.randint(1 << 31))
+        prng, prng_pred = jax.random.split(prng)
+
+        # get run input and run
+        run_input = self.run_input
+        start_times = self.start_times
+        epoch = [start_times[i] for i in self.ifos]
+        scale = self.strain_scale
+        if self.has_injections:
+            inj = [self.analysis_injections[i] for i in self.ifos]
+        else:
+            inj = None
+
+        run_count = 1
+        with warnings.catch_warnings():
+            warnings.simplefilter(filter)
+            while ess_run < min_ess:
+                if not np.isscalar(min_ess):
+                    raise ValueError("min_ess is not a number")
+
+                # split keys again in case we are looping
+                prng, _ = jax.random.split(prng)
+
+                # make kernel, sampler and run
+                kernel = KERNEL(model, **kernel_kws)
+                sampler = SAMPLER(kernel, **sampler_kws)
+
+                if validation_enabled:
+                    with numpyro.validation_enabled():
+                        sampler.run(prng, *run_input, **run_kws)
+                else:
+                    sampler.run(prng, *run_input, **run_kws)
+
+                # turn sampler into Result object and store
+                # (recall that Result is a wrapper for arviz.InferenceData)
+                result = get_arviz(sampler, ifos=self.ifos, modes=self.modes,
+                                   injections=inj, epoch=epoch,
+                                   scale=scale, attrs=self.attrs,
+                                   store_data=not prior)
+
+                # check effective number of samples and rerun if necessary
+                ess_run = result.ess
+                if np.isnan(ess_run):
+                    logging.warning("nan effective sample size")
+                    break
+                logging.info(f"ess = {int(ess_run)} after {run_count} runs")
+
+                if ess_run < min_ess:
+                    run_count += 1
+
+                    # if we need to run again, double the number of tuning
+                    # steps and samples
+                    new_kws = dict(
+                        num_warmup=2*sampler_kws.get('num_warmup', 1000),
+                        num_samples=2*sampler_kws.get('num_samples', 1000)
+                    )
+                    sampler_kws.update(new_kws)
+
+                    logging.warning(
+                        f"""ess = {ess_run:.1f} below threshold {min_ess};
+                        fitting again with "{new_kws['num_warmup']} tuning
+                        steps and {new_kws['num_samples']} samples"""
+                    )
+
+        if predictive or store_h_det or store_h_det_mode:
+            logging.info("obtaining predictive distribution")
+            predictive = numpyro.infer.Predictive(model, sampler.get_samples())
+            pred = predictive(prng_pred, *run_input, predictive=predictive,
+                              store_h_det=store_h_det,
+                              store_h_det_mode=store_h_det_mode)
+
+            # adduct posterior predictive to result
+            chain_draw = ['chain', 'draw']
+            shape = [result.posterior.sizes[k] for k in chain_draw]
+            coord = dict(ifo=self.ifos,
+                         mode=self.modes.get_coordinates(),
+                         time_index=np.arange(self.n_analyze, dtype=int))
+
+            for k, v in pred.items():
+                obsd = result.get('observed_data',  {})
+                if k not in result.posterior and k not in obsd:
+                    # get dimension names
+                    d = tuple(chain_draw + list(MODEL_DIMENSIONS.get(k, ())))
+                    # get coordinates
+                    c = {c: coord[c] for c in d if c not in chain_draw}
+                    # get data array replacing first dimension (samples) with
+                    # chain and draw
+                    v = np.reshape(v, tuple(shape + list(v.shape[1:])))
+                    result.posterior[k] = xr.DataArray(v, coords=c, dims=d)
+                    logging.info(f"added {k} to posterior")
+
+        if rescale_strain:
+            result.rescale_strain()
+
+        if not prior and store_residuals:
+            result._generate_whitened_residuals()
+
+        return result, sampler, sampler_kws
+
     def run(self,
             prior: bool = False,
             predictive: bool = True,
@@ -790,7 +956,6 @@ class Fit(object):
             min_ess: int | None = None,
             prng: jaxlib.xla_extension.ArrayImpl | int | None = None,
             validation_enabled: bool = False,
-            return_model: bool = False,
             **kwargs):
         """Fit model.
 
@@ -848,9 +1013,7 @@ class Fit(object):
             settings[k] = v
         self.update_info('run', **settings)
 
-        ess_run = -1.0  # ess after sampling finishes, to be set by loop below
-        min_ess = 0.0 if min_ess is None else min_ess
-
+        # validate ACFs
         if not self.acfs:
             logging.warning("computing ACFs with default settings")
             self.compute_acfs()
@@ -862,42 +1025,11 @@ class Fit(object):
                 raise AssertionError(e.format(ifo, self.acfs[ifo].delta_t,
                                               self.data[ifo].delta_t))
 
+        # create model function
+        model = self._make_model(prior)
+
         # parse keyword arguments
-        filter = 'ignore' if suppress_warnings else 'default'
-
-        # create model
-        ms = cp.deepcopy(self.model_settings)
-        if 'a_scale_max' in ms:
-            ms['a_scale_max'] = ms['a_scale_max'] / self.strain_scale
-        logging.info('making model')
-        model = make_model(self.modes.value, prior=prior, predictive=False,
-                           store_h_det=False, store_h_det_mode=False, **ms)
-        if return_model:
-            return model
-
-        logging.info('running {} mode fit'.format(self.modes))
-        logging.info('prior run: {}'.format(prior))
-        logging.info('model settings: {}'.format(self._model_settings))
-
-        # parse keyword arguments to be passed to KERNEL and SAMPLER, with
-        # defaults based on DEF_RUN_KWS
-        kws = cp.deepcopy(DEF_RUN_KWS)
-        kws.update(kwargs)
-
-        # tease out kernel options dynamically
-        kernel_kws = kws.pop('kernel', {})
-        kernel_kws.update({k: v for k, v in kws.items() if k in KERNEL_ARGS})
-        logging.info('kernel settings: {}'.format(kernel_kws))
-
-        # tease out sampler options dynamically
-        sampler_kws = kws.pop('sampler', {})
-        sampler_kws.update({k: v for k, v in kws.items() if k in SAMPLER_ARGS})
-        logging.info('sampler settings: {}'.format(sampler_kws))
-
-        # assume leftover arguments will be passed to run method
-        run_kws = {k: v for k, v in kws.items() if k not in SAMPLER_ARGS and
-                   k not in KERNEL_ARGS}
-        logging.info('run settings: {}'.format(run_kws))
+        kernel_kws, sampler_kws, run_kws = get_sampling_kwargs(**kwargs)
 
         # log some runtime information
         jax_device_count = jax.device_count()
@@ -906,107 +1038,19 @@ class Fit(object):
         logging.info(f"running on {jax_device_count} {platform} using "
                      f"{omp_num_threads} OMP threads")
 
-        # get run input and run
-        run_input = self.run_input
-        start_times = self.start_times
-        epoch = [start_times[i] for i in self.ifos]
-        scale = self.strain_scale
-        if self.has_injections:
-            inj = [self.analysis_injections[i] for i in self.ifos]
-        else:
-            inj = None
+        logging.info('run settings: {}'.format(run_kws))
+        logging.info('kernel settings: {}'.format(kernel_kws))
+        logging.info('sampler settings: {}'.format(sampler_kws))
 
-        # split PRNG key for predictive
-        # create random number generator (it's BAD to reuse jax PRNG keys)
-        if isinstance(prng, int):
-            prng = jax.random.PRNGKey(prng)
-        elif prng is None:
-            prng = jax.random.PRNGKey(np.random.randint(1 << 31))
-        prng, prng_pred = jax.random.split(prng)
-
-        run_count = 1
-        with warnings.catch_warnings():
-            warnings.simplefilter(filter)
-            while ess_run < min_ess:
-                if not np.isscalar(min_ess):
-                    raise ValueError("min_ess is not a number")
-
-                # split keys again in case we are looping
-                prng, _ = jax.random.split(prng)
-
-                # make kernel, sampler and run
-                kernel = KERNEL(model, **kernel_kws)
-                sampler = SAMPLER(kernel, **sampler_kws)
-
-                if validation_enabled:
-                    with numpyro.validation_enabled():
-                        sampler.run(prng, *run_input, **run_kws)
-                else:
-                    sampler.run(prng, *run_input, **run_kws)
-
-                # turn sampler into Result object and store
-                # (recall that Result is a wrapper for arviz.InferenceData)
-                result = get_arviz(sampler, ifos=self.ifos, modes=self.modes,
-                                   injections=inj, epoch=epoch, scale=scale,
-                                   attrs=self.attrs, store_data=not prior)
-
-                # check effective number of samples and rerun if necessary
-                ess_run = result.ess
-                logging.info(f"ess = {int(ess_run)} after {run_count} runs")
-
-                if ess_run < min_ess:
-                    run_count += 1
-
-                    # if we need to run again, double the number of tuning
-                    # steps and samples
-                    new_kws = dict(
-                        num_warmup=2*sampler_kws.get('num_warmup', 1000),
-                        num_samples=2*sampler_kws.get('num_samples', 1000)
-                    )
-                    sampler_kws.update(new_kws)
-
-                    logging.warning(
-                        f"""ess = {ess_run:.1f} below threshold {min_ess};
-                        fitting again with "{new_kws['num_warmup']} tuning
-                        steps and {new_kws['num_samples']} samples"""
-                    )
-
-                    kwargs.update(kws)
-
-        if predictive or store_h_det or store_h_det_mode:
-            logging.info("obtaining predictive distribution")
-            predictive = numpyro.infer.Predictive(model, sampler.get_samples())
-            pred = predictive(prng_pred, *run_input, predictive=predictive,
-                              store_h_det=store_h_det,
-                              store_h_det_mode=store_h_det_mode)
-
-            # adduct posterior predictive to result
-            chain_draw = ['chain', 'draw']
-            shape = [result.posterior.sizes[k] for k in chain_draw]
-            coord = dict(ifo=self.ifos,
-                         mode=self.modes.get_coordinates(),
-                         time_index=np.arange(self.n_analyze, dtype=int))
-            for k, v in pred.items():
-                obsd = result.get('observed_data',  {})
-                if k not in result.posterior and k not in obsd:
-                    # get dimension names
-                    d = tuple(chain_draw + list(MODEL_DIMENSIONS.get(k, ())))
-                    # get coordinates
-                    c = {c: coord[c] for c in d if c not in chain_draw}
-                    # get data array replacing first dimension (samples) with
-                    # chain and draw
-                    v = np.reshape(v, tuple(shape + list(v.shape[1:])))
-                    result.posterior[k] = xr.DataArray(v, coords=c, dims=d)
-                    logging.info(f"added {k} to posterior")
-
-        if rescale_strain:
-            result.rescale_strain()
+        result, sampler, sampler_kws = self._run_ess(
+            model, kernel_kws, sampler_kws, run_kws, rescale_strain, prior,
+            suppress_warnings, min_ess, prng, validation_enabled, predictive,
+            store_h_det, store_h_det_mode, store_residuals
+        )
 
         if prior:
             self.prior = result
         else:
-            if store_residuals:
-                result._generate_whitened_residuals()
             self.result = result
         self._numpyro_sampler = sampler
     run.__doc__ = run.__doc__.format(DEF_RUN_KWS)
@@ -1871,75 +1915,25 @@ class FitSequence(Fit):
         super().__init__(*args, **kws)
         self.target_collection: TargetCollection = TargetCollection()
 
-    def set_target(self, *args, grid=None, grid_spacing=None,
-                   grid_size=None, **kws):
-
-        if grid is not None:
-            grid = np.array(grid)
-            if 'start_time' not in kws:
-                kws['start_time'] = grid[0]
-        elif np.isscalar(grid_spacing):
-            n_times = self.duration // float(grid_spacing)
-            grid = np.arange(n_times)*float(grid_spacing) + self.start_time
-        elif np.isscalar(grid_size):
-            grid = np.linspace(self.start_time, self.end_time, grid_size,
-                               endpoint=False)
-        elif grid is None and grid_spacing is None and grid_size is None:
-            grid = np.array([self.start_time])
-
-        super().set_target(*args, **kws)
-        self.grid = grid
-
-    @property
-    def analysis_index_bounds(self) -> list[tuple]:
-        if self.has_target:
-            idx2 = np.argmin(abs(self.time - self.end_time)) + 1
-            idxs = []
-            for start_time in self.grid:
-                idx1 = np.argmin(abs(self.time - start_time))
-
-                idxs.append((idx1, idx2))
-            return idxs
+    def set_target_collection(self, *args, **kws):
+        if len(args) == 1 and isinstance(args[0], TargetCollection):
+            self.target_collection = args[0]
         else:
-            raise ValueError("no target set")
+            self.target_collection = TargetCollection.construct(*args, **kws)
+        logging.info(f"set target collection: {self.target_collection}")
 
-    @property
-    def run_input(self) -> list:
-        """Arguments to be passed to model function at runtime:
-        [times, strains, noise_scales].
-        """
-        if not self.has_data:
-            raise ValueError("no data loaded")
-        if not self.has_target:
-            raise ValueError("no target set")
-
-        if not self.noise_scales:
-            logging.warning("computing variances with default settings")
-            self.set_noise_scales()
-
-        run_inputs = []
-        for t0, (idx1, idx2) in zip(self.grid, self.analysis_index_bounds):
-            # arguments to be passed to function returned by `model` function
-            # output by `make_model`---make sure this agrees with that function
-            # call! [times, strains, ls]
-            noise_scales = self._get_noise_scales(idx1, idx2)
-            input = [
-                [self.time[idx1:idx2] - t0]*len(self.ylms),
-                [self.data[ylm].values[idx1:idx2] for ylm in self.ylms],
-                [noise_scales[ylm] for ylm in self.ylms],
-            ]
-            run_inputs.append(input)
-
-        return run_inputs
-
-    def run(self, predictive: bool = True,
+    def run(self,
+            prior: bool = False,
+            predictive: bool = True,
             store_h_ylm: bool = False,
             store_h_ylm_qnm: bool = True,
             store_residuals: bool = False,
+            rescale_strain: bool = True,
             suppress_warnings: bool = True,
             min_ess: int | None = None,
             prng: jaxlib.xla_extension.ArrayImpl | int | None = None,
             validation_enabled: bool = False,
+            return_model: bool = False,
             individual_progress_bar: bool = False,
             **kwargs):
         # record all arguments
