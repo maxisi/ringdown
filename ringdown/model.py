@@ -31,9 +31,8 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, aligned=False,
     There are four quadratures per mode
     :math:`(F_+ \\cos\\omega t, F_+ \\sin\\omega t,
     F_\\times \\cos\\omega t, F_\\times \\sin\\omega t)`,
-    so that the design matrix has shape ``(nifo, nt, nquads*nmode)``, i.e.,
+    so that the design matrix has shape ``(nifo, nt, nquads*nmode)``, i.e.,::
 
-    ::
         [
             [
                 # [0:nmode] are the plus cosine quadratures
