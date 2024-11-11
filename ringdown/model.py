@@ -1,3 +1,7 @@
+"""Module defining the probabilistic model (likelihood and prior)
+for ringdown data.
+"""
+
 __all__ = ['make_model', 'get_arviz', 'rd_design_matrix']
 
 import numpy as np
@@ -24,8 +28,10 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, aligned=False,
     basis functions for the damped sinusoids that make up the ringdown model;
     the columns are times.
 
-    There are four quadratures per mode (Fp*cos, Fp*sin, Fc*cos, Fc*sin),
-    so that the design matrix has shape (nifo, nt, nquads*nmode), i.e.,
+    There are four quadratures per mode
+    :math:`(F_+ \\cos\\omega t, F_+ \\sin\\omega t,
+    F_\\times \\cos\\omega t, F_\\times \\sin\\omega t)``,
+    so that the design matrix has shape ``(nifo, nt, nquads*nmode)``, i.e.,
 
     .. code-block:: python
         [
@@ -69,10 +75,10 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, aligned=False,
 
     .. math::
         h_+ = A_{\\ell m} Y_{\\ell m}^+ \\cos(\\omega_{\\ell m} t
-        - \\phi_{\\ell m})t) \\\\
+        - \\phi_{\\ell m}) \\\\
 
         h_\\times = A_{\\ell m} Y_{\\ell m}^\\times \\sin(\\omega_{\\ell m} t
-        - \\phi_{\\ell m})t)
+        - \\phi_{\\ell m})
 
     This means that the quadratures are:
 
@@ -103,7 +109,7 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, aligned=False,
     .. math::
         h = (x, y) \\cdot M
 
-    where :math:`x = A_{\\ell m} \\cos \\phi_{\\ell m}` and :math:`y = _{\\ell
+    where :math:`x = A_{\\ell m} \\cos \\phi_{\\ell m}` and :math:`y = A_{\\ell
     m} \\sin \\phi_{\\ell m}` while :math:`M` is the matrix
 
     .. math::
@@ -120,17 +126,17 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, aligned=False,
     Arguments
     ---------
     ts : array_like
-        The times at which to evaluate the design matrix; shape (nifo, nt).
+        The times at which to evaluate the design matrix; shape ``(nifo, nt)``.
     f : array_like
-        The frequencies of the damped sinusoids; shape (nmode,).
+        The frequencies of the damped sinusoids; shape ``(nmode,)``.
     gamma : array_like
-        The damping rates of the damped sinusoids; shape (nmode,).
+        The damping rates of the damped sinusoids; shape ``(nmode,)``.
     Fp : array_like
-        The plus polarization coefficients; shape (nifo,).
+        The plus polarization coefficients; shape ``(nifo,)``.
     Fc : array_like
-        The cross polarization coefficients; shape (nifo,).
+        The cross polarization coefficients; shape ``(nifo,)``.
     Ascales : array_like
-        The amplitude scales of the damped sinusoids; shape (nmode,).
+        The amplitude scales of the damped sinusoids; shape ``(nmode,)``.
 
     Returns
     -------
