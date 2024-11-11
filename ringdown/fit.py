@@ -1952,7 +1952,8 @@ class FitSequence(Fit):
     def set_target_collection(self, *args, **kws):
         self.target_collection = TargetCollection.construct(*args, **kws)
         # initialize to first target
-        self.set_target(target=self.target_collection[0])
+        if len(self.target_collection) > 0:
+            self.set_target(target=self.target_collection[0])
         logging.info(f"set target collection: {self.target_collection}")
 
     def run(self,
@@ -1967,6 +1968,7 @@ class FitSequence(Fit):
             validation_enabled: bool = False,
             individual_progress_bars: bool = False,
             recondition: bool = True,
+            output_path: str | None = None,
             **kwargs):
         # record all arguments
         settings = {k: v for k, v in locals().items() if k != 'self'}
@@ -2001,6 +2003,7 @@ class FitSequence(Fit):
             sampler_kws.update({'progress_bar': False})
 
         r = []
+        sampler = None
         for t0, target in tqdm(self.target_collection.items(), desc='targets',
                                total=len(self.target_collection), ncols=None):
             logging.info(f"setting target: {t0}")
@@ -2020,6 +2023,15 @@ class FitSequence(Fit):
                 predictive, store_h_det, store_h_det_mode, store_residuals
             )
             r.append(result)
+
+            if output_path:
+                dirname = os.path.dirname(os.path.abspath(output_path))
+                if dirname and not os.path.exists(dirname):
+                    os.makedirs(dirname)
+                path = output_path.replace('*', '{}').format(t0)
+                logging.info(f"saving results to {path}")
+                result.to_netcdf(path)
+
         self.result = ResultCollection(r, index=self.target_collection.index)
         self._numpyro_sampler = sampler
         # update info to reflect the last-used sampler settings

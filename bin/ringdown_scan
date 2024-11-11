@@ -73,6 +73,9 @@ if __name__ == "__main__":
 
     print("Loading: {}".format(os.path.abspath(args.config)))
 
+    if not os.path.exists(args.config):
+        raise FileNotFoundError(f"config file not found: {args.config}")
+
     config = configparser.ConfigParser()
     config.read(args.config)
 
@@ -84,12 +87,13 @@ if __name__ == "__main__":
                             "option instead.")
     else:
         run_kws = {}
-    run_kws['individual_progress_bars'] = args.individual_progress_bars
+    run_kws['individual_progress_bars'] = args.individual_progress_bars \
+        or args.verbose
 
     from jax import config as jax_config
     jax_config.update("jax_enable_x64", not run_kws.pop('float32', False))
 
-    out = args.output or DEFOUT
+    out = os.path.abspath(args.output or DEFOUT)
 
     import numpyro
     numpyro.set_platform(args.platform)
@@ -122,16 +126,8 @@ if __name__ == "__main__":
                 logging.warning(f"output file already exists: {path}")
             else:
                 new_targets.append(target)
-            fit.set_target_collection(new_targets)
+        fit.set_target_collection(new_targets)
 
-    fit.run(**run_kws)
-
-    ext = os.path.splitext(out)[-1]
-    if ext.lower() == '.nc':
-        fit.results.to_netcdf(out)
-    else:
-        logging.warning("only netCDF output is supported. Saving to: "
-                        "{}.nc".format(out))
-        fit.results.to_netcdf(out + '.nc')
+    fit.run(**run_kws, output_path=out)
 
     print("Saved ringdown fits: {}".format(out))
