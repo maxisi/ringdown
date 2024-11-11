@@ -606,6 +606,8 @@ class IMRResult(pd.DataFrame):
                                attrs={'config': c}, psds=p)
                 else:
                     raise ValueError("no {posterior_key} found")
+        else:
+            raise ValueError(f"unsupported file format: {path}")
 
     _REFERENCE_SRATE = 16384
 

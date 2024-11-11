@@ -467,16 +467,31 @@ class Fit(object):
             if bool(model_opts.pop('order_gammas')):
                 model_opts['mode_ordering'] = 'g'
 
+        # utility to extract ifos from config
+        def get_ifo_list(section):
+            ifo_input = config.get(section, 'ifos', fallback='')
+            try:
+                ifos = literal_eval(ifo_input)
+            except (ValueError, SyntaxError):
+                ifos = [i.strip() for i in ifo_input.split(',')]
+            return ifos
+
         # create fit object
         if config.has_option(IMR_CONFIG_SECTION, 'initialize_fit'):
             imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
                    if k != 'initialize_fit'}
-            fit = cls.from_imr_result(**imr, **model_opts)
+            if 'data' in config:
+                data_kws = {k: utils.try_parse(v)
+                            for k, v in config['data'].items()}
+                data_kws['ifos'] = get_ifo_list('data')
+            else:
+                data_kws = {}
+            fit = cls.from_imr_result(**imr, **model_opts, data_kws=data_kws)
         else:
             fit = cls(**model_opts)
 
         # load reference imr result if requested
-        if config.has_section('imr') and not fit.imr_result:
+        if config.has_section('imr') and fit.imr_result.empty:
             imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
                    if k != 'initialize_fit'}
             if imr.get('path'):
@@ -489,15 +504,6 @@ class Fit(object):
             # the rest of the options require loading data, so if no pointer to
             # data was provided, just exit
             return fit
-
-        # utility to extract ifos from config
-        def get_ifo_list(section):
-            ifo_input = config.get(section, 'ifos', fallback='')
-            try:
-                ifos = literal_eval(ifo_input)
-            except (ValueError, SyntaxError):
-                ifos = [i.strip() for i in ifo_input.split(',')]
-            return ifos
 
         # load data
         if 'data' in config:
@@ -516,8 +522,9 @@ class Fit(object):
             fit.fake_data(ifos=ifos, **kws)
 
         # add target
-        fit.set_target(**{k: utils.try_parse(v)
-                          for k, v in config['target'].items()})
+        if config.has_section('target'):
+            fit.set_target(**{k: utils.try_parse(v)
+                              for k, v in config['target'].items()})
 
         # inject signal if requested
         if config.has_section('injection'):
