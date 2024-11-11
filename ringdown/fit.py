@@ -1965,7 +1965,7 @@ class FitSequence(Fit):
             min_ess: int | None = None,
             prng: jaxlib.xla_extension.ArrayImpl | int | None = None,
             validation_enabled: bool = False,
-            individual_progress_bar: bool = False,
+            individual_progress_bars: bool = False,
             recondition: bool = True,
             **kwargs):
         # record all arguments
@@ -1996,8 +1996,8 @@ class FitSequence(Fit):
 
         # check whether to suppress individual-run progress bars in favor
         # of a single progress bar for the entire scan
-        tqdm = utils.get_tqdm(not individual_progress_bar)
-        if not individual_progress_bar:
+        tqdm = utils.get_tqdm(not individual_progress_bars)
+        if not individual_progress_bars:
             sampler_kws.update({'progress_bar': False})
 
         r = []
