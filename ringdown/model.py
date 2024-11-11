@@ -33,7 +33,7 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, aligned=False,
     F_\\times \\cos\\omega t, F_\\times \\sin\\omega t)``,
     so that the design matrix has shape ``(nifo, nt, nquads*nmode)``, i.e.,
 
-    .. code-block:: python
+    ::
         [
             [
                 # [0:nmode] are the plus cosine quadratures
