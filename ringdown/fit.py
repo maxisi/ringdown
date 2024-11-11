@@ -6,7 +6,6 @@ __all__ = ['Fit', 'FitSequence']
 import numpy as np
 import arviz as az
 import json
-from ast import literal_eval
 import configparser
 import copy as cp
 import os
@@ -216,6 +215,13 @@ class Fit(object):
         """Whether injections have been added with :meth:`Fit.inject`.
         """
         return bool(self.injections)
+
+    @property
+    def has_imr_result(self) -> bool:
+        """Whether an IMR result has been loaded with
+        :meth:`Fit.add_imr_result`.
+        """
+        return not self.imr_result.empty
 
     @property
     def start_times(self):
@@ -467,31 +473,25 @@ class Fit(object):
             if bool(model_opts.pop('order_gammas')):
                 model_opts['mode_ordering'] = 'g'
 
-        # utility to extract ifos from config
-        def get_ifo_list(section):
-            ifo_input = config.get(section, 'ifos', fallback='')
-            try:
-                ifos = literal_eval(ifo_input)
-            except (ValueError, SyntaxError):
-                ifos = [i.strip() for i in ifo_input.split(',')]
-            return ifos
-
-        # create fit object
+        # initialize fit object, potentially from IMR result
         if config.has_option(IMR_CONFIG_SECTION, 'initialize_fit'):
+            logging.info("initializing fit from IMR result")
             imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
                    if k != 'initialize_fit'}
             if 'data' in config:
+                logging.info("loading data from disk (ignoring IMR data)")
                 data_kws = {k: utils.try_parse(v)
                             for k, v in config['data'].items()}
-                data_kws['ifos'] = get_ifo_list('data')
+                data_kws['ifos'] = utils.get_ifo_list(config, 'data')
             else:
                 data_kws = {}
             fit = cls.from_imr_result(**imr, **model_opts, data_kws=data_kws)
         else:
+            logging.info("initializing fit")
             fit = cls(**model_opts)
 
         # load reference imr result if requested
-        if config.has_section('imr') and fit.imr_result.empty:
+        if config.has_section('imr') and not fit.has_imr_result:
             imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
                    if k != 'initialize_fit'}
             if imr.get('path'):
@@ -506,8 +506,8 @@ class Fit(object):
             return fit
 
         # load data
-        if 'data' in config:
-            ifos = get_ifo_list('data')
+        if 'data' in config and not fit.has_data:
+            ifos = utils.get_ifo_list(config, 'data')
 
             # NOTE: not popping in order to preserve original ConfigParser
             kws = {k: utils.try_parse(v) for k, v in config['data'].items()
@@ -516,7 +516,7 @@ class Fit(object):
 
         # simulate data
         if 'fake-data' in config:
-            ifos = get_ifo_list('fake-data')
+            ifos = utils.get_ifo_list(config, 'fake-data')
             kws = {k: utils.try_parse(v)
                    for k, v in config['fake-data'].items() if k != 'ifos'}
             fit.fake_data(ifos=ifos, **kws)
@@ -539,8 +539,8 @@ class Fit(object):
                     # check if there's an overlap between JSON and INI
                     overlap = set(json_kws.keys()).intersection(inj_kws.keys())
                     if overlap:
-                        logging.warn("overwriting injection file options "
-                                     f"with config: {overlap}")
+                        logging.warning("overwriting injection file options "
+                                        f"with config: {overlap}")
                     # merge injection settings from JSON and INI
                     # NOTE: config file overwrites JSON!
                     json_kws.update(inj_kws)
@@ -574,7 +574,7 @@ class Fit(object):
                 config.get('acf', 'from_imr_result', fallback=False):
             kws = {k: utils.try_parse(v) for k, v in config['acf'].items()}
             fit.load_acfs(**kws)
-        else:
+        elif not fit.acfs:
             acf_kws = {} if 'acf' not in config else config['acf']
             fit.compute_acfs(**{k: utils.try_parse(v)
                                 for k, v in acf_kws.items()})
@@ -1876,8 +1876,10 @@ class Fit(object):
     def from_imr_result(cls, imr_result: imr.IMRResult | str,
                         advance_target_by_mass: float | None = None,
                         reference_mass: float | None = None,
-                        load_data: bool = True, load_acfs: bool = True,
-                        condition: bool = True, set_target: bool = True,
+                        load_data: bool = True,
+                        load_acfs: bool = True,
+                        condition: bool = True,
+                        set_target: bool = True,
                         update_model: bool = True,
                         duration: float | bool = 'auto',
                         data_kws: dict | None = None,

@@ -59,6 +59,15 @@ def try_parse(x):
                 return x
 
 
+def get_ifo_list(config, section):
+    ifo_input = config.get(section, 'ifos', fallback='')
+    try:
+        ifos = literal_eval(ifo_input)
+    except (ValueError, SyntaxError):
+        ifos = [i.strip() for i in ifo_input.split(',')]
+    return ifos
+
+
 def get_hdf5_value(x):
     """Attempt to parse a string as a number, dict, or list."""
     while isinstance(x, np.ndarray) and len(x) == 1:
