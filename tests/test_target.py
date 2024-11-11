@@ -120,7 +120,7 @@ def test_target_collection(rtol=1e-4):
     # check no reference values
     assert target_collection.reference_time is None
     assert target_collection.reference_mass is None
-    assert target_collection.reference_mass_time is None
+    assert target_collection.reference_mass_seconds is None
 
     # set the reference time
     target_collection.set_reference_time(T0_REF)
@@ -133,7 +133,7 @@ def test_target_collection(rtol=1e-4):
     # set the reference mass to the default value
     target_collection.set_reference_mass(M_REF_MSUN)
     assert target_collection.reference_mass == M_REF_MSUN
-    assert target_collection.reference_mass_time == M_REF_S
+    assert target_collection.reference_mass_seconds == M_REF_S
 
     assert all(np.equal(target_collection.t0m,
                         target_collection.get('delta-m')))

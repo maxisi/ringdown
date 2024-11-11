@@ -186,7 +186,7 @@ class Result(az.InferenceData):
         for section, settings in self.config.items():
             config.add_section(section)
             for key, value in settings.items():
-                config.set(section, key, utils.form_opt(value))
+                config.set(section, key, utils.form_opt(value, key=key))
         return config
 
     @property
@@ -349,6 +349,11 @@ class Result(az.InferenceData):
             wds = np.array([sl.solve_triangular(L, d, lower=True)
                             for L, d in zip(chols, datas)])
         return wds
+
+    @property
+    def whitened_data(self) -> np.ndarray:
+        """Whitened data used in the analysis."""
+        return self.whiten(self.observed_strain)
 
     @property
     def templates(self) -> data.StrainStack:
@@ -1064,6 +1069,31 @@ class ResultCollection(utils.MultiIndexCollection):
         info = kws.get('info', {})
         info['provenance'] = paths
         return cls(results, index, **kws)
+
+    def to_netcdf(self, paths: str | None = None, **kws) -> None:
+        """Save the collection of results to NetCDF files.
+
+        Arguments
+        ---------
+        paths : str
+            template path to NetCDF file or list of paths; if a string,
+            expected to be a template like `path/to/many/files/*.nc` or
+            `path/to/many/files/{}.nc` where `{}` or `*` is replaced by the
+            index value.
+        **kws : dict
+            additional keyword arguments to pass to the `to_netcdf` method of
+            each result
+        """
+        index = self.index
+        if isinstance(paths, str):
+            paths = [paths.replace('*', '{}').format(idx) for idx in index]
+        elif len(paths) != len(index):
+            raise ValueError("Number of paths does not match results.")
+        for path, result in zip(paths, self.results):
+            dirname = os.path.abspath(os.path.dirname(path))
+            if not os.path.exists(dirname):
+                os.makedirs(dirname)
+            result.to_netcdf(path, **kws)
 
     def get_parameter_dataframe(self, ndraw: int | None = None,
                                 index_label: str = 'run',

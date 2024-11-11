@@ -1,7 +1,7 @@
 # This workflow will install Python dependencies, run tests and lint with a single version of Python
 # For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
 
-name: test executables and lint
+name: test example notebooks
 
 on:
   push:
@@ -32,25 +32,7 @@ jobs:
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         pip install .
         python -m ipykernel install --user --name ringdown
-    - name: Lint with flake8
+    - name: Test examples
       run: |
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-    - name: Unit tests
-      run: |
-        # Run the unit tests
-        pytest -n=auto --cov=ringdown --cov-report=xml
-    - name: Test fit
-      run: |
-        # test config file interface
-        bash tests/test_fit_config.sh
-    - name: Test pipe
-      run: |
-        # test pipe
-        bash tests/test_pipe_config.sh
-    - name: Test scan
-      run: |
-        # test scan
-        bash tests/test_scan_config.sh
+        # test notebooks
+        pytest -n=auto --nbmake "docs/examples"
