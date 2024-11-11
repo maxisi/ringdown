@@ -1,4 +1,4 @@
-__all__ = ['make_model', 'get_arviz']
+__all__ = ['make_model', 'get_arviz', 'rd_design_matrix']
 
 import numpy as np
 import jax.numpy as jnp
@@ -27,41 +27,42 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, aligned=False,
     There are four quadratures per mode (Fp*cos, Fp*sin, Fc*cos, Fc*sin),
     so that the design matrix has shape (nifo, nt, nquads*nmode), i.e.,
 
-    [
+    .. code-block:: python
         [
-            # [0:nmode] are the plus cosine quadratures
-            Fp * exp(-gamma_0*t_0) * cos(omega_0*t_0),
-            Fp * exp(-gamma_1*t_0) * cos(omega_1*t_0),
-            ...,
-            # [nmode:2*nmode] are the plus sine quadratures
-            Fp * exp(-gamma_0*t_0) * sin(omega_0*t_0),
-            Fp * exp(-gamma_1*t_0) * sin(omega_1*t_0),
-            ...,
-            # [2*nmode:3*nmode] are the cross cosine quadratures
-            Fc * exp(-gamma_0*t_0) * cos(omega_0*t_0),
-            Fc * exp(-gamma_1*t_0) * cos(omega_1*t_0),
-            ...,
-            # [3*nmode:4*nmode] are the cross sine quadratures
-            Fc * exp(-gamma_0*t_0) * sin(omega_0*t_0),
-            Fc * exp(-gamma_1*t_0) * sin(omega_1*t_0),
+            [
+                # [0:nmode] are the plus cosine quadratures
+                Fp * exp(-gamma_0*t_0) * cos(omega_0*t_0),
+                Fp * exp(-gamma_1*t_0) * cos(omega_1*t_0),
+                ...,
+                # [nmode:2*nmode] are the plus sine quadratures
+                Fp * exp(-gamma_0*t_0) * sin(omega_0*t_0),
+                Fp * exp(-gamma_1*t_0) * sin(omega_1*t_0),
+                ...,
+                # [2*nmode:3*nmode] are the cross cosine quadratures
+                Fc * exp(-gamma_0*t_0) * cos(omega_0*t_0),
+                Fc * exp(-gamma_1*t_0) * cos(omega_1*t_0),
+                ...,
+                # [3*nmode:4*nmode] are the cross sine quadratures
+                Fc * exp(-gamma_0*t_0) * sin(omega_0*t_0),
+                Fc * exp(-gamma_1*t_0) * sin(omega_1*t_0),
+                ...
+            ],
+            [
+                Fp * exp(-gamma_0*t_1) * cos(omega_0*t_1),
+                Fp * exp(-gamma_1*t_1) * cos(omega_1*t_1),
+                ...,
+                Fp * exp(-gamma_0*t_1) * sin(omega_0*t_1),
+                Fp * exp(-gamma_1*t_1) * sin(omega_1*t_1),
+                ...,
+                Fc * exp(-gamma_0*t_1) * cos(omega_0*t_1),
+                Fc * exp(-gamma_1*t_1) * cos(omega_1*t_1),
+                ...,
+                Fc * exp(-gamma_0*t_1) * sin(omega_0*t_1),
+                Fc * exp(-gamma_1*t_1) * sin(omega_1*t_1),
+                ...
+            ],
             ...
-        ],
-        [
-            Fp * exp(-gamma_0*t_1) * cos(omega_0*t_1),
-            Fp * exp(-gamma_1*t_1) * cos(omega_1*t_1),
-            ...,
-            Fp * exp(-gamma_0*t_1) * sin(omega_0*t_1),
-            Fp * exp(-gamma_1*t_1) * sin(omega_1*t_1),
-            ...,
-            Fc * exp(-gamma_0*t_1) * cos(omega_0*t_1),
-            Fc * exp(-gamma_1*t_1) * cos(omega_1*t_1),
-            ...,
-            Fc * exp(-gamma_0*t_1) * sin(omega_0*t_1),
-            Fc * exp(-gamma_1*t_1) * sin(omega_1*t_1),
-            ...
-        ],
-        ...
-    ]
+        ]
 
     For the aligned model we have that, for each :math:`(\\ell, m)` mode and
     suppressing the exponential decay,
@@ -73,14 +74,18 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, aligned=False,
         h_\\times = A_{\\ell m} Y_{\\ell m}^\\times \\sin(\\omega_{\\ell m} t
         - \\phi_{\\ell m})t)
 
-    This means that the quadratures are: .. math::
+    This means that the quadratures are:
+
+    .. math::
         x_+ = A_{\\ell m} Y_{\\ell m}^+ \\cos\\phi_{\\ell m} \\\\ y_+ =
         A_{\\ell m} Y_{\\ell m}^+ \\sin\\phi_{\\ell m} \\\\ x_\\times =
         - A_{\\ell m} Y_{\\ell m}^\\times \\sin\\phi_{\\ell m} \\\\ y_\\times
         = A_{\\ell m} Y_{\\ell m}^\\times \\cos\\phi_{\\ell m}
 
     We want to combine these four quadratures into two. To do this, note that
-    the overall signal at a given detector looks like: .. math::
+    the overall signal at a given detector looks like:
+
+    .. math::
         h = A_{\\ell m} \\left( F_+ Y_{\\ell m}^+ \\cos\\phi_{\\ell m} -
         F_\\times Y_{\\ell m}^\\times \\sin\\phi_{\\ell m} \\right)
         \\cos(\\omega_{\\ell m} t) +
