@@ -213,6 +213,21 @@ class MultiIndexCollection(object):
     def get(self, key):
         return self.data[self.index[key]]
 
+    @property
+    def as_dict(self):
+        if self._key_size == 1:
+            return {k[0]: v for k, v in self.items()}
+        else:
+            return dict(self.items())
+
+    @property
+    def idx(self):
+        return self.as_dict
+
+    @property
+    def loc(self):
+        return self.values
+
     def __len__(self):
         return len(self.data)
 
