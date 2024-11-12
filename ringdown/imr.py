@@ -10,7 +10,8 @@ from . import waveforms
 from . import target
 from . import data
 from . indexing import ModeIndexList
-from .utils import get_tqdm, get_hdf5_value, get_bilby_dict
+from .utils import get_tqdm, get_hdf5_value, get_bilby_dict, \
+    get_dict_from_pattern
 import lal
 import multiprocessing as mp
 from lalsimulation import nrfits
@@ -74,8 +75,21 @@ class IMRResult(pd.DataFrame):
         """Power Spectral Densities used in the analysis."""
         return self.__dict__['_psds'] or {}
 
-    def set_psds(self, psds: dict) -> None:
-        """Set the PSDs used in the analysis."""
+    def set_psds(self, psds: dict | str, ifos: list | None = None) -> None:
+        """Set the PSDs used in the analysis.
+
+        Arguments
+        --------
+        psds : dict | str
+            Dictionary of PowerSpectralDensity objects or paths to PSD files.
+        ifos : list | None
+            List of detector names to associate with the PSDs; if None, uses
+            the keys of the PSD dictionary or defaults to the detectors in the
+            IMR result.
+        """
+        if ifos is None:
+            ifos = self.ifos
+        psds = get_dict_from_pattern(psds, ifos)
         for i, p in psds.items():
             if isinstance(p, str):
                 if os.path.isfile(p):

@@ -474,10 +474,14 @@ class Fit(object):
                 model_opts['mode_ordering'] = 'g'
 
         # initialize fit object, potentially from IMR result
-        if config.has_option(IMR_CONFIG_SECTION, 'initialize_fit'):
+        if config.get(IMR_CONFIG_SECTION, 'initialize_fit', fallback=False):
             logging.info("initializing fit from IMR result")
             imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
                    if k != 'initialize_fit'}
+            if 'path' not in imr:
+                raise ValueError("no path to IMR result provided; ignoring "
+                                "IMR section in config")
+            imr_path = imr.pop('path')
             if 'data' in config:
                 logging.info("loading data from disk (ignoring IMR data)")
                 data_kws = {k: utils.try_parse(v)
@@ -485,7 +489,8 @@ class Fit(object):
                 data_kws['ifos'] = utils.get_ifo_list(config, 'data')
             else:
                 data_kws = {}
-            fit = cls.from_imr_result(**imr, **model_opts, data_kws=data_kws)
+            fit = cls.from_imr_result(imr_path, **imr, **model_opts,
+                                      data_kws=data_kws)
         else:
             logging.info("initializing fit")
             fit = cls(**model_opts)
@@ -495,7 +500,8 @@ class Fit(object):
             imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
                    if k != 'initialize_fit'}
             if imr.get('path'):
-                fit.add_imr_result(**imr)
+                imr_path = imr.pop('path')
+                fit.add_imr_result(imr_path, **imr)
             else:
                 logging.warning("no path to IMR result provided; ignoring "
                                 " IMR section in config")
@@ -1896,8 +1902,10 @@ class Fit(object):
 
         if load_data:
             logging.info("loading data based on IMR result")
-            data_opts = imr_result.data_options
-            data_opts.update(**(data_kws or {}))
+            if data_kws:
+                data_opts = data_kws
+            else:
+                data_opts = imr_result.data_options
             fit.load_data(**data_opts)
 
         if set_target:
