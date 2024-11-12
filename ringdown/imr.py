@@ -431,7 +431,7 @@ class IMRResult(pd.DataFrame):
         iloc = (peak_times[best_ifo] - tp).abs().idxmin()
         return peak_times.loc[iloc], best_ifo
 
-    def get_best_peak_target(self, duration=0, **kws) -> target.SkyTarget:
+    def get_best_peak_target(self, duration='auto', **kws) -> target.SkyTarget:
         """Get the target corresponding to the best-measured peak time.
 
         Arguments
@@ -448,6 +448,8 @@ class IMRResult(pd.DataFrame):
             Target constructed from the best-measured peak time.
         """
         peak_times, ref_ifo = self.get_best_peak_times(**kws)
+        if duration == 'auto':
+            duration = self.estimate_ringdown_duration(**kws)
         sample = self.loc[peak_times.name]
         skyloc = {k: sample[k] for k in ['ra', 'dec', 'psi']}
         t0 = peak_times[ref_ifo]

@@ -480,7 +480,7 @@ class Fit(object):
                    if k != 'initialize_fit'}
             if 'path' not in imr:
                 raise ValueError("no path to IMR result provided; ignoring "
-                                "IMR section in config")
+                                 "IMR section in config")
             imr_path = imr.pop('path')
             if 'data' in config:
                 logging.info("loading data from disk (ignoring IMR data)")
@@ -1909,9 +1909,6 @@ class Fit(object):
             fit.load_data(**data_opts)
 
         if set_target:
-            if duration == 'auto':
-                duration = imr_result.estimate_ringdown_duration(cache=True)
-                logging.info(f"estimated duration automatically: {duration}")
             peak_kws = peak_kws or {}
             t = imr_result.get_best_peak_target(**peak_kws, duration=duration)
             if advance_target_by_mass:
