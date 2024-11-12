@@ -437,7 +437,8 @@ class IMRResult(pd.DataFrame):
         Arguments
         ---------
         duration : float
-            Duration of the analysis in seconds (optional).
+            Duration of the analysis in seconds (optional); if 'auto', uses
+            the estimated ringdown duration (default 'auto').
         kws : dict
             Additional keyword arguments to pass to the peak
             time calculation.
@@ -739,7 +740,7 @@ class IMRResult(pd.DataFrame):
             time_dict = time
         else:
             time_dict = {i: time for i in self.ifos}
-        target = self.get_best_peak_target(**kws)
+        target = self.get_best_peak_target(duration=0, **kws)
         start_times = target.get_detector_times_dict(self.ifos)
         start_indices = {ifo: np.argmin(np.abs(time_dict[ifo] - t0))
                          for ifo, t0 in start_times.items()}
@@ -786,6 +787,9 @@ class IMRResult(pd.DataFrame):
         """
         if acfs is None:
             acfs = self.get_acfs(**(acf_kws or {}))
+
+        if not acfs:
+            raise ValueError("ACFs not found")
 
         if initial_guess is None:
             # estimate based on mass scale
@@ -940,7 +944,7 @@ class IMRResult(pd.DataFrame):
         return opts
 
     @classmethod
-    def construct(cls, input, **kws):
+    def construct(cls, input, psds=None, **kws):
         if isinstance(input, str):
             try:
                 r = cls.from_pesummary(input, **kws)
@@ -951,6 +955,8 @@ class IMRResult(pd.DataFrame):
             r.attrs['path'] = path
         else:
             r = cls(input, **kws)
+        if psds is not None:
+            r.set_psds(psds)
         return r
 
     @property
