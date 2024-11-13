@@ -1926,7 +1926,7 @@ class Fit(object):
 
         if load_data:
             logging.info("loading data based on IMR result")
-            data_opts = imr.data_options(**data_kws)
+            data_opts = imr.data_options(**(data_kws or {}))
             fit.load_data(**data_opts)
 
         if set_target:
