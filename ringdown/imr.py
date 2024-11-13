@@ -10,6 +10,7 @@ from . import waveforms
 from . import target
 from . import data
 from . indexing import ModeIndexList
+from . import utils
 from .utils import get_tqdm, get_hdf5_value, get_bilby_dict, \
     get_dict_from_pattern
 import lal
@@ -90,10 +91,13 @@ class IMRResult(pd.DataFrame):
         if ifos is None:
             ifos = self.ifos
         psds = get_dict_from_pattern(psds, ifos)
+        if 'psds' not in self.attrs:
+            self.attrs['psds'] = {}
         for i, p in psds.items():
             if isinstance(p, str):
                 if os.path.isfile(p):
                     p = np.loadtxt(p)
+                    self.attrs['psds'][i] = p
                 else:
                     raise FileNotFoundError(f"PSD file not found: {p}")
             p = data.PowerSpectrum(p).fill_low_frequencies().gate()
@@ -550,7 +554,8 @@ class IMRResult(pd.DataFrame):
     @classmethod
     def from_pesummary(cls, path: str, group: str | None = None,
                        pesummary_read: bool = False,
-                       posterior_key: str = 'posterior_samples'):
+                       posterior_key: str = 'posterior_samples',
+                       attrs=None):
         """Create an IMRResult from a pesummary result.
 
         Arguments
@@ -590,8 +595,8 @@ class IMRResult(pd.DataFrame):
             config = pe.config.get(group, {}).get('config', {})
             p = {i: data.PowerSpectrum(p).fill_low_frequencies().gate()
                  for i, p in pe.psd.get(group, {}).items()}
-            return cls(pe.samples_dict[group], attrs={'config': config},
-                       psds=p)
+            attrs = (attrs or {}).update({'config': config})
+            return cls(pe.samples_dict[group], attrs=attrs, psds=p)
 
         if os.path.splitext(path)[1] in ['.hdf5', '.h5']:
             with h5py.File(path, 'r') as f:
@@ -619,8 +624,9 @@ class IMRResult(pd.DataFrame):
                 else:
                     p = {}
                 if posterior_key in f[group]:
-                    return cls(f[group][posterior_key][()],
-                               attrs={'config': c}, psds=p)
+                    attrs = (attrs or {}).update({'config': c})
+                    return cls(f[group][posterior_key][()], attrs=attrs,
+                               psds=p)
                 else:
                     raise ValueError("no {posterior_key} found")
         else:
@@ -958,22 +964,70 @@ class IMRResult(pd.DataFrame):
         return opts
 
     @classmethod
-    def construct(cls, input, psds=None, **kws):
-        if isinstance(input, str):
+    def construct(cls, path, psds=None, reference_frequency=None,
+                  approximant=None, **kws):
+        # get attributes from keyword arguments
+        info = {k: v for k, v in locals().items() if k != 'cls'}
+        info.update(info.pop('attrs', {}))
+        info.update(info.pop('kws', {}))
+        info['path'] = str(path)
+        attrs = {'construct' : info}
+        
+        if isinstance(path, str):
             try:
-                r = cls.from_pesummary(input, **kws)
+                r = cls.from_pesummary(path, attrs=attrs, **kws)
             except Exception as e:
                 logging.warning(f"failed to read pesummary file: {e}")
-                r = pd.read_hdf(input, **kws)
-            path = os.path.abspath(input)
+                r = pd.read_hdf(path,**kws)
+            path = os.path.abspath(path)
             r.attrs['path'] = path
+            r.attrs.update(attrs)
         else:
-            r = cls(input, **kws)
+            r = cls(path, attrs=attrs, **kws)
         if psds is not None:
             r.set_psds(psds)
+        if approximant is not None:
+            r.set_approximant(approximant)
+        if reference_frequency is not None:
+            r.set_reference_frequency(reference_frequency)
         return r
 
     @property
     def path(self):
         """Path to the file from which the result was read."""
         return self.attrs.get('path', '')
+
+    @classmethod
+    def from_config(cls, config_input, overwrite_data=False,
+                    imr_sec='imr', **kws):
+        """Create an IMRResult from a configuration file."""
+        config = utils.load_config(config_input)
+
+        if not config.has_section(imr_sec):
+            logging.warning("no IMR section found in config")
+            return cls()
+
+        # get imr options
+        imr = {k: utils.try_parse(v) for k, v in config[imr_sec].items()
+               if k != 'initialize_fit'}
+
+        # get path to IMR result file
+        if 'path' not in imr and not 'imr_result' in imr:
+            raise ValueError("no path to IMR result provided")
+        imr_path = imr.pop('path', imr.pop('imr_result', None))
+
+        # check if we should overwrite data based on 'data' section
+        overwrite_data |= config.get('data', 'overwrite_data', fallback=False)
+        overwrite_data &= config.has_section('data')
+        
+        if overwrite_data:
+            logging.info("loading data from disk (ignoring IMR data)")
+            data_kws = {k: utils.try_parse(v)
+                        for k, v in config['data'].items()}
+            if 'ifos' in config['data']:
+                data_kws['ifos'] = utils.get_ifo_list(config, 'data')
+        else:
+            data_kws = {}
+        
+        logging.info("loading IMR result")
+        return cls.construct(imr_path, **data_kws, **imr, **kws)

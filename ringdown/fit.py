@@ -531,8 +531,11 @@ class Fit(object):
 
         # add target
         if config.has_section('target'):
-            fit.set_target(**{k: utils.try_parse(v)
-                              for k, v in config['target'].items()})
+            kws = {k: utils.try_parse(v) for k, v in config['target'].items()}
+            if not ('ra' in kws and 't0' not in kws):
+                fit.set_target(**kws)
+            else:
+                logging.info(f"ignoring invalid target section: {kws}")
 
         # inject signal if requested
         if config.has_section('injection'):
@@ -1748,9 +1751,6 @@ class Fit(object):
 
     def add_imr_result(self,
                        imr_result: pd.DataFrame | dict | np.ndarray,
-                       approximant: str | None = None,
-                       reference_frequency: float | None = None,
-                       psds: dict | None = None,
                        **kws) -> None:
         """Add reference inspiral-merger-ringdown (IMR) result to fit.
 
@@ -1772,11 +1772,7 @@ class Fit(object):
         if isinstance(imr_result, imr.IMRResult):
             self.imr_result = imr_result
         else:
-            self.imr_result = imr.IMRResult.construct(imr_result, psds, **kws)
-        if approximant is not None:
-            self.imr_result.set_approximant(approximant)
-        if reference_frequency is not None:
-            self.imr_result.set_reference_frequency(reference_frequency)
+            self.imr_result = imr.IMRResult.construct(imr_result, **kws)
         # record settings
         settings['imr_result'] = self.imr_result.path
         self.update_info('imr', **settings)
@@ -2099,8 +2095,8 @@ class FitSequence(Fit):
         """
         config = utils.load_config(config_input)
         # config['target']['t0'] = str(targets[0].t0)
-
-        fits = super().from_config(config, **kws)
+        
+        fits = super().from_config(config, no_cond=True, **kws)
         logging.info("getting target collection")
         targets = TargetCollection.from_config(config, imr_result=fits.imr_result)
         fits.set_target_collection(targets)
