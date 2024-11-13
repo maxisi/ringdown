@@ -486,7 +486,8 @@ class Fit(object):
                 logging.info("loading data from disk (ignoring IMR data)")
                 data_kws = {k: utils.try_parse(v)
                             for k, v in config['data'].items()}
-                data_kws['ifos'] = utils.get_ifo_list(config, 'data')
+                if 'ifos' in config['data']:
+                    data_kws['ifos'] = utils.get_ifo_list(config, 'data')
             else:
                 data_kws = {}
             logging.info("loading IMR result")
@@ -1212,6 +1213,7 @@ class Fit(object):
 
         tslide = slide or {}
         for ifo, path in path_dict.items():
+            print(ifo, path)
             self.add_data(Data.load(path, ifo=ifo, channel=channel_dict[ifo],
                                     **kws))
         # apply time slide if requested
@@ -1914,6 +1916,8 @@ class Fit(object):
                         **kws):
         """Create a new `Fit` object from an IMR result."""
         fit = cls(**kws)
+
+        logging.info(f"initializing fit from IMR result: {imr}")
         
         # add IMR result to fit (this triggers saving IMR settings in fit)
         fit.add_imr_result(imr, approximant=approximant,
@@ -1922,10 +1926,7 @@ class Fit(object):
 
         if load_data:
             logging.info("loading data based on IMR result")
-            if data_kws:
-                data_opts = data_kws
-            else:
-                data_opts = imr.data_options
+            data_opts = imr.data_options(**data_kws)
             fit.load_data(**data_opts)
 
         if set_target:

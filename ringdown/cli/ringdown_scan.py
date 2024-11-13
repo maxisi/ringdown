@@ -94,6 +94,7 @@ def main(args=None):
     jax_config.update("jax_enable_x64", not run_kws.pop('float32', False))
 
     out = os.path.abspath(args.output or DEFOUT)
+    out = config.get('pipe', 'outpath', fallback=out)
 
     numpyro.set_platform(args.platform)
     if args.device_count is not None:
