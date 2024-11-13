@@ -628,35 +628,48 @@ class IMRResult(pd.DataFrame):
 
     _REFERENCE_SRATE = 16384
 
-    @property
-    def data_options(self):
+    def data_options(self, **options):
         """Return a dictionary of options to obtain data used in the analysis.
         """
         if not self.config:
             return {}
         config = self.config
-        key_map = {'t0': 'trigger-time', 'ifos': 'detectors',
-                   'seglen': 'duration'}
-        options = {}
-        for k, v in key_map.items():
-            if v in config:
-                options[k] = config[v]
-            else:
-                logging.warning(f"missing {v} in config")
-        options['sample_rate'] = self._REFERENCE_SRATE
 
-        options['channel'] = 'gwosc'
-        if self._data_dict and self._channel_dict:
+        if 'ifos' not in options:
+            options['ifos'] = self.ifos
+
+        if 'path' not in options and 'channel' not in options \
+            and self._data_dict:
+            # look for data locally based on config
             path = {}
-            for ifo, p in self._data_dict.items():
+            for ifo in options['ifos']:
+                p = self._data_dict.get(ifo)
                 if os.path.isfile(p):
-                    logging.info(f"using local data for {ifo}: {p}")
+                    logging.info(f"found local data for {ifo}: {p}")
                     path[ifo] = p
                 else:
                     logging.info(f"missing local data for {ifo}: {p}")
-                    return options
-            options['path'] = path
-            options['channel'] = self._channel_dict
+                    break
+            else:
+                options['path'] = path
+                options['kind'] = 'frame'
+
+        if 'channel' not in options:
+            if 'path' in options and options.get('kind') == 'frame':
+                options['channel'] = self._channel_dict
+            elif 'path' not in options:
+                options['channel'] = 'gwosc'
+
+        if 'path' not in options and 'channel' in options:
+            # add gwosc specific options
+            key_map = {'t0': 'trigger-time', 'seglen': 'duration'}
+            for k, v in key_map.items():
+                if v in config:
+                    options[k] = config[v]
+                else:
+                    logging.warning(f"missing {v} in config")
+            options['sample_rate'] = self._REFERENCE_SRATE
+        logging.info(f"using data options: {options}")
         return options
 
     @property
@@ -667,7 +680,8 @@ class IMRResult(pd.DataFrame):
     @property
     def _channel_dict(self):
         """Return the channel used for the analysis."""
-        return get_bilby_dict(self.config.get('channel-dict', {}))
+        d = get_bilby_dict(self.config.get('channel-dict', {}))
+        return {i.strip(): f'{i.strip()}:{v}' for i, v in d.items()}
 
     @property
     def condition_options(self):
