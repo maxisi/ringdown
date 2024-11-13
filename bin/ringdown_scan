@@ -121,6 +121,8 @@ if __name__ == "__main__":
             if os.path.exists(path):
                 logging.warning(f"output file already exists: {path}")
             else:
+                outdir = os.path.dirname(path)
+                os.makedirs(outdir, exist_ok=True)
                 new_targets.append(target)
         fit.set_target_collection(new_targets)
 

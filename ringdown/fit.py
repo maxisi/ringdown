@@ -2066,10 +2066,10 @@ class FitSequence(Fit):
             r.append(result)
 
             if output_path:
-                dirname = os.path.dirname(os.path.abspath(output_path))
+                path = output_path.replace('*', '{}').format(t0)
+                dirname = os.path.dirname(os.path.abspath(path))
                 if dirname and not os.path.exists(dirname):
                     os.makedirs(dirname)
-                path = output_path.replace('*', '{}').format(t0)
                 logging.info(f"saving results to {path}")
                 result.to_netcdf(path)
 
