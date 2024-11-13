@@ -232,7 +232,7 @@ class Result(az.InferenceData):
             amax = self.posterior.a_scale.max().values
         return float(amax)
 
-    def get_fit(self, **kwargs) -> 'Fit':
+    def get_fit(self, **kwargs):
         """Get a Fit object from the result."""
         if self.config:
             from .fit import Fit
