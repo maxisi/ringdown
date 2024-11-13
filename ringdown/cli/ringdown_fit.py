@@ -21,9 +21,9 @@
 
 import os
 import argparse
-import configparser
 from ast import literal_eval
 import logging
+import ringdown as rd
 
 ##############################################################################
 # PARSE INPUT
@@ -72,8 +72,7 @@ def main(args=None, defout=DEFOUT):
 
     print("Loading: {}".format(os.path.abspath(args.config)))
 
-    config = configparser.ConfigParser()
-    config.read(args.config)
+    config = rd.utils.load_config(args.config)
 
     if config.has_section('run'):
         run_kws = {k: literal_eval(v) for k, v in config['run'].items()}
@@ -113,10 +112,6 @@ def main(args=None, defout=DEFOUT):
     ##########################################################################
     # RUN FIT
     ##########################################################################
-
-    # import ringdown at this stage after setting numpy threading options
-    # TODO: is this necessary or can we import up top?
-    import ringdown as rd
 
     fit = rd.Fit.from_config(config)
     fit.run(**run_kws)

@@ -142,8 +142,17 @@ def string_to_tuple(s):
 def load_config(config_input):
     if isinstance(config_input, str):
         if os.path.exists(config_input):
-            config = ConfigParser()
-            config.read(config_input)
+            raw_config = ConfigParser()
+            raw_config.read(config_input)
+
+            # make subsitutions in case variables are defined in
+            # in DEFAULT section
+            config = ConfigParser(defaults=None)
+            for section in raw_config.sections():
+                config.add_section(section)
+                for key, value in raw_config.items(section):
+                    if key not in raw_config.defaults():
+                        config.set(section, key, value)
         else:
             raise FileNotFoundError(config_input)
     elif isinstance(config_input, ConfigParser):
