@@ -11,6 +11,7 @@ from arviz.data.base import dict_to_dataset
 from . import qnms
 from . import indexing
 from . import data
+from .imr import IMRResult
 from .target import Target, TargetCollection
 from . import utils
 import pandas as pd
@@ -57,6 +58,7 @@ class Result(az.InferenceData):
         self._whitened_templates = None
         self._target = None
         self._modes = None
+        self._imr_result = None
         # settings for formatting DataFrames
         self._default_label_format = {}
         # try to load config
@@ -68,6 +70,26 @@ class Result(az.InferenceData):
         if produce_h_det:
             self.h_det
 
+    @property
+    def imr_result(self) -> IMRResult:
+        """Reference IMR result."""
+        if self._imr_result is None:
+            logging.info("Looking for IMR result in config.")
+            if 'imr' in self.config:
+                logging.info("IMR section found in config")
+                self._imr_result = IMRResult.from_config(self.config)
+                logging.info("IMR result loaded.")
+            else:
+                logging.info("No IMR section found in config.")
+                return IMRResult()
+        return self._imr_result
+
+    def set_imr_result(self, imr_result: IMRResult) -> None:
+        if isinstance(imr_result, IMRResult):
+            self._imr_result = imr_result
+        else:
+            self._imr_result = IMRResult(imr_result)
+    
     @property
     def _df_parameters(self) -> dict[str, qnms.ParameterLabel]:
         """Default parameters for DataFrames."""
@@ -922,9 +944,18 @@ class ResultCollection(utils.MultiIndexCollection):
                 _results.append(Result(r))
         super().__init__(_results, index, reference_mass, reference_time)
         self._targets = None
+        self._imr_result = None
 
     def __repr__(self):
         return f"ResultCollection({self.index})"
+
+    @property
+    def imr_result(self) -> IMRResult:
+        """Reference IMR result"""
+        if self._imr_result is None:
+            logging.info("Looking for IMR result in first collection item")
+            self._imr_result = self.results[0].imr_result
+        return self._imr_result
 
     @property
     def results(self) -> list[Result]:
