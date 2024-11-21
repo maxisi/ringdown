@@ -2075,7 +2075,8 @@ class FitSequence(Fit):
         self.update_info('run', **sampler_kws)
 
     @classmethod
-    def from_config(cls, config_input: str | dict, **kws):
+    def from_config(cls, config_input: str | dict,
+                    no_cond: bool = False, **kws):
         """Create a `FitSequence` object from a configuration file or
         dictionary.
 
@@ -2085,6 +2086,8 @@ class FitSequence(Fit):
         ---------
         config_input : str, dict
             path to configuration file or dictionary.
+        no_cond : bool
+            if True, do not condition data based on configuration settings.
         **kws :
             additional keyword arguments passed to `FitSequence` constructor.
 
@@ -2094,12 +2097,22 @@ class FitSequence(Fit):
             `FitSequence` object.
         """
         config = utils.load_config(config_input)
-        # config['target']['t0'] = str(targets[0].t0)
-        
+
+        # initialize fit with `no_cond` set to True because
+        # we don't have a target yet
         fits = super().from_config(config, no_cond=True, **kws)
+        
         logging.info("getting target collection")
         targets = TargetCollection.from_config(config, imr_result=fits.imr_result)
         fits.set_target_collection(targets)
+
+        # condition data if requested (this also stores conditioning info
+        # in FitSequences so that it can be re-applied later if requested)
+        if config.has_section('condition') and not no_cond:
+            logging.info("conditioning data based on configuration")
+            cond_kws = {k: utils.try_parse(v)
+                        for k, v in config['condition'].items()}
+            fits.condition_data(**cond_kws)
 
         # record pipe info in config
         fits.update_info('pipe', **config['pipe'])
