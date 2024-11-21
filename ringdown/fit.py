@@ -474,18 +474,25 @@ class Fit(object):
                 model_opts['mode_ordering'] = 'g'
 
         # initialize fit object, potentially from IMR result
-        if config.has_option(IMR_CONFIG_SECTION, 'initialize_fit'):
+        if config.get(IMR_CONFIG_SECTION, 'initialize_fit', fallback=False):
             logging.info("initializing fit from IMR result")
             imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
                    if k != 'initialize_fit'}
+            if 'path' not in imr and not 'imr_result' in imr:
+                raise ValueError("no path to IMR result provided; ignoring "
+                                 "IMR section in config")
+            imr_path = imr.pop('path', imr.pop('imr_result', None))
             if 'data' in config:
                 logging.info("loading data from disk (ignoring IMR data)")
                 data_kws = {k: utils.try_parse(v)
                             for k, v in config['data'].items()}
-                data_kws['ifos'] = utils.get_ifo_list(config, 'data')
+                if 'ifos' in config['data']:
+                    data_kws['ifos'] = utils.get_ifo_list(config, 'data')
             else:
                 data_kws = {}
-            fit = cls.from_imr_result(**imr, **model_opts, data_kws=data_kws)
+            logging.info("loading IMR result")
+            fit = cls.from_imr_result(imr_path, **imr, **model_opts,
+                                      data_kws=data_kws)
         else:
             logging.info("initializing fit")
             fit = cls(**model_opts)
@@ -494,8 +501,9 @@ class Fit(object):
         if config.has_section('imr') and not fit.has_imr_result:
             imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
                    if k != 'initialize_fit'}
-            if imr.get('path'):
-                fit.add_imr_result(**imr)
+            if 'path' not in imr or not 'imr_result' in imr:
+                imr_path = imr.pop('path', imr.pop('imr_result', None))
+                fit.add_imr_result(imr_path, **imr)
             else:
                 logging.warning("no path to IMR result provided; ignoring "
                                 " IMR section in config")
@@ -523,8 +531,11 @@ class Fit(object):
 
         # add target
         if config.has_section('target'):
-            fit.set_target(**{k: utils.try_parse(v)
-                              for k, v in config['target'].items()})
+            kws = {k: utils.try_parse(v) for k, v in config['target'].items()}
+            if not ('ra' in kws and 't0' not in kws):
+                fit.set_target(**kws)
+            else:
+                logging.info(f"ignoring invalid target section: {kws}")
 
         # inject signal if requested
         if config.has_section('injection'):
@@ -1205,6 +1216,7 @@ class Fit(object):
 
         tslide = slide or {}
         for ifo, path in path_dict.items():
+            print(ifo, path)
             self.add_data(Data.load(path, ifo=ifo, channel=channel_dict[ifo],
                                     **kws))
         # apply time slide if requested
@@ -1739,23 +1751,31 @@ class Fit(object):
 
     def add_imr_result(self,
                        imr_result: pd.DataFrame | dict | np.ndarray,
-                       approximant: str | None = None,
-                       reference_frequency: float | None = None,
-                       **kws):
-        """Add reference inspiral-merger-ringdown (IMR) result to fit."""
+                       **kws) -> None:
+        """Add reference inspiral-merger-ringdown (IMR) result to fit.
+
+        Arguments
+        ---------
+        imr_result : pd.DataFrame, dict, np.ndarray
+            IMR result data, either as a DataFrame, dictionary, or array.
+        approximant : str
+            approximant used in IMR result.
+        reference_frequency : float
+            reference frequency of IMR result.
+        psds : dict
+            dictionary of power spectral densities for each detector.
+        """
         settings = {k: v for k, v in locals().items() if k != 'self'}
+        for k, v in settings.pop('kws').items():
+            settings[k] = v
 
         if isinstance(imr_result, imr.IMRResult):
             self.imr_result = imr_result
         else:
             self.imr_result = imr.IMRResult.construct(imr_result, **kws)
-        if approximant is not None:
-            self.imr_result.set_approximant(approximant)
-        if reference_frequency is not None:
-            self.imr_result.set_reference_frequency(reference_frequency)
         # record settings
         settings['imr_result'] = self.imr_result.path
-        self.update_info('imr-result', **settings)
+        self.update_info('imr', **settings)
 
     def get_imr_templates(self, condition: bool = True,
                           ifos: list | None = None,
@@ -1873,7 +1893,7 @@ class Fit(object):
         return self.whiten(self.analysis_data)
 
     @classmethod
-    def from_imr_result(cls, imr_result: imr.IMRResult | str,
+    def from_imr_result(cls, imr: imr.IMRResult | str,
                         advance_target_by_mass: float | None = None,
                         reference_mass: float | None = None,
                         load_data: bool = True,
@@ -1887,27 +1907,31 @@ class Fit(object):
                         acf_kws: dict | None = None,
                         prior_kws: dict | None = None,
                         psds: dict | None = None,
+                        approximant: str | None = None,
+                        reference_frequency: float | None = None,
                         **kws):
         """Create a new `Fit` object from an IMR result."""
-        fit = cls(imr_result=imr_result, **kws)
-        if psds is not None:
-            fit.imr_result.set_psds(psds)
-        imr_result = fit.imr_result
+        fit = cls(**kws)
+
+        logging.info(f"initializing fit from IMR result: {imr}")
+        
+        # add IMR result to fit (this triggers saving IMR settings in fit)
+        fit.add_imr_result(imr, approximant=approximant,
+                           reference_frequency=reference_frequency, psds=psds)
+        imr = fit.imr_result
 
         if load_data:
             logging.info("loading data based on IMR result")
-            data_opts = imr_result.data_options
-            data_opts.update(**(data_kws or {}))
+            data_opts = imr.data_options(**(data_kws or {}))
             fit.load_data(**data_opts)
 
         if set_target:
             if duration == 'auto':
-                duration = imr_result.estimate_ringdown_duration(cache=True)
-                logging.info(f"estimated duration automatically: {duration}")
+                duration = imr.estimate_ringdown_duration(cache=True)
             peak_kws = peak_kws or {}
-            t = imr_result.get_best_peak_target(**peak_kws, duration=duration)
+            t = imr.get_best_peak_target(**peak_kws, duration=duration)
             if advance_target_by_mass:
-                m = reference_mass or imr_result.remnant_mass_scale_reference
+                m = reference_mass or imr.remnant_mass_scale_reference
                 dt = advance_target_by_mass * m * T_MSUN
                 logging.info(f"advancing target time by {dt} s "
                              f"[{advance_target_by_mass} * {m} Msun]")
@@ -1917,7 +1941,7 @@ class Fit(object):
 
         if condition:
             logging.info("conditioning data based on IMR result")
-            fit.condition_data(**imr_result.condition_options)
+            fit.condition_data(**imr.condition_options)
 
         if load_acfs:
             logging.info("loading ACFs based on IMR result")
@@ -1927,7 +1951,7 @@ class Fit(object):
                                 "not conditioned!")
 
         if update_model:
-            opts = imr_result.estimate_ringdown_prior(modes=fit.modes,
+            opts = imr.estimate_ringdown_prior(modes=fit.modes,
                                                       cache=True,
                                                       **(prior_kws or {}))
             fit.update_model(**opts)
@@ -1944,6 +1968,10 @@ class FitSequence(Fit):
         self.target_collection: TargetCollection = TargetCollection()
         if target_collection is not None:
             self.set_target_collection(target_collection)
+
+    def __repr__(self):
+        return f"FitSequence(modes={self.modes}, ifos={self.ifos}, " \
+                f"targets={len(self.target_collection)}, {self.target})"
 
     def __len__(self):
         return len(self.target_collection)
@@ -2034,10 +2062,10 @@ class FitSequence(Fit):
             r.append(result)
 
             if output_path:
-                dirname = os.path.dirname(os.path.abspath(output_path))
+                path = output_path.replace('*', '{}').format(t0)
+                dirname = os.path.dirname(os.path.abspath(path))
                 if dirname and not os.path.exists(dirname):
                     os.makedirs(dirname)
-                path = output_path.replace('*', '{}').format(t0)
                 logging.info(f"saving results to {path}")
                 result.to_netcdf(path)
 
@@ -2047,7 +2075,8 @@ class FitSequence(Fit):
         self.update_info('run', **sampler_kws)
 
     @classmethod
-    def from_config(cls, config_input: str | dict, **kws):
+    def from_config(cls, config_input: str | dict,
+                    no_cond: bool = False, **kws):
         """Create a `FitSequence` object from a configuration file or
         dictionary.
 
@@ -2057,6 +2086,8 @@ class FitSequence(Fit):
         ---------
         config_input : str, dict
             path to configuration file or dictionary.
+        no_cond : bool
+            if True, do not condition data based on configuration settings.
         **kws :
             additional keyword arguments passed to `FitSequence` constructor.
 
@@ -2066,11 +2097,22 @@ class FitSequence(Fit):
             `FitSequence` object.
         """
         config = utils.load_config(config_input)
-        targets = TargetCollection.from_config(config)
-        config['target']['t0'] = str(targets[0].t0)
 
-        fits = super().from_config(config, **kws)
+        # initialize fit with `no_cond` set to True because
+        # we don't have a target yet
+        fits = super().from_config(config, no_cond=True, **kws)
+        
+        logging.info("getting target collection")
+        targets = TargetCollection.from_config(config, imr_result=fits.imr_result)
         fits.set_target_collection(targets)
+
+        # condition data if requested (this also stores conditioning info
+        # in FitSequences so that it can be re-applied later if requested)
+        if config.has_section('condition') and not no_cond:
+            logging.info("conditioning data based on configuration")
+            cond_kws = {k: utils.try_parse(v)
+                        for k, v in config['condition'].items()}
+            fits.condition_data(**cond_kws)
 
         # record pipe info in config
         fits.update_info('pipe', **config['pipe'])

@@ -10,7 +10,9 @@ from . import waveforms
 from . import target
 from . import data
 from . indexing import ModeIndexList
-from .utils import get_tqdm, get_hdf5_value, get_bilby_dict
+from . import utils
+from .utils import get_tqdm, get_hdf5_value, get_bilby_dict, \
+    get_dict_from_pattern
 import lal
 import multiprocessing as mp
 from lalsimulation import nrfits
@@ -74,12 +76,28 @@ class IMRResult(pd.DataFrame):
         """Power Spectral Densities used in the analysis."""
         return self.__dict__['_psds'] or {}
 
-    def set_psds(self, psds: dict) -> None:
-        """Set the PSDs used in the analysis."""
+    def set_psds(self, psds: dict | str, ifos: list | None = None) -> None:
+        """Set the PSDs used in the analysis.
+
+        Arguments
+        --------
+        psds : dict | str
+            Dictionary of PowerSpectralDensity objects or paths to PSD files.
+        ifos : list | None
+            List of detector names to associate with the PSDs; if None, uses
+            the keys of the PSD dictionary or defaults to the detectors in the
+            IMR result.
+        """
+        if ifos is None:
+            ifos = self.ifos
+        psds = get_dict_from_pattern(psds, ifos)
+        if 'psds' not in self.attrs:
+            self.attrs['psds'] = {}
         for i, p in psds.items():
             if isinstance(p, str):
                 if os.path.isfile(p):
                     p = np.loadtxt(p)
+                    self.attrs['psds'][i] = p
                 else:
                     raise FileNotFoundError(f"PSD file not found: {p}")
             p = data.PowerSpectrum(p).fill_low_frequencies().gate()
@@ -417,13 +435,14 @@ class IMRResult(pd.DataFrame):
         iloc = (peak_times[best_ifo] - tp).abs().idxmin()
         return peak_times.loc[iloc], best_ifo
 
-    def get_best_peak_target(self, duration=0, **kws) -> target.SkyTarget:
+    def get_best_peak_target(self, duration='auto', **kws) -> target.SkyTarget:
         """Get the target corresponding to the best-measured peak time.
 
         Arguments
         ---------
         duration : float
-            Duration of the analysis in seconds (optional).
+            Duration of the analysis in seconds (optional); if 'auto', uses
+            the estimated ringdown duration (default 'auto').
         kws : dict
             Additional keyword arguments to pass to the peak
             time calculation.
@@ -434,6 +453,8 @@ class IMRResult(pd.DataFrame):
             Target constructed from the best-measured peak time.
         """
         peak_times, ref_ifo = self.get_best_peak_times(**kws)
+        if duration == 'auto':
+            duration = self.estimate_ringdown_duration(**kws)
         sample = self.loc[peak_times.name]
         skyloc = {k: sample[k] for k in ['ra', 'dec', 'psi']}
         t0 = peak_times[ref_ifo]
@@ -533,7 +554,8 @@ class IMRResult(pd.DataFrame):
     @classmethod
     def from_pesummary(cls, path: str, group: str | None = None,
                        pesummary_read: bool = False,
-                       posterior_key: str = 'posterior_samples'):
+                       posterior_key: str = 'posterior_samples',
+                       attrs=None):
         """Create an IMRResult from a pesummary result.
 
         Arguments
@@ -573,8 +595,8 @@ class IMRResult(pd.DataFrame):
             config = pe.config.get(group, {}).get('config', {})
             p = {i: data.PowerSpectrum(p).fill_low_frequencies().gate()
                  for i, p in pe.psd.get(group, {}).items()}
-            return cls(pe.samples_dict[group], attrs={'config': config},
-                       psds=p)
+            attrs = (attrs or {}).update({'config': config})
+            return cls(pe.samples_dict[group], attrs=attrs, psds=p)
 
         if os.path.splitext(path)[1] in ['.hdf5', '.h5']:
             with h5py.File(path, 'r') as f:
@@ -602,8 +624,9 @@ class IMRResult(pd.DataFrame):
                 else:
                     p = {}
                 if posterior_key in f[group]:
-                    return cls(f[group][posterior_key][()],
-                               attrs={'config': c}, psds=p)
+                    attrs = (attrs or {}).update({'config': c})
+                    return cls(f[group][posterior_key][()], attrs=attrs,
+                               psds=p)
                 else:
                     raise ValueError("no {posterior_key} found")
         else:
@@ -611,35 +634,48 @@ class IMRResult(pd.DataFrame):
 
     _REFERENCE_SRATE = 16384
 
-    @property
-    def data_options(self):
+    def data_options(self, **options):
         """Return a dictionary of options to obtain data used in the analysis.
         """
         if not self.config:
             return {}
         config = self.config
-        key_map = {'t0': 'trigger-time', 'ifos': 'detectors',
-                   'seglen': 'duration'}
-        options = {}
-        for k, v in key_map.items():
-            if v in config:
-                options[k] = config[v]
-            else:
-                logging.warning(f"missing {v} in config")
-        options['sample_rate'] = self._REFERENCE_SRATE
 
-        options['channel'] = 'gwosc'
-        if self._data_dict and self._channel_dict:
+        if 'ifos' not in options:
+            options['ifos'] = self.ifos
+
+        if 'path' not in options and 'channel' not in options \
+            and self._data_dict:
+            # look for data locally based on config
             path = {}
-            for ifo, p in self._data_dict.items():
+            for ifo in options['ifos']:
+                p = self._data_dict.get(ifo)
                 if os.path.isfile(p):
-                    logging.info(f"using local data for {ifo}: {p}")
+                    logging.info(f"found local data for {ifo}: {p}")
                     path[ifo] = p
                 else:
                     logging.info(f"missing local data for {ifo}: {p}")
-                    return options
-            options['path'] = path
-            options['channel'] = self._channel_dict
+                    break
+            else:
+                options['path'] = path
+                options['kind'] = 'frame'
+
+        if 'channel' not in options:
+            if 'path' in options and options.get('kind') == 'frame':
+                options['channel'] = self._channel_dict
+            elif 'path' not in options:
+                options['channel'] = 'gwosc'
+
+        if 'path' not in options and 'channel' in options:
+            # add gwosc specific options
+            key_map = {'t0': 'trigger-time', 'seglen': 'duration'}
+            for k, v in key_map.items():
+                if v in config:
+                    options[k] = config[v]
+                else:
+                    logging.warning(f"missing {v} in config")
+            options['sample_rate'] = self._REFERENCE_SRATE
+        logging.info(f"using data options: {options}")
         return options
 
     @property
@@ -650,7 +686,8 @@ class IMRResult(pd.DataFrame):
     @property
     def _channel_dict(self):
         """Return the channel used for the analysis."""
-        return get_bilby_dict(self.config.get('channel-dict', {}))
+        d = get_bilby_dict(self.config.get('channel-dict', {}))
+        return {i.strip(): f'{i.strip()}:{v}' for i, v in d.items()}
 
     @property
     def condition_options(self):
@@ -723,7 +760,7 @@ class IMRResult(pd.DataFrame):
             time_dict = time
         else:
             time_dict = {i: time for i in self.ifos}
-        target = self.get_best_peak_target(**kws)
+        target = self.get_best_peak_target(duration=0, **kws)
         start_times = target.get_detector_times_dict(self.ifos)
         start_indices = {ifo: np.argmin(np.abs(time_dict[ifo] - t0))
                          for ifo, t0 in start_times.items()}
@@ -770,6 +807,9 @@ class IMRResult(pd.DataFrame):
         """
         if acfs is None:
             acfs = self.get_acfs(**(acf_kws or {}))
+
+        if not acfs:
+            raise ValueError("ACFs not found")
 
         if initial_guess is None:
             # estimate based on mass scale
@@ -924,20 +964,70 @@ class IMRResult(pd.DataFrame):
         return opts
 
     @classmethod
-    def construct(cls, input, **kws):
-        if isinstance(input, str):
+    def construct(cls, path, psds=None, reference_frequency=None,
+                  approximant=None, **kws):
+        # get attributes from keyword arguments
+        info = {k: v for k, v in locals().items() if k != 'cls'}
+        info.update(info.pop('attrs', {}))
+        info.update(info.pop('kws', {}))
+        info['path'] = str(path)
+        attrs = {'construct' : info}
+        
+        if isinstance(path, str):
             try:
-                r = cls.from_pesummary(input, **kws)
+                r = cls.from_pesummary(path, attrs=attrs, **kws)
             except Exception as e:
                 logging.warning(f"failed to read pesummary file: {e}")
-                r = pd.read_hdf(input, **kws)
-            path = os.path.abspath(input)
+                r = pd.read_hdf(path,**kws)
+            path = os.path.abspath(path)
             r.attrs['path'] = path
+            r.attrs.update(attrs)
         else:
-            r = cls(input, **kws)
+            r = cls(path, attrs=attrs, **kws)
+        if psds is not None:
+            r.set_psds(psds)
+        if approximant is not None:
+            r.set_approximant(approximant)
+        if reference_frequency is not None:
+            r.set_reference_frequency(reference_frequency)
         return r
 
     @property
     def path(self):
         """Path to the file from which the result was read."""
         return self.attrs.get('path', '')
+
+    @classmethod
+    def from_config(cls, config_input, overwrite_data=False,
+                    imr_sec='imr', **kws):
+        """Create an IMRResult from a configuration file."""
+        config = utils.load_config(config_input)
+
+        if not config.has_section(imr_sec):
+            logging.warning("no IMR section found in config")
+            return cls()
+
+        # get imr options
+        imr = {k: utils.try_parse(v) for k, v in config[imr_sec].items()
+               if k != 'initialize_fit'}
+
+        # get path to IMR result file
+        if 'path' not in imr and not 'imr_result' in imr:
+            raise ValueError("no path to IMR result provided")
+        imr_path = imr.pop('path', imr.pop('imr_result', None))
+
+        # check if we should overwrite data based on 'data' section
+        overwrite_data |= config.get('data', 'overwrite_data', fallback=False)
+        overwrite_data &= config.has_section('data')
+        
+        if overwrite_data:
+            logging.info("loading data from disk (ignoring IMR data)")
+            data_kws = {k: utils.try_parse(v)
+                        for k, v in config['data'].items()}
+            if 'ifos' in config['data']:
+                data_kws['ifos'] = utils.get_ifo_list(config, 'data')
+        else:
+            data_kws = {}
+        
+        logging.info("loading IMR result")
+        return cls.construct(imr_path, **data_kws, **imr, **kws)

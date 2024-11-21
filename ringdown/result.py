@@ -989,27 +989,40 @@ class ResultCollection(utils.MultiIndexCollection):
         for result in self.results:
             result.update_default_label_format(**kws)
 
-    def get_t0s(self,
-                reference_mass: float | bool | None = None) -> np.ndarray:
+    def get_t0s(self, reference_mass: float | bool | None = None,
+                reference_time: float | None = None,
+                decimals: int | None = None) -> np.ndarray:
         """Get analysis start times for the collection.
         """
         if reference_mass:
-            if reference_mass is None:
+            targets = self.targets
+            if not isinstance(reference_mass, bool):
+                targets.set_reference_mass(reference_mass)
                 # reference mass is true, but no value specified so assume
                 # default
-                reference_mass = self._reference_mass
-            targets = self.targets
-            targets.set_reference_mass(reference_mass)
+            elif not targets.reference_mass:
+                targets.set_reference_mass(self.reference_mass)
+            if not targets.reference_time:
+                targets.set_reference_time(self.reference_time)
             t0s = targets.t0m
         else:
-            t0s = [result.t0 for result in self.results]
+            if reference_time:
+                if isinstance(reference_time, bool):
+                    reference_time = self.reference_time
+            else:
+                reference_time = 0
+            t0s = [result.t0 - reference_time for result in self.results]
+        if decimals is not None:
+            t0s = np.round(t0s, decimals)
         return np.array(t0s)
 
     def reindex_by_t0(self,
-                      reference_mass: bool | float | None = None) -> None:
+                      reference_mass: bool | float | None = None,
+                      reference_time: float | None = None,
+                      decimals: int | None = None) -> None:
         """Reindex the collection by the analysis start time.
         """
-        t0s = self.get_t0s(reference_mass)
+        t0s = self.get_t0s(reference_mass, reference_time, decimals)
         if np.any(t0s is None):
             raise ValueError("Cannot reindex by t0 if any t0 values are None.")
         self.reindex(t0s)
@@ -1017,7 +1030,7 @@ class ResultCollection(utils.MultiIndexCollection):
     @classmethod
     def from_netcdf(cls, path_input: str | list, index: list = None,
                     config: str | list | None = None,
-                    progress: bool = False, **kws):
+                    progress: bool = True, **kws):
         """Load a collection of results from NetCDF files.
 
         Arguments
@@ -1036,7 +1049,7 @@ class ResultCollection(utils.MultiIndexCollection):
             `path/to/many/files/{}.ini` where `{}` or `*` is replaced by the
             index, or used to glob for files.
         progress : bool
-            show progress bar (def., `False`)
+            show progress bar (def., `True`)
         **kws : dict
             additional keyword arguments to pass to the constructor, like
             reference_mass or reference_time

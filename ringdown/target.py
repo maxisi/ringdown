@@ -616,7 +616,8 @@ class TargetCollection(utils.MultiIndexCollection):
                    reference_time=t0ref, info=info)
 
     @classmethod
-    def from_config(cls, config_input, t0_sect=PIPE_SEC, sky_sect='target'):
+    def from_config(cls, config_input, t0_sect=PIPE_SEC, sky_sect='target',
+                    imr_result=None):
         """Identify target analysis times. There will be three possibilities:
             1- listing the times explicitly
             2- listing time differences with respect to a reference time
@@ -628,33 +629,43 @@ class TargetCollection(utils.MultiIndexCollection):
         config = utils.load_config(config_input)
 
         # Check if we are to get reference values from IMR result
-        if config.getboolean(t0_sect, 'reference_imr', fallback=False):
-            if not config.has_section('imr'):
-                raise ValueError("IMR reference requested but no IMR section "
-                                 "in config file")
-            # get the IMR result
-            from .imr import IMRResult
-            imr = {k: utils.try_parse(v) for k, v in config['imr'].items()}
-            imr_result = IMRResult.construct(**imr)
-            imr_target = imr_result.get_best_peak_target().as_dict()
+        reference_imr = any([
+            config.get(t0_sect, k, fallback='').lower() == 'imr'
+            for k in [MREF_KEY, TREF_KEY]])
+        if reference_imr:
+            if imr_result is None:
+                if not config.has_section('imr'):
+                    raise ValueError("IMR reference requested but no result "
+                                     "provided or IMR section in config file")
+                # get the IMR result
+                from .imr import IMRResult
+                pkws = {k: try_parse(v) for k, v in config['imr'].items()
+                        if k not in ['initialize_fit', 'psds']}
+                path = pkws.pop('path')
+                logging.info(f"loading IMR result from from {path} and {pkws}")
+                imr_result = IMRResult.construct(path, **pkws)
+            # get IMR target options
+            pkws = dict(cache=True)
+            pkws.update(try_parse(config.get('imr', 'peak_kws', fallback={})))
+            imr_target = imr_result.get_best_peak_target(**pkws).settings
             # set the reference mass and time
             if MREF_KEY in config[t0_sect]:
-                if config[t0_sect][MREF_KEY].lower() == 'auto':
+                if config[t0_sect][MREF_KEY].lower() == 'imr':
                     logging.info("using IMR result for reference mass")
-                else:
-                    logging.warning("overwriting reference mass")
-                config[t0_sect][MREF_KEY] = \
-                    imr_result.remnant_mass_scale_reference
+                    config[t0_sect][MREF_KEY] = \
+                        str(imr_result.remnant_mass_scale_reference)
             else:
                 logging.warning("no reference mass requested")
 
-            if config.get(t0_sect, T0_KEYS['ref'], fallback='auto') == 'auto':
-                logging.info("using IMR result for reference time")
+            if TREF_KEY in config[t0_sect]:
+                if config[t0_sect][TREF_KEY].lower() == 'imr':
+                    logging.info("using IMR result for reference time")
+                    config[t0_sect][TREF_KEY] = str(imr_target.pop('t0'))
             else:
-                logging.warning("overwriting reference time")
-            config[t0_sect][T0_KEYS['ref']] = imr_target.pop('t0')
-
-            config[sky_sect].update(imr_target)
+                logging.warning("no reference time requested")
+            if sky_sect not in config:
+                config[sky_sect] = {k: str(v) for k, v in imr_target.items()
+                                    if k != 't0'}
 
         # Look for a reference mass, to be used when stepping in time
         m_ref = config.getfloat(t0_sect, MREF_KEY, fallback=None)
