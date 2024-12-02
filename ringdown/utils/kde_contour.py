@@ -274,9 +274,9 @@ def kdeplot_2d_clevels(xs, ys, levels=10, fill=False, n_grid=128, **kws):
         ax.contour(XS, YS, ZS, levels=lev, **kws)
 
 
-def kdeplot(xs, ys=None, **kws):
+def kdeplot(x, y=None, **kws):
 
-    if np.all(~np.isfinite(xs)):
+    if np.all(~np.isfinite(x)):
         return None
 
     if 'hue' in kws:
@@ -291,8 +291,8 @@ def kdeplot(xs, ys=None, **kws):
             # (this will fail if seaborn changes it's internal API)
             try:
                 from seaborn.distributions import _DistributionPlotter
-                df = pd.DataFrame(dict(x=xs, y=ys, hue=hues))
-                if ys is None:
+                df = pd.DataFrame(dict(x=x, y=y, hue=hues))
+                if y is None:
                     df = df.drop(columns='y')
                     v = dict(x='x', hue='hue')
                 else:
@@ -308,27 +308,27 @@ def kdeplot(xs, ys=None, **kws):
                     palette = sns.color_palette("deep", n_colors=n_hues)
 
         for hue, color in zip(hues_unique, palette):
-            xs_hue = xs[hues == hue]
-            if ys is None:
+            xs_hue = x[hues == hue]
+            if y is None:
                 ys_hue = None
             else:
-                ys_hue = ys[hues == hue]
+                ys_hue = y[hues == hue]
             kdeplot(xs_hue, ys_hue, **kws, color=color)
             plt.plot([], [], c=color, label=hue)
         plt.legend()
         return
 
-    if ys is not None:
-        return kdeplot_2d_clevels(xs, ys, **kws)
+    if y is not None:
+        return kdeplot_2d_clevels(x, y, **kws)
 
     if kws.pop('auto_bound', False):
-        kws['x_min'] = min(xs)
-        kws['x_max'] = max(xs)
+        kws['x_min'] = min(x)
+        kws['x_max'] = max(x)
     kde_kws = {k: kws.pop(k, None) for k in
                ['x_min', 'x_max', 'bw_method', 'weights']}
-    k = Bounded_1d_kde(xs, **kde_kws)
+    k = Bounded_1d_kde(x, **kde_kws)
 
-    x_hi, x_lo = np.percentile(xs, 99), np.percentile(xs, 1)
+    x_hi, x_lo = np.percentile(x, 99), np.percentile(x, 1)
     Dx = x_hi - x_lo
     xgrid = np.linspace(x_lo-0.1*Dx, x_hi+0.1*Dx, kws.pop('n_grid', 128))
     ygrid = k(xgrid)
