@@ -954,8 +954,21 @@ class ResultCollection(utils.MultiIndexCollection):
         """Reference IMR result"""
         if self._imr_result is None:
             logging.info("Looking for IMR result in first collection item")
-            self._imr_result = self.results[0].imr_result
+            return self.results[0].imr_result
         return self._imr_result
+
+    def set_imr_result(self, imr_result: IMRResult) -> None:
+        """Set the reference IMR result for the collection.
+
+        Arguments
+        ---------
+        imr_result : IMRResult
+            IMR result to set as reference.
+        """
+        old_imr_result = self.imr_result
+        if old_imr_result is not None and not old_imr_result.empty:
+            logging.warning("Overwriting existing IMR result.")
+        self._imr_result = imr_result
 
     @property
     def results(self) -> list[Result]:
