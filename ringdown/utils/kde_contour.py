@@ -274,7 +274,21 @@ def kdeplot_2d_clevels(xs, ys, levels=10, fill=False, n_grid=128, **kws):
         ax.contour(XS, YS, ZS, levels=lev, **kws)
 
 
-def kdeplot(x, y=None, **kws):
+def kdeplot(x, y=None, orientation='vertical', **kws):
+    """ Plot a one-dimensional or two-dimensional kernel density estimate.
+    Compatible with seaborn's `kdeplot`.
+
+    Arguments
+    ---------
+    x: array
+        samples of the variable.
+    y: array
+        samples of the second variable, drawn jointly with `x` (optional).
+    orientation: str
+        if 'vertical' produces a regular landscape plot; if 'horizontal'
+        produces a rotated plot, in which x and y are flipped; if 'auto'
+        the orientation is determined by the aspect ratio of the axes.
+    """
 
     if np.all(~np.isfinite(x)):
         return None
@@ -313,26 +327,56 @@ def kdeplot(x, y=None, **kws):
                 ys_hue = None
             else:
                 ys_hue = y[hues == hue]
-            kdeplot(xs_hue, ys_hue, **kws, color=color)
+            kws.pop('color', None)
+            kdeplot(x=xs_hue, y=ys_hue, **kws, color=color, orientation=orientation)
             plt.plot([], [], c=color, label=hue)
-        plt.legend()
+        if kws.get('legend', True):
+            plt.legend()
         return
 
     if y is not None:
+        # create 2d plot
         return kdeplot_2d_clevels(x, y, **kws)
 
+    ax = kws.pop('ax', plt.gca())
+    if orientation == 'auto':
+        # Get the bounding box of the axis
+        bbox = ax.get_position()
+        # Calculate width and height
+        width = bbox.width
+        height = bbox.height
+        if width >= height:
+            orientation = 'vertical'
+        else:
+            orientation = 'horizontal'
+    if orientation == 'horizontal':
+        k_min, k_max = 'y_min', 'y_max'
+    else:
+        k_min, k_max = 'x_min', 'x_max'
+
     if kws.pop('auto_bound', False):
-        kws['x_min'] = min(x)
-        kws['x_max'] = max(x)
-    kde_kws = {k: kws.pop(k, None) for k in
-               ['x_min', 'x_max', 'bw_method', 'weights']}
+        kws[k_min] = min(x)
+        kws[k_max] = max(x)
+
+    kde_kws = {k: kws.pop(k, None) for k in ['bw_method', 'weights']}
+    kde_kws['x_min'] = kws.pop(k_min, None)
+    kde_kws['x_max'] = kws.pop(k_max, None)
+    
+    # get rid of unused keys that may remain
+    for k in ['x_min', 'x_max', 'y_min', 'y_max']:
+        kws.pop(k, None)
+    
     k = Bounded_1d_kde(x, **kde_kws)
 
-    x_hi, x_lo = np.percentile(x, 99), np.percentile(x, 1)
+    x_hi, x_lo = np.percentile(x, 99.5), np.percentile(x, 0.5)
     Dx = x_hi - x_lo
     xgrid = np.linspace(x_lo-0.1*Dx, x_hi+0.1*Dx, kws.pop('n_grid', 128))
     ygrid = k(xgrid)
-    ax = kws.pop('ax', plt.gca())
+    
+    # check wether to flip axes
+    if orientation == 'horizontal':
+        xgrid, ygrid = ygrid, xgrid
+    kws.pop('legend', None)
     ax.plot(xgrid, ygrid, **kws)
 
     if kws.get('fill', False):
