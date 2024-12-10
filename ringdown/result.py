@@ -1226,6 +1226,8 @@ class ResultCollection(utils.MultiIndexCollection):
         # figure out wheter to print a progress bar
         custom_tqdm = utils.get_tqdm(progress)
         n = len(self)
+        dkws = {'random_state': kws.get('prng', None)}
+        dkws.update(draw_kws or {})
         for i, (key, result) in custom_tqdm(enumerate(self.items()), total=n):
             df = result.get_parameter_dataframe(**kws)
             if key_size == 1:
@@ -1238,7 +1240,8 @@ class ResultCollection(utils.MultiIndexCollection):
             if t0:
                 df['t0m' if reference_mass else 't0'] = t0s[i]
             if ndraw is not None:
-                dfs.append(df.sample(ndraw, **(draw_kws or {})))
+
+                dfs.append(df.sample(ndraw, **dkws))
             else:
                 dfs.append(df)
         # return combined DataFrame
@@ -1282,6 +1285,8 @@ class ResultCollection(utils.MultiIndexCollection):
         dfs = []
         key_size = self._key_size
         index_label = index_label or self.collection_key
+        dkws = {'random_state': kws.get('prng', None)}
+        dkws.update(draw_kws or {})
         if t0:
             t0s = self.get_t0s(reference_mass)
         for i, (key, result) in enumerate(self.items()):
@@ -1296,10 +1301,13 @@ class ResultCollection(utils.MultiIndexCollection):
             if t0:
                 df['t0m' if reference_mass else 't0'] = t0s[i]
             if ndraw is not None:
-                dfs.append(df.sample(ndraw, **(draw_kws or {})))
+                dfs.append(df.sample(ndraw, **dkws))
             else:
                 dfs.append(df)
         return pd.concat(dfs, ignore_index=True)
+
+    # -----------------------------------------------------------------------
+    # PLOTS
 
     def plot_mass_spin(self, ndraw: int = 500, imr: bool = True, 
                        joint_kws: dict | None = None,
@@ -1307,16 +1315,84 @@ class ResultCollection(utils.MultiIndexCollection):
                        imr_kws: dict | None = None,
                        df_kws: dict | None = None,
                        prng: int | np.random.Generator | None = None,
-                       index_label: str = None, hue: str = None,
-                       palette=None, hue_norm=None, dropna=False,
-                       height=6, ratio=5, space=.2,
-                       xlim=None, ylim=(0, 1), marginal_ticks=False,
-                       color=None, x_min=None, x_max=None, y_min=0,
-                       y_max=1, **kws) -> None:
+                       index_label: str = None, 
+                       hue: str = None,
+                       palette=None, hue_norm=None,
+                       dropna: bool = False,
+                       height: float = 6, ratio: float = 5,
+                       space: float = .2,
+                       xlim: tuple | None = None,
+                       ylim: tuple | None = (0, 1),
+                       marginal_ticks: bool = False,
+                       x_min: float | None = None,
+                       x_max: float | None = None,
+                       y_min: float | None = 0,
+                       y_max: float | None = 1,
+                       **kws) -> None:
         """Plot the mass-spin distribution for the collection.
-        Based on seaborn's jointplot but with the ability
-        to use a truncated KDE (1D and 2D), controlled by the
-        `x_min`, `x_max`, `y_min`, and `y_max` arguments.
+        Based on seaborn's jointplot but with the ability to use a truncated
+        KDE (1D and 2D), controlled by the `x_min`, `x_max`, `y_min`, and
+        `y_max` arguments.
+
+        Arguments
+        ---------
+        ndraw : int
+            number of samples to draw from the posterior (optional).
+        imr : bool
+            plot IMR samples (def., `True`).
+        joint_kws : dict
+            keyword arguments to pass to the `kdeplot` method for the joint
+            distribution (optional).
+        marginal_kws : dict
+            keyword arguments to pass to the `kdeplot` method for the marginal
+            distributions (optional).
+        imr_kws : dict
+            keyword arguments plot IMR result, accepts: `color`, `linewidth`
+            and `linestyle`.
+        df_kws : dict
+            keyword arguments to pass to the `get_parameter_dataframe` method
+            (optional).
+        prng : numpy.random.Generator | int
+            random number generator or seed (optional).
+        index_label : str
+            label for the index column in the DataFrame (optional).
+        hue : str
+            alias for index_label (optional).
+        palette : str
+            color palette for hue variable (optional).
+        hue_norm : tuple
+            normalization tuple for hue variable (optional).
+        dropna : bool
+            drop NaN values from DataFrame (def., `False`).
+        height : float
+            height of the plot (def., 6).
+        ratio : float
+            aspect ratio of the plot (def., 5).
+        space : float
+            space between axes (def., 0.2).
+        xlim : tuple
+            x-axis limits (optional).
+        ylim : tuple
+            y-axis limits (def., (0, 1)).
+        marginal_ticks : bool
+            show ticks on marginal plots (def., `False`).
+        x_min : float
+            minimum mass value for KDE truncation (optional).
+        x_max : float
+            maximum mass value for KDE truncation (optional).
+        y_min : float
+            minimum spin value for KDE truncation (optional).
+        y_max : float
+            maximum spin value for KDE truncation (optional).
+        **kws : dict
+            additional keyword arguments to pass to the joint plot.
+
+        Returns
+        -------
+        grid : seaborn.JointGrid
+            joint plot object.
+        df_rd : pandas.DataFrame
+            DataFrame of parameter samples drawn from the posterior
         """
         import matplotlib.pyplot as plt
         import seaborn as sns
@@ -1333,8 +1409,7 @@ class ResultCollection(utils.MultiIndexCollection):
         imr_kws = {} if imr_kws is None else imr_kws.copy()
         df_kws = {} if df_kws is None else df_kws.copy()
 
-        if color is None:
-            color = "C0"
+        color = "C0"
         index_label = index_label or hue or self.collection_key
 
         # get data
@@ -1386,7 +1461,7 @@ class ResultCollection(utils.MultiIndexCollection):
                 else:
                     # default to 90% CL
                     levels = [0.1,]
-            imr_kwargs = dict(fill=False)
+            imr_kwargs = dict(fill=False, color='k', linestyle='--')
             imr_kwargs.update(imr_kws)
             sns.kdeplot(data=df_imr, x='m', y='chi', levels=levels,
                         ax=grid.ax_joint, **imr_kwargs)
@@ -1417,4 +1492,4 @@ class ResultCollection(utils.MultiIndexCollection):
 
         # Make the main axes active in the matplotlib state machine
         plt.sca(grid.ax_joint)
-        return grid
+        return grid, df_rd
