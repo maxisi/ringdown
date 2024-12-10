@@ -947,6 +947,7 @@ class ResultCollection(utils.MultiIndexCollection):
         super().__init__(_results, index, reference_mass, reference_time)
         self._targets = None
         self._imr_result = None
+        self.collection_key = DEFAULT_COLLECTION_KEY
 
     def __repr__(self):
         return f"ResultCollection({self.index})"
@@ -972,6 +973,11 @@ class ResultCollection(utils.MultiIndexCollection):
                                 reference_mass=self.reference_mass,
                                 reference_time=self.reference_time)
 
+    @property
+    def has_imr_result(self) -> bool:
+        """Check if the collection has an IMR result."""
+        return self.imr_result is not None and not self.imr_result.empty
+    
     @property
     def imr_result(self) -> IMRResult:
         """Reference IMR result"""
@@ -1176,7 +1182,7 @@ class ResultCollection(utils.MultiIndexCollection):
             result.to_netcdf(path, **kws)
 
     def get_parameter_dataframe(self, ndraw: int | None = None,
-                                index_label: str = DEFAULT_COLLECTION_KEY,
+                                index_label: str = None,
                                 split_index: bool = False,
                                 t0: bool = False,
                                 reference_mass: bool | float | None = None,
@@ -1212,6 +1218,7 @@ class ResultCollection(utils.MultiIndexCollection):
         """
         dfs = []
         key_size = self._key_size
+        index_label = index_label or self.collection_key
         # get t0 values if requested
         if t0:
             t0s = self.get_t0s(reference_mass)
@@ -1238,7 +1245,7 @@ class ResultCollection(utils.MultiIndexCollection):
         return pd.concat(dfs, ignore_index=True)
 
     def get_mode_parameter_dataframe(self, ndraw: int | None = None,
-                                     index_label: str = DEFAULT_COLLECTION_KEY,
+                                     index_label: str = None,
                                      split_index: bool = False,
                                      t0: bool = False,
                                      reference_mass: bool | float |
@@ -1274,6 +1281,7 @@ class ResultCollection(utils.MultiIndexCollection):
         """
         dfs = []
         key_size = self._key_size
+        index_label = index_label or self.collection_key
         if t0:
             t0s = self.get_t0s(reference_mass)
         for i, (key, result) in enumerate(self.items()):
@@ -1292,3 +1300,121 @@ class ResultCollection(utils.MultiIndexCollection):
             else:
                 dfs.append(df)
         return pd.concat(dfs, ignore_index=True)
+
+    def plot_mass_spin(self, ndraw: int = 500, imr: bool = True, 
+                       joint_kws: dict | None = None,
+                       marginal_kws: dict | None = None,
+                       imr_kws: dict | None = None,
+                       df_kws: dict | None = None,
+                       rng: int | np.random.Generator | None = None,
+                       index_label: str = None, hue: str = None,
+                       palette=None, hue_norm=None, dropna=False,
+                       height=6, ratio=5, space=.2,
+                       xlim=None, ylim=(0, 1), marginal_ticks=False,
+                       color=None, x_min=None, x_max=None, y_min=0,
+                       y_max=1, **kws) -> None:
+        """Plot the mass-spin distribution for the collection.
+        Based on seaborn's jointplot but with the ability
+        to use a truncated KDE (1D and 2D), controlled by the
+        `x_min`, `x_max`, `y_min`, and `y_max` arguments.
+        """
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        # parse arguments
+        kws.update({'x_min': x_min, 'x_max': x_max, 'y_min': y_min,
+                    'y_max': y_max})
+        joint_kws = {} if joint_kws is None else joint_kws.copy()
+        joint_kws.update(kws)
+        marginal_kws = {} if marginal_kws is None else marginal_kws.copy()
+        for k in ['x_min', 'x_max', 'y_min', 'y_max']:
+            if k in kws and k not in marginal_kws:
+                marginal_kws[k] = kws[k]
+        imr_kws = {} if imr_kws is None else imr_kws.copy()
+        df_kws = {} if df_kws is None else df_kws.copy()
+
+        if color is None:
+            color = "C0"
+        index_label = index_label or hue or self.collection_key
+
+        # get data
+        df_rd = self.get_parameter_dataframe(ndraw=ndraw, rng=rng,
+                                             index_label=index_label,
+                                             **df_kws)
+
+        if 'm' not in df_rd.columns or 'chi' not in df_rd.columns:
+            raise ValueError("Mass and spin columns not found in results.")
+
+        # Initialize the JointGrid object (based on sns.jointplot)
+        grid = sns.JointGrid(
+            data=df_rd, x='m', y='chi', hue=index_label,
+            palette=palette, hue_norm=hue_norm,
+            dropna=dropna, height=height, ratio=ratio, space=space,
+            xlim=xlim, ylim=ylim, marginal_ticks=marginal_ticks,
+        )
+
+        if grid.hue is not None:
+            marginal_kws.setdefault("legend", False)
+
+        joint_kws.setdefault("color", color)
+        grid.plot_joint(utils.kdeplot, **joint_kws)
+
+        marginal_kws.setdefault("color", color)
+        if "fill" in joint_kws:
+            marginal_kws.setdefault("fill", joint_kws["fill"])
+
+        grid.plot_marginals(utils.kdeplot, **marginal_kws)
+
+        # plot IMR result
+        if imr and self.has_imr_result:
+            n_imr = len(self.imr_result)
+            if ndraw > n_imr:
+                logging.warning(f"Using fewer IMR samples ({n_imr}) than "
+                                f"requested ({ndraw}).")
+                ndraw = n_imr
+            df_imr = pd.DataFrame({
+                'm': self.imr_result.final_mass,
+                'chi': self.imr_result.final_spin,
+            }).sample(ndraw, replace=False, random_state=rng)
+
+            levels = imr_kws.pop('levels', None)
+            if levels is None:
+                if 'levels' in kws:
+                    # NOTE: our bounded kdeplot and sns.kdeplot have different
+                    # definitions of levels!
+                    levels = [1-c for c in kws['levels']]
+                else:
+                    # default to 90% CL
+                    levels = [0.1,]
+            imr_kwargs = dict(fill=False)
+            imr_kwargs.update(imr_kws)
+            sns.kdeplot(data=df_imr, x='m', y='chi', levels=levels,
+                        ax=grid.ax_joint, **imr_kwargs)
+
+            imr_q = imr_kws.pop('quantile', 0.90)
+            if imr_q is not None and imr_q > 0:
+                hi, lo = (1 - imr_q) / 2, 1 - (1 - imr_q) / 2
+                cis = df_imr.quantile([hi, 0.5, lo])
+            else:
+                hi, lo = None, None
+
+            # plot IMR median
+            lkws = dict(color='k', linestyle=':')
+            for k in ['color', 'linestyle', 'linewidth']:
+                if k in imr_kws:
+                    lkws[k] = imr_kws[k]
+            grid.ax_joint.axvline(cis['m'][0.5], **lkws)
+            grid.ax_joint.axhline(cis['chi'][0.5], **lkws)
+
+            grid.ax_marg_x.axvline(cis['m'][0.5], **lkws)
+            grid.ax_marg_y.axhline(cis['chi'][0.5], **lkws)
+
+            # plor IMR CLs
+            if hi is not None:
+                bkws = dict(alpha=0.2, color=lkws.get('color', 'k'))
+                grid.ax_marg_x.axvspan(cis['m'][lo], cis['m'][hi], **bkws)
+                grid.ax_marg_y.axhspan(cis['chi'][lo], cis['chi'][hi], **bkws)
+
+        # Make the main axes active in the matplotlib state machine
+        plt.sca(grid.ax_joint)
+        return grid
