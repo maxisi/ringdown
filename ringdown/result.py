@@ -265,7 +265,7 @@ class Result(az.InferenceData):
     def draw_sample(self,
                     idx: int | tuple[int, int] | dict = None,
                     map: bool = False,
-                    rng: np.random.Generator = None,
+                    prng: np.random.Generator = None,
                     seed: int = None) -> tuple[int, dict]:
         """Draw a sample from the posterior.
 
@@ -280,7 +280,7 @@ class Result(az.InferenceData):
         map : bool
            return maximum-probability sample; otherwise, returns random draw
            (def., `False`)
-        rng : numpy.random.Generator
+        prng : numpy.random.Generator
             random number generator (optional)
         seed : int
             seed to initialize new random number generator (optional)
@@ -314,8 +314,8 @@ class Result(az.InferenceData):
             sample = samples.isel(sample=i)
         else:
             # pick random sample
-            rng = rng or np.random.default_rng(seed)
-            i = rng.integers(len(samples['sample']))
+            prng = prng or np.random.default_rng(seed)
+            i = prng.integers(len(samples['sample']))
             sample = samples.isel(sample=i)
         pars = sample.data_vars
         return i, pars
@@ -648,7 +648,7 @@ class Result(az.InferenceData):
         return x
 
     def get_parameter_dataframe(self, nsamp: int | None = None,
-                                rng: int | np.random.Generator = None,
+                                prng: int | np.random.Generator = None,
                                 ignore_index=False,
                                 **kws) -> pd.DataFrame:
         """Get a DataFrame of parameter samples drawn from the posterior.
@@ -664,7 +664,7 @@ class Result(az.InferenceData):
         ---------
         nsamp : int
             number of samples to draw from the posterior (optional).
-        rng : numpy.random.Generator | int
+        prng : numpy.random.Generator | int
             random number generator or seed (optional).
         ignore_index : bool
             reset index rather than showing location in original samples
@@ -679,8 +679,8 @@ class Result(az.InferenceData):
         # get samples
         samples = self.stacked_samples
         if nsamp is not None:
-            rng = rng or np.random.default_rng(rng)
-            idxs = rng.choice(samples.sizes['sample'], nsamp, replace=False)
+            prng = prng or np.random.default_rng(prng)
+            idxs = prng.choice(samples.sizes['sample'], nsamp, replace=False)
             samples = samples.isel(sample=idxs)
         else:
             idxs = None
@@ -698,7 +698,7 @@ class Result(az.InferenceData):
 
     def get_mode_parameter_dataframe(self, nsamp: int | None = None,
                                      ignore_index: bool = False,
-                                     rng: int | np.random.Generator |
+                                     prng: int | np.random.Generator |
                                      None = None,
                                      **kws) -> pd.DataFrame:
         """Get a DataFrame of parameter samples drawn from the posterior, with
@@ -715,7 +715,7 @@ class Result(az.InferenceData):
         ignore_index : bool
             reset index rather than showing location in original samples
             (def., `False`).
-        rng : numpy.random.Generator | int
+        prng : numpy.random.Generator | int
             random number generator or seed (optional).
         **kws : dict
             additional keyword arguments to pass to the `get_label` method of
@@ -732,8 +732,8 @@ class Result(az.InferenceData):
         # get samples
         samples = self.stacked_samples
         if nsamp is not None:
-            rng = rng or np.random.default_rng(rng)
-            idxs = rng.choice(samples.sizes['sample'], nsamp, replace=False)
+            prng = prng or np.random.default_rng(prng)
+            idxs = prng.choice(samples.sizes['sample'], nsamp, replace=False)
             samples = samples.isel(sample=idxs)
         else:
             idxs = None
@@ -817,7 +817,7 @@ class Result(az.InferenceData):
                            ifo: str | None = None,
                            mode: str | tuple | indexing.ModeIndex | bytes |
                            None = None,
-                           rng: int | np.random.Generator | None = None,
+                           prng: int | np.random.Generator | None = None,
                            seed: int | None = None) \
             -> dict[data.Data] | data.Data:
         """Get a sample of the strain reconstruction.
@@ -844,7 +844,7 @@ class Result(az.InferenceData):
             if mode not in self.posterior.mode:
                 raise ValueError("Mode requested not in result")
             key = 'h_det_mode'
-        idx, x = self.draw_sample(idx=idx, map=map, rng=rng, seed=seed)
+        idx, x = self.draw_sample(idx=idx, map=map, prng=prng, seed=seed)
         sel = {k: v for k, v in dict(mode=mode).items()
                if v is not None}
         h = x[key].sel(**sel)
@@ -1306,7 +1306,7 @@ class ResultCollection(utils.MultiIndexCollection):
                        marginal_kws: dict | None = None,
                        imr_kws: dict | None = None,
                        df_kws: dict | None = None,
-                       rng: int | np.random.Generator | None = None,
+                       prng: int | np.random.Generator | None = None,
                        index_label: str = None, hue: str = None,
                        palette=None, hue_norm=None, dropna=False,
                        height=6, ratio=5, space=.2,
@@ -1338,7 +1338,7 @@ class ResultCollection(utils.MultiIndexCollection):
         index_label = index_label or hue or self.collection_key
 
         # get data
-        df_rd = self.get_parameter_dataframe(ndraw=ndraw, rng=rng,
+        df_rd = self.get_parameter_dataframe(ndraw=ndraw, prng=prng,
                                              index_label=index_label,
                                              **df_kws)
 
@@ -1375,7 +1375,7 @@ class ResultCollection(utils.MultiIndexCollection):
             df_imr = pd.DataFrame({
                 'm': self.imr_result.final_mass,
                 'chi': self.imr_result.final_spin,
-            }).sample(ndraw, replace=False, random_state=rng)
+            }).sample(ndraw, replace=False, random_state=prng)
 
             levels = imr_kws.pop('levels', None)
             if levels is None:
