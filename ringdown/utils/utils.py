@@ -229,7 +229,7 @@ class MultiIndexCollection(object):
         return iter(self.items())
 
     def get(self, key):
-        return self.data[self.index[key]]
+        return self.data[self.index.index(key)]
 
     @property
     def as_dict(self):

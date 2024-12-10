@@ -20,6 +20,7 @@ import configparser
 from glob import glob
 from parse import parse
 import logging
+from scipy.stats import gaussian_kde
 
 _WHITENED_LOGLIKE_KEY = 'whitened_pointwise_loglike'
 
@@ -71,6 +72,11 @@ class Result(az.InferenceData):
         # produce h_det (i.e., sum of all modes) if not already present
         if produce_h_det:
             self.h_det
+
+    @property
+    def has_imr_result(self) -> bool:
+        """Check if an IMR result is loaded."""
+        return self.imr_result is not None and not self.imr_result.empty
 
     @property
     def imr_result(self) -> IMRResult:
@@ -929,6 +935,40 @@ class Result(az.InferenceData):
         new_result = self.copy()
         new_result.posterior = samples.isel(sample=idxs)
         return new_result
+
+    def imr_consistency(self, coords: str ='mchi',
+                        ndraw_rd: int | None = None,
+                        ndraw_imr: int | None = 1000,
+                        prng: int | np.random.Generator | None = None,
+                        kde_kws = None) -> dict:
+        if coords.lower() != 'mchi':
+            raise NotImplementedError("Only mchi coordinates are supported.")
+        if not self.has_imr_result:
+            raise ValueError("No IMR result loaded.")
+        if 'm' not in self.posterior or 'chi' not in self.posterior:
+            raise ValueError("No mass or chi parameters found in posterior.")
+
+        samples = self.stacked_samples
+        prng = prng or np.random.default_rng(prng)
+        n = min(ndraw_rd or len(samples['sample']),len(samples['sample']))
+        idxs = prng.choice(samples.sizes['sample'], n, replace=False)
+        samples = samples.isel(sample=idxs)
+        xy_rd = samples[['m', 'chi']].to_array().values
+
+        n = min(ndraw_imr or len(self.imr_result), len(self.imr_result))
+        idxs = prng.choice(len(self.imr_result), n, replace=False)
+        xy_imr = [self.imr_result.final_mass[idxs],
+                  self.imr_result.final_spin[idxs]]
+
+        kde = gaussian_kde(xy_rd, **(kde_kws or {}))
+        p_rd = kde(xy_rd)
+        p_imr = kde(xy_imr)
+
+        qs = []
+        for p in p_imr:
+            q = np.sum(p_rd > p) / len(p_rd)
+            qs.append(q)
+        return np.array(qs)
 
 
 class ResultCollection(utils.MultiIndexCollection):
