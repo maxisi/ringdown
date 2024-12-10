@@ -26,6 +26,8 @@ _WHITENED_LOGLIKE_KEY = 'whitened_pointwise_loglike'
 _DATAFRAME_PARAMETERS = ['m', 'chi', 'f', 'g',
                          'a', 'phi', 'theta', 'ellip', 'df', 'dg']
 
+DEFAULT_COLLECTION_KEY = 'run'
+
 
 class Result(az.InferenceData):
     """Result from a ringdown fit."""
@@ -1153,7 +1155,7 @@ class ResultCollection(utils.MultiIndexCollection):
             result.to_netcdf(path, **kws)
 
     def get_parameter_dataframe(self, ndraw: int | None = None,
-                                index_label: str = 'run',
+                                index_label: str = DEFAULT_COLLECTION_KEY,
                                 split_index: bool = False,
                                 t0: bool = False,
                                 reference_mass: bool | float | None = None,
@@ -1215,7 +1217,7 @@ class ResultCollection(utils.MultiIndexCollection):
         return pd.concat(dfs, ignore_index=True)
 
     def get_mode_parameter_dataframe(self, ndraw: int | None = None,
-                                     index_label: str = 'run',
+                                     index_label: str = DEFAULT_COLLECTION_KEY,
                                      split_index: bool = False,
                                      t0: bool = False,
                                      reference_mass: bool | float |
