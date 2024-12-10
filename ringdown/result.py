@@ -951,6 +951,27 @@ class ResultCollection(utils.MultiIndexCollection):
     def __repr__(self):
         return f"ResultCollection({self.index})"
 
+    def thin(self, n: int, start_loc: int = 0) -> 'ResultCollection':
+        """Thin the collection by taking every `n` result.
+
+        Arguments
+        ---------
+        n : int
+            number of results to skip between each result.
+        start_loc : int
+            starting location in the collection to thin from (def., 0).
+
+        Returns
+        -------
+        new_collection : ResultCollection
+            thinned collection.
+        """
+        results = self.results[start_loc::n]
+        index = self.index[start_loc::n]
+        return ResultCollection(results=results, index=index,
+                                reference_mass=self.reference_mass,
+                                reference_time=self.reference_time)
+
     @property
     def imr_result(self) -> IMRResult:
         """Reference IMR result"""
