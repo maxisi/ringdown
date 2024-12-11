@@ -1012,10 +1012,11 @@ class Result(az.InferenceData):
         # find IMR samples within the requested IMR credible interval
         n = min(ndraw_imr or len(self.imr_result), len(self.imr_result))
         idxs = prng.choice(len(self.imr_result), n, replace=False)
-        xy_imr = [self.imr_result.final_mass[idxs],
-                  self.imr_result.final_spin[idxs]]
-        kde_imr = gaussian_kde(xy_imr, **(kde_kws or {}))
-        imr_samples = sorted(kde_imr(xy_imr), reverse=True)[:int(imr_cl*n)]
+        xy_imr = np.array([self.imr_result.final_mass[idxs],
+                           self.imr_result.final_spin[idxs]])
+        kde_imr = utils.Bounded_2d_kde(xy_imr.T, **(kde_kws or {}))
+        imr_idxs = np.argsort(kde_imr(xy_imr.T))[::-1][:int(imr_cl*n)]
+        imr_samples = xy_imr[:, imr_idxs]
 
         # find the  IMR sample with the lowest value of the RD posterior
         samples = self.stacked_samples
@@ -1023,11 +1024,11 @@ class Result(az.InferenceData):
         idxs = prng.choice(samples.sizes['sample'], n, replace=False)
         samples = samples.isel(sample=idxs)
         xy_rd = samples[['m', 'chi']].to_array().values
-        kde_rd = gaussian_kde(xy_rd, **(kde_kws or {}))
-        rd_kde_thresh = np.min(kde_rd(imr_samples))
+        kde_rd = utils.Bounded_2d_kde(xy_rd.T, **(kde_kws or {}))
+        rd_kde_thresh = np.min(kde_rd(imr_samples.T))
 
         # compute the fraction of RD samples above the IMR threshold
-        p_rd = kde_rd(xy_rd)
+        p_rd = kde_rd(xy_rd.T)
         q = np.sum(p_rd > rd_kde_thresh) / n
         return q
 
@@ -1407,19 +1408,28 @@ class ResultCollection(utils.MultiIndexCollection):
                 dfs.append(df)
         return pd.concat(dfs, ignore_index=True)
 
-    def imr_consistency(self, *args, **kwargs) -> pd.DataFrame:
+    def imr_consistency(self, *args, progress=False,
+                        **kwargs) -> pd.DataFrame:
         """Compute the IMR consistency for the collection.
         See :meth:`Result.imr_consistency` for details.
         """
-        q = {k: r.imr_consistency(*args, **kwargs) for k, r in self}
+        tqdm = utils.get_tqdm(progress)
+        q = {k: r.imr_consistency(*args, **kwargs) for k, r in tqdm(self)}
         return pd.DataFrame(q)
     
-    def imr_consistency_summary(self, *args, **kwargs) -> pd.Series:
+    def imr_consistency_summary(self, *args, progress: bool = False,
+                                simplify_index: bool = True, 
+                                **kws) -> pd.Series:
         """Compute the IMR consistency summary for the collection.
         See :meth:`Result.imr_consistency_summary` for details.
         """
-        q = [r.imr_consistency_summary(*args, **kwargs) for r in self.results]
-        return pd.Series(q, index=self.index)
+        tqdm = utils.get_tqdm(progress)
+        q = [r.imr_consistency_summary(*args, **kws) for r in tqdm(self.results)]
+        if simplify_index and len(self) > 0 and len(self.index[0]) == 1:
+            index = [k[0] for k in self.index]
+        else:
+            index = self.index
+        return pd.Series(q, index=index)
 
     # -----------------------------------------------------------------------
     # PLOTS
