@@ -1407,6 +1407,13 @@ class ResultCollection(utils.MultiIndexCollection):
                 dfs.append(df)
         return pd.concat(dfs, ignore_index=True)
 
+    def imr_consistency(self, *args, **kwargs) -> pd.DataFrame:
+        """Compute the IMR consistency for the collection.
+        See :meth:`Result.imr_consistency` for details.
+        """
+        q = {k: r.imr_consistency(*args, **kwargs) for k, r in self}
+        return pd.DataFrame(q)
+    
     def imr_consistency_summary(self, *args, **kwargs) -> pd.Series:
         """Compute the IMR consistency summary for the collection.
         See :meth:`Result.imr_consistency_summary` for details.
