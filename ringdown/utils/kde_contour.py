@@ -328,7 +328,8 @@ def kdeplot(x, y=None, orientation='vertical', **kws):
             else:
                 ys_hue = y[hues == hue]
             kws.pop('color', None)
-            kdeplot(x=xs_hue, y=ys_hue, **kws, color=color, orientation=orientation)
+            kdeplot(x=xs_hue, y=ys_hue, **kws,
+                    color=color, orientation=orientation)
             plt.plot([], [], c=color, label=hue)
         if kws.get('legend', True):
             plt.legend()
@@ -361,18 +362,18 @@ def kdeplot(x, y=None, orientation='vertical', **kws):
     kde_kws = {k: kws.pop(k, None) for k in ['bw_method', 'weights']}
     kde_kws['x_min'] = kws.pop(k_min, None)
     kde_kws['x_max'] = kws.pop(k_max, None)
-    
+
     # get rid of unused keys that may remain
     for k in ['x_min', 'x_max', 'y_min', 'y_max']:
         kws.pop(k, None)
-    
+
     k = Bounded_1d_kde(x, **kde_kws)
 
     x_hi, x_lo = np.percentile(x, 99.5), np.percentile(x, 0.5)
     Dx = x_hi - x_lo
     xgrid = np.linspace(x_lo-0.1*Dx, x_hi+0.1*Dx, kws.pop('n_grid', 128))
     ygrid = k(xgrid)
-    
+
     # check wether to flip axes
     if orientation == 'horizontal':
         xgrid, ygrid = ygrid, xgrid
