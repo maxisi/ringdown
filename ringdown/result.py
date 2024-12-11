@@ -97,7 +97,7 @@ class Result(az.InferenceData):
             self._imr_result = imr_result
         else:
             self._imr_result = IMRResult(imr_result)
-    
+
     @property
     def _df_parameters(self) -> dict[str, qnms.ParameterLabel]:
         """Default parameters for DataFrames."""
@@ -936,11 +936,11 @@ class Result(az.InferenceData):
         new_result.posterior = samples.isel(sample=idxs)
         return new_result
 
-    def imr_consistency(self, coords: str ='mchi',
+    def imr_consistency(self, coords: str = 'mchi',
                         ndraw_rd: int | None = None,
                         ndraw_imr: int | None = 1000,
                         prng: int | np.random.Generator | None = None,
-                        kde_kws = None) -> dict:
+                        kde_kws: dict | None = None) -> dict:
         if coords.lower() != 'mchi':
             raise NotImplementedError("Only mchi coordinates are supported.")
         if not self.has_imr_result:
@@ -950,7 +950,7 @@ class Result(az.InferenceData):
 
         samples = self.stacked_samples
         prng = prng or np.random.default_rng(prng)
-        n = min(ndraw_rd or len(samples['sample']),len(samples['sample']))
+        n = min(ndraw_rd or len(samples['sample']), len(samples['sample']))
         idxs = prng.choice(samples.sizes['sample'], n, replace=False)
         samples = samples.isel(sample=idxs)
         xy_rd = samples[['m', 'chi']].to_array().values
@@ -969,6 +969,67 @@ class Result(az.InferenceData):
             q = np.sum(p_rd > p) / len(p_rd)
             qs.append(q)
         return np.array(qs)
+
+    def imr_consistency_summary(self, coords: str = 'mchi',
+                                ndraw_rd: int | None = None,
+                                ndraw_imr: int | None = 1000,
+                                imr_cl: float = 0.9,
+                                prng: int | np.random.Generator | None = None,
+                                kde_kws: dict | None = None) -> dict:
+        """Compute ringdown credible level that fully encompasses the IMR
+        credible level specified by `imr_cl`.
+
+        Arguments
+        ---------
+        coords : str
+            coordinates to use for comparison (def., 'mchi')
+        ndraw_rd : int
+            number of RD samples to draw (def., all samples)
+        ndraw_imr : int
+            number of IMR samples to draw (def., 1000)
+        imr_cl : float
+            IMR credible level (def., 0.9)
+        prng : numpy.random.Generator
+            random number generator or seed (optional)
+        kde_kws : dict
+            additional keyword arguments to pass to `gaussian_kde`
+
+        Returns
+        -------
+        q : float
+            credible of the RD posterior that fully encompasses the IMR
+            credible level specified by `imr_cl`.
+        """
+        if coords.lower() != 'mchi':
+            raise NotImplementedError("Only mchi coordinates are supported.")
+        if not self.has_imr_result:
+            raise ValueError("No IMR result loaded.")
+        if 'm' not in self.posterior or 'chi' not in self.posterior:
+            raise ValueError("No mass or chi parameters found in posterior.")
+
+        prng = prng or np.random.default_rng(prng)
+
+        # find IMR samples within the requested IMR credible interval
+        n = min(ndraw_imr or len(self.imr_result), len(self.imr_result))
+        idxs = prng.choice(len(self.imr_result), n, replace=False)
+        xy_imr = [self.imr_result.final_mass[idxs],
+                  self.imr_result.final_spin[idxs]]
+        kde_imr = gaussian_kde(xy_imr, **(kde_kws or {}))
+        imr_samples = sorted(kde_imr(xy_imr), reverse=True)[:int(imr_cl*n)]
+
+        # find the  IMR sample with the lowest value of the RD posterior
+        samples = self.stacked_samples
+        n = min(ndraw_rd or len(samples['sample']), len(samples['sample']))
+        idxs = prng.choice(samples.sizes['sample'], n, replace=False)
+        samples = samples.isel(sample=idxs)
+        xy_rd = samples[['m', 'chi']].to_array().values
+        kde_rd = gaussian_kde(xy_rd, **(kde_kws or {}))
+        rd_kde_thresh = np.min(kde_rd(imr_samples))
+
+        # compute the fraction of RD samples above the IMR threshold
+        p_rd = kde_rd(xy_rd)
+        q = np.sum(p_rd > rd_kde_thresh) / n
+        return q
 
 
 class ResultCollection(utils.MultiIndexCollection):
@@ -1017,7 +1078,7 @@ class ResultCollection(utils.MultiIndexCollection):
     def has_imr_result(self) -> bool:
         """Check if the collection has an IMR result."""
         return self.imr_result is not None and not self.imr_result.empty
-    
+
     @property
     def imr_result(self) -> IMRResult:
         """Reference IMR result"""
@@ -1349,13 +1410,13 @@ class ResultCollection(utils.MultiIndexCollection):
     # -----------------------------------------------------------------------
     # PLOTS
 
-    def plot_mass_spin(self, ndraw: int = 500, imr: bool = True, 
+    def plot_mass_spin(self, ndraw: int = 500, imr: bool = True,
                        joint_kws: dict | None = None,
                        marginal_kws: dict | None = None,
                        imr_kws: dict | None = None,
                        df_kws: dict | None = None,
                        prng: int | np.random.Generator | None = None,
-                       index_label: str = None, 
+                       index_label: str = None,
                        hue: str = None,
                        palette=None, hue_norm=None,
                        dropna: bool = False,
