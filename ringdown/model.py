@@ -147,7 +147,7 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, t_ref=0.0, aligned=False,
     # times should be originally shaped (nifo, nt)
     # take it to (nifo, nt, 1) where the last dimension is the mode
     ts = jnp.atleast_2d(ts)[:, :, jnp.newaxis]
-    t_ref = delta_t_ref * jnp.ones_like(ts)
+    brt_ref = delta_t_ref * jnp.ones_like(ts)
 
     # get number of detectors, times, and modes
     nifo = ts.shape[0]
