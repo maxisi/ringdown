@@ -20,7 +20,7 @@ from arviz.data.base import dict_to_dataset
 import logging
 
 
-def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, aligned=False,
+def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, t_ref=0.0, aligned=False,
                      YpYc=None, single_polarization=False):
     """Construct the design matrix for a generic ringdown model.
 
@@ -136,6 +136,8 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, aligned=False,
         The cross polarization coefficients; shape ``(nifo,)``.
     Ascales : array_like
         The amplitude scales of the damped sinusoids; shape ``(nmode,)``.
+    t_ref : array_like
+        The reference time difference between the prior and inferred amplitudes.
 
     Returns
     -------
@@ -145,6 +147,7 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, aligned=False,
     # times should be originally shaped (nifo, nt)
     # take it to (nifo, nt, 1) where the last dimension is the mode
     ts = jnp.atleast_2d(ts)[:, :, jnp.newaxis]
+    t_ref = delta_t_ref * jnp.ones_like(ts)
 
     # get number of detectors, times, and modes
     nifo = ts.shape[0]
@@ -157,9 +160,9 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, aligned=False,
     Ascales = jnp.reshape(Ascales, (1, 1, nmode))
 
     # ct and st will have shape (1, nt, nmode)
-    decay = jnp.exp(-gamma*ts)
-    ct = Ascales * decay * jnp.cos(2*np.pi*f*ts)
-    st = Ascales * decay * jnp.sin(2*np.pi*f*ts)
+    decay = jnp.exp(-gamma*(ts - delta_t_ref))
+    ct = Ascales * decay * jnp.cos(2*np.pi*f*(ts - t_ref))
+    st = Ascales * decay * jnp.sin(2*np.pi*f*(ts - t_ref))
 
     if single_polarization:
         dm = jnp.concatenate((Fp*ct, Fp*st), axis=2)
@@ -239,7 +242,6 @@ def get_quad_derived_quantities(nmodes, design_matrices, quads, a_scale, YpYc,
     if nquads == 2:
         ax_unit = quads[:nmodes]
         ay_unit = quads[nmodes:]
-
         a_norm = jnp.sqrt(jnp.square(ax_unit) + jnp.square(ay_unit))
         a = numpyro.deterministic('a', a_scale * a_norm)
         numpyro.deterministic('phi', jnp.arctan2(ay_unit, ax_unit))
@@ -302,6 +304,8 @@ def get_quad_derived_quantities(nmodes, design_matrices, quads, a_scale, YpYc,
 def make_model(modes: int | list[(int, int, int, int)],
                a_scale_max: float,
                marginalized: bool = True,
+               surrogate_means_and_stds: float | None = None,
+               sample_t_ref: bool = False,
                m_min: float | None = None,
                m_max: float | None = None,
                chi_min: float = 0.0,
@@ -340,6 +344,19 @@ def make_model(modes: int | list[(int, int, int, int)],
     marginalized : bool
         Whether or not to marginalize over the quadrature amplitudes
         analytically.
+
+    surrogate_means_and_stds : array
+        Array of amplitude and phase means and standard deviations 
+        extracted from a surrogate run on an IMR posterior. Array should be 2d,
+        with axis=0 being the different QNMs and axis=1 being of size 4
+        and ordered by mean A, std A, mean phase, std phase.
+        (default: None, i.e., use normal distributions on A_x and A_y)
+
+    sample_t_ref : bool
+        Whether or not to sample t_ref. This should be used in conjuction
+        with the surrogate meand and standard deviations, but is likely
+        not necessary so long as the standard deviations from the surrogate
+        are large enough to allow for flexible sampling.
 
     m_min : float
         The minimum mass of the black hole in solar masses.
@@ -419,7 +436,7 @@ def make_model(modes: int | list[(int, int, int, int)],
         A model function that can be used with `numpyro` to sample from the
         posterior distribution of the ringdown parameters.
     """
-
+    
     n_modes = modes if isinstance(modes, int) else len(modes)
 
     # check arguments for free damped sinusoid fits
@@ -490,7 +507,7 @@ def make_model(modes: int | list[(int, int, int, int)],
         swsh = construct_sYlm(-2, mode_array[:, 2], mode_array[:, 3])
     else:
         swsh = None
-
+        
     def model(times, strains, ls, fps, fcs,
               predictive: bool = predictive,
               store_h_det: bool = store_h_det,
@@ -514,6 +531,7 @@ def make_model(modes: int | list[(int, int, int, int)],
         fcs : array_like
             The "cross" polarization coefficients for each IFO; length `n_det`.
         """
+        
         times, strains, ls, fps, fcs = map(
             jnp.array, (times, strains, ls, fps, fcs))
 
@@ -637,6 +655,7 @@ def make_model(modes: int | list[(int, int, int, int)],
             # for ease of reference: we use the same variable names
             # and matrices are capitalized
 
+            a_scale_max = 10e-21
             a_scale = numpyro.sample('a_scale', dist.Uniform(0, a_scale_max),
                                      sample_shape=(n_modes,))
             # get design matrices which will have shape
@@ -800,7 +819,8 @@ def make_model(modes: int | list[(int, int, int, int)],
                 get_quad_derived_quantities(n_modes, dms, quads,
                                             a_scale, YpYc, store_h_det,
                                             store_h_det_mode)
-        else:
+        elif surrogate_means_and_stds is None:
+            a_scale_max = 10e-21
             a_scales = a_scale_max*jnp.ones(n_modes)
             dms = rd_design_matrix(times, f, g, fps, fcs, a_scales,
                                    aligned=swsh, YpYc=YpYc,
@@ -823,11 +843,18 @@ def make_model(modes: int | list[(int, int, int, int)],
                 quads = jnp.concatenate(
                     (apx_unit, apy_unit, acx_unit, acy_unit))
 
-            a, h_det = get_quad_derived_quantities(n_modes, dms,
-                                                   quads, a_scale_max, YpYc,
-                                                   store_h_det,
-                                                   store_h_det_mode,
-                                                   compute_h_det=(not prior))
+            if prior:
+                get_quad_derived_quantities(n_modes, dms,
+                                            quads, a_scale_max, YpYc,
+                                            store_h_det,
+                                            store_h_det_mode,
+                                            compute_h_det=(not prior))
+            else:
+                a, h_det = get_quad_derived_quantities(n_modes, dms,
+                                                       quads, a_scale_max, YpYc,
+                                                       store_h_det,
+                                                       store_h_det_mode,
+                                                       compute_h_det=(not prior))
 
             if flat_amplitude_prior:
                 # We need a Jacobian that is A^-3 for the generic model
@@ -846,7 +873,74 @@ def make_model(modes: int | list[(int, int, int, int)],
                 for i, strain in enumerate(strains):
                     numpyro.sample(f'logl_{i}', dist.MultivariateNormal(
                         h_det[i, :], scale_tril=ls[i, :, :]), obs=strain)
+        else:
+            a_scale_max = 1
+            a_scales = a_scale_max * jnp.ones(n_modes)
 
+            if sample_t_ref:
+                if n_modes > 1:
+                    t_ref = numpyro.sample(
+                        't_ref', dist.Normal(
+                            0,
+                            0.005
+                        )
+                    )
+                else:
+                    t_ref = 0.0
+            else:
+                t_ref = 0.0
+                
+            dms = rd_design_matrix(times, f, g, fps, fcs, a_scales,
+                                   t_ref=t_ref, aligned=swsh, YpYc=YpYc,
+                                   single_polarization=single_polarization)
+
+            if swsh or single_polarization:
+                a = numpyro.sample(
+                    'a_temp', dist.Normal(
+                        0,
+                        1
+                    ), sample_shape=(n_modes,)
+                )
+                phi = numpyro.sample(
+                    'phi_temp', dist.Normal(
+                        0,
+                        1
+                    ), sample_shape=(n_modes,)
+                )
+                a = a * surrogate_means_and_stds[:,1] + surrogate_means_and_stds[:,0]
+                phi = phi * surrogate_means_and_stds[:,3] + surrogate_means_and_stds[:,2]
+                psi = numpyro.sample(
+                    'psi', dist.Uniform(
+                        0, 2*jnp.pi
+                    )
+                )
+                quads = jnp.concatenate(
+                    (
+                        a * jnp.cos(phi) * jnp.cos(2*psi) - a * jnp.sin(phi) * jnp.sin(2*psi),
+                        a * jnp.sin(phi) * jnp.cos(2*psi) + a * jnp.cos(phi) * jnp.sin(2*psi)
+                    )
+                )
+            else:
+                raise ValueError("Not implemented!")
+
+            if prior:
+                get_quad_derived_quantities(n_modes, dms,
+                                            quads, a_scale_max, YpYc,
+                                            store_h_det,
+                                            store_h_det_mode,
+                                            compute_h_det=(not prior))
+            else:
+                a, h_det = get_quad_derived_quantities(n_modes, dms,
+                                                       quads, a_scale_max, YpYc,
+                                                       store_h_det,
+                                                       store_h_det_mode,
+                                                       compute_h_det=(not prior))
+                    
+                for i, strain in enumerate(strains):
+                    numpyro.sample(f'logl_{i}', dist.MultivariateNormal(
+                        h_det[i, :], scale_tril=ls[i, :, :]), obs=strain)
+                
+                    
     return model
 
 
