@@ -14,6 +14,7 @@ from . import data
 from .imr import IMRResult
 from .target import Target, TargetCollection
 from . import utils
+from .utils import stats
 import pandas as pd
 import json
 import configparser
@@ -1044,6 +1045,30 @@ class Result(az.InferenceData):
         q = np.sum(p_rd > rd_kde_thresh) / n
         return q
 
+    def amplitude_significance(self, kind='quantile') -> float:
+        """Compute the significance of the amplitude of the signal.
+
+        Arguments
+        ---------
+
+        Returns
+        -------
+        p : float
+            p-value of the amplitude of the signal.
+        """
+        amps = self.stacked_samples['a']
+        qs = {}
+        for a in amps:
+            label = indexing.get_mode_label(a.mode.values)
+            q = stats.q_of_zero(a)
+            if kind == 'quantile':
+                qs[label] = q
+            elif kind == 'zscore':
+                qs[label] = stats.z_score(q)
+            else:
+                raise ValueError("kind must be 'quantile' or 'zscore'.")
+        return pd.Series(qs)
+
     # ------------------------------------------------------------------------
     # PLOTS
 
@@ -1639,11 +1664,23 @@ class ResultCollection(utils.MultiIndexCollection):
         """
         tqdm = utils.get_tqdm(progress)
         q = [r.imr_consistency_summary(*args, **kws) for r in tqdm(self.results)]
-        if simplify_index and len(self) > 0 and len(self.index[0]) == 1:
+        return pd.Series(q, index=self.simplified_index)
+
+    def amplitude_significance(self, **kws) -> pd.DataFrame:
+        """Compute the significance of the amplitude of the signal.
+        See :meth:`Result.amplitude_significance` for details.
+        """
+        return pd.DataFrame({k: r.amplitude_significance(**kws)
+                             for k, r in
+                             zip(self.simplified_index, self.data)}).T
+
+    @property
+    def simplified_index(self) -> list:
+        if len(self) > 0 and len(self.index[0]) == 1:
             index = [k[0] for k in self.index]
         else:
             index = self.index
-        return pd.Series(q, index=index)
+        return index
 
     # -----------------------------------------------------------------------
     # PLOTS
