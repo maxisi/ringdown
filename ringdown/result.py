@@ -1149,6 +1149,10 @@ class Result(az.InferenceData):
 
         if engine == 'seaborn':
             # simply call the seaborn jointplot method
+            if 'levels' in kws:
+                # NOTE: our bounded kdeplot and sns.kdeplot have different
+                # definitions of levels!
+                kws['levels'] = [1-c for c in kws['levels']]
             grid = sns.jointplot(data=df_rd, x='m', y='chi', palette=palette,
                                 dropna=dropna, height=height, ratio=ratio,
                                 space=space, xlim=xlim, ylim=ylim,
