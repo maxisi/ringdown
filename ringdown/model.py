@@ -147,7 +147,7 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, t_ref=0.0, aligned=False,
     # times should be originally shaped (nifo, nt)
     # take it to (nifo, nt, 1) where the last dimension is the mode
     ts = jnp.atleast_2d(ts)[:, :, jnp.newaxis]
-    brt_ref = delta_t_ref * jnp.ones_like(ts)
+    brt_ref = t_ref * jnp.ones_like(ts)
 
     # get number of detectors, times, and modes
     nifo = ts.shape[0]
@@ -160,7 +160,7 @@ def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, t_ref=0.0, aligned=False,
     Ascales = jnp.reshape(Ascales, (1, 1, nmode))
 
     # ct and st will have shape (1, nt, nmode)
-    decay = jnp.exp(-gamma*(ts - delta_t_ref))
+    decay = jnp.exp(-gamma*(ts - t_ref))
     ct = Ascales * decay * jnp.cos(2*np.pi*f*(ts - t_ref))
     st = Ascales * decay * jnp.sin(2*np.pi*f*(ts - t_ref))
 
@@ -511,7 +511,8 @@ def make_model(modes: int | list[(int, int, int, int)],
     def model(times, strains, ls, fps, fcs,
               predictive: bool = predictive,
               store_h_det: bool = store_h_det,
-              store_h_det_mode: bool = store_h_det_mode):
+              store_h_det_mode: bool = store_h_det_mode,
+              a_scale_max=a_scale_max):
         """The ringdown model.
 
         Arguments
@@ -654,8 +655,6 @@ def make_model(modes: int | list[(int, int, int, int)],
             # https://arxiv.org/abs/2005.14199
             # for ease of reference: we use the same variable names
             # and matrices are capitalized
-
-            a_scale_max = 10e-21
             a_scale = numpyro.sample('a_scale', dist.Uniform(0, a_scale_max),
                                      sample_shape=(n_modes,))
             # get design matrices which will have shape
@@ -820,7 +819,6 @@ def make_model(modes: int | list[(int, int, int, int)],
                                             a_scale, YpYc, store_h_det,
                                             store_h_det_mode)
         elif surrogate_means_and_stds is None:
-            a_scale_max = 10e-21
             a_scales = a_scale_max*jnp.ones(n_modes)
             dms = rd_design_matrix(times, f, g, fps, fcs, a_scales,
                                    aligned=swsh, YpYc=YpYc,

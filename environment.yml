@@ -1,7 +1,6 @@
 name: ringdown
 channels:
   - conda-forge
-  - defaults
 dependencies:
   - python=3.12
   - numpy=1.26.4

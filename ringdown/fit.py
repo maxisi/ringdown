@@ -1527,6 +1527,69 @@ class Fit(object):
         """
         self.modes = indexing.ModeIndexList(modes)
 
+    def set_surrogate(self, surrogate):
+        """Establish qnm surrogate that can be used to inform qnm amplitude/phase priors
+           or perform parameter estimation with.
+
+        TO DO: Make this so that it loads the surrogate from the surrogate repository.
+
+        Arguments
+        ---------
+        surrogate : TO DO
+            NR surrogate of qnm amplitudes from (TO DO)
+        """
+        if self.modes.value == 0:
+            raise ValueError("self.modes needs to be set before setting the surrogate.")
+        
+        qnms = [(x[0], x[2], x[3], x[4]) for x in self.modes.value]
+        self.surrogate = lambda x, M=None, dist_mpc=None, inclination=None, phi_ref=None : surrogate(
+            x, QNMs=qnms, M=M, dist_mpc=dist_mpc, inclination=inclination, phi_ref=phi_ref
+        )
+
+    def set_priors_from_surrogate(self, progenitor_parameters):
+        """Compute qnm amplitude/phase priors by applying the surrogate
+           to a posterior of progenitor parameters.
+
+        Progenitor parameters should match the expected structure of the
+        qnm surrogate, e.g., (q, chi1z, chi2z) or (q, chi1x, chi1y, chi1z, chi2x, chi2y, chi2z)
+        and then the following extrinsic parameters (M, dist_mpc, inclination, phi_ref).
+
+        Arguments:
+        ----------
+        progenitor_parameters : ndarray
+            2d array of progenitor parameters with the parameters in axis=1.
+        """
+        idx = progenitor_parameters.shape[1] - 4
+        if not idx in [3, 7]:
+            raise ValueError(
+                f"progenitor_parameters.shape {progenitor_parameters.shape} is not equal to 3 or 7."
+            )
+        
+        qnm_amplitudes = []
+        for parameters in progenitor_parameters:
+            qnm_amplitudes.append(
+                list(self.surrogate(
+                    parameters[:idx],
+                    M=parameters[idx],
+                    dist_mpc=parameters[idx + 1],
+                    inclination=parameters[idx + 2],
+                    phi_ref=parameters[idx + 3]
+                ).values())
+            )
+        qnm_amplitudes = np.array(qnm_amplitudes)
+
+        means_and_stds = jax.numpy.array([
+            [
+                np.mean(abs(qnm_amplitudes[:,i])),
+                np.std(abs(qnm_amplitudes[:,i])),
+                np.mean(np.angle(qnm_amplitudes[:,i])),
+                np.std(np.angle(qnm_amplitudes[:,i]))
+            ] for i in range(qnm_amplitudes.shape[1])
+        ])
+
+        self.model_settings['marginalized'] = False
+        self.model_settings['surrogate_means_and_stds'] = means_and_stds
+
     def set_target(self, t0: float | dict | None = None,
                    ra: float | None = None,
                    dec: float | None = None, psi: float | None = None,
