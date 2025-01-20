@@ -10,5 +10,5 @@ tqdm
 ipywidgets
 ipykernel
 numpyro~=0.16
-jax~=0.4
+jax~=0.5
 parse
