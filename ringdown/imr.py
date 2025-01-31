@@ -91,13 +91,12 @@ class IMRResult(pd.DataFrame):
         if ifos is None:
             ifos = self.ifos
         psds = get_dict_from_pattern(psds, ifos)
-        if 'psds' not in self.attrs:
-            self.attrs['psds'] = {}
+        if '_psds' not in self.__dict__:
+            self.__dict__['_psds'] = {}
         for i, p in psds.items():
             if isinstance(p, str):
                 if os.path.isfile(p):
                     p = np.loadtxt(p)
-                    self.attrs['psds'][i] = p
                 else:
                     raise FileNotFoundError(f"PSD file not found: {p}")
             p = data.PowerSpectrum(p).fill_low_frequencies().gate()

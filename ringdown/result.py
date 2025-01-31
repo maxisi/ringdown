@@ -11,19 +11,24 @@ from arviz.data.base import dict_to_dataset
 from . import qnms
 from . import indexing
 from . import data
+from .imr import IMRResult
 from .target import Target, TargetCollection
 from . import utils
+from .utils import stats
 import pandas as pd
 import json
 import configparser
 from glob import glob
 from parse import parse
 import logging
+from scipy.stats import gaussian_kde
 
 _WHITENED_LOGLIKE_KEY = 'whitened_pointwise_loglike'
 
 _DATAFRAME_PARAMETERS = ['m', 'chi', 'f', 'g',
                          'a', 'phi', 'theta', 'ellip', 'df', 'dg']
+
+DEFAULT_COLLECTION_KEY = 'run'
 
 
 class Result(az.InferenceData):
@@ -57,6 +62,7 @@ class Result(az.InferenceData):
         self._whitened_templates = None
         self._target = None
         self._modes = None
+        self._imr_result = None
         # settings for formatting DataFrames
         self._default_label_format = {}
         # try to load config
@@ -67,6 +73,31 @@ class Result(az.InferenceData):
         # produce h_det (i.e., sum of all modes) if not already present
         if produce_h_det:
             self.h_det
+
+    @property
+    def has_imr_result(self) -> bool:
+        """Check if an IMR result is loaded."""
+        return self.imr_result is not None and not self.imr_result.empty
+
+    @property
+    def imr_result(self) -> IMRResult:
+        """Reference IMR result."""
+        if self._imr_result is None:
+            logging.info("Looking for IMR result in config.")
+            if 'imr' in self.config:
+                logging.info("IMR section found in config")
+                self._imr_result = IMRResult.from_config(self.config)
+                logging.info("IMR result loaded.")
+            else:
+                logging.info("No IMR section found in config.")
+                return IMRResult()
+        return self._imr_result
+
+    def set_imr_result(self, imr_result: IMRResult) -> None:
+        if isinstance(imr_result, IMRResult):
+            self._imr_result = imr_result
+        else:
+            self._imr_result = IMRResult(imr_result)
 
     @property
     def _df_parameters(self) -> dict[str, qnms.ParameterLabel]:
@@ -241,7 +272,7 @@ class Result(az.InferenceData):
     def draw_sample(self,
                     idx: int | tuple[int, int] | dict = None,
                     map: bool = False,
-                    rng: np.random.Generator = None,
+                    prng: np.random.Generator = None,
                     seed: int = None) -> tuple[int, dict]:
         """Draw a sample from the posterior.
 
@@ -256,7 +287,7 @@ class Result(az.InferenceData):
         map : bool
            return maximum-probability sample; otherwise, returns random draw
            (def., `False`)
-        rng : numpy.random.Generator
+        prng : numpy.random.Generator
             random number generator (optional)
         seed : int
             seed to initialize new random number generator (optional)
@@ -290,8 +321,8 @@ class Result(az.InferenceData):
             sample = samples.isel(sample=i)
         else:
             # pick random sample
-            rng = rng or np.random.default_rng(seed)
-            i = rng.integers(len(samples['sample']))
+            prng = prng or np.random.default_rng(seed)
+            i = prng.integers(len(samples['sample']))
             sample = samples.isel(sample=i)
         pars = sample.data_vars
         return i, pars
@@ -624,7 +655,7 @@ class Result(az.InferenceData):
         return x
 
     def get_parameter_dataframe(self, nsamp: int | None = None,
-                                rng: int | np.random.Generator = None,
+                                prng: int | np.random.Generator = None,
                                 ignore_index=False,
                                 **kws) -> pd.DataFrame:
         """Get a DataFrame of parameter samples drawn from the posterior.
@@ -640,7 +671,7 @@ class Result(az.InferenceData):
         ---------
         nsamp : int
             number of samples to draw from the posterior (optional).
-        rng : numpy.random.Generator | int
+        prng : numpy.random.Generator | int
             random number generator or seed (optional).
         ignore_index : bool
             reset index rather than showing location in original samples
@@ -655,8 +686,8 @@ class Result(az.InferenceData):
         # get samples
         samples = self.stacked_samples
         if nsamp is not None:
-            rng = rng or np.random.default_rng(rng)
-            idxs = rng.choice(samples.sizes['sample'], nsamp, replace=False)
+            prng = prng or np.random.default_rng(prng)
+            idxs = prng.choice(samples.sizes['sample'], nsamp, replace=False)
             samples = samples.isel(sample=idxs)
         else:
             idxs = None
@@ -674,7 +705,7 @@ class Result(az.InferenceData):
 
     def get_mode_parameter_dataframe(self, nsamp: int | None = None,
                                      ignore_index: bool = False,
-                                     rng: int | np.random.Generator |
+                                     prng: int | np.random.Generator |
                                      None = None,
                                      **kws) -> pd.DataFrame:
         """Get a DataFrame of parameter samples drawn from the posterior, with
@@ -691,7 +722,7 @@ class Result(az.InferenceData):
         ignore_index : bool
             reset index rather than showing location in original samples
             (def., `False`).
-        rng : numpy.random.Generator | int
+        prng : numpy.random.Generator | int
             random number generator or seed (optional).
         **kws : dict
             additional keyword arguments to pass to the `get_label` method of
@@ -708,8 +739,8 @@ class Result(az.InferenceData):
         # get samples
         samples = self.stacked_samples
         if nsamp is not None:
-            rng = rng or np.random.default_rng(rng)
-            idxs = rng.choice(samples.sizes['sample'], nsamp, replace=False)
+            prng = prng or np.random.default_rng(prng)
+            idxs = prng.choice(samples.sizes['sample'], nsamp, replace=False)
             samples = samples.isel(sample=idxs)
         else:
             idxs = None
@@ -793,7 +824,7 @@ class Result(az.InferenceData):
                            ifo: str | None = None,
                            mode: str | tuple | indexing.ModeIndex | bytes |
                            None = None,
-                           rng: int | np.random.Generator | None = None,
+                           prng: int | np.random.Generator | None = None,
                            seed: int | None = None) \
             -> dict[data.Data] | data.Data:
         """Get a sample of the strain reconstruction.
@@ -820,7 +851,7 @@ class Result(az.InferenceData):
             if mode not in self.posterior.mode:
                 raise ValueError("Mode requested not in result")
             key = 'h_det_mode'
-        idx, x = self.draw_sample(idx=idx, map=map, rng=rng, seed=seed)
+        idx, x = self.draw_sample(idx=idx, map=map, prng=prng, seed=seed)
         sel = {k: v for k, v in dict(mode=mode).items()
                if v is not None}
         h = x[key].sel(**sel)
@@ -906,6 +937,340 @@ class Result(az.InferenceData):
         new_result.posterior = samples.isel(sample=idxs)
         return new_result
 
+    def imr_consistency(self, coords: str = 'mchi',
+                        ndraw_rd: int | None = None,
+                        ndraw_imr: int | None = 1000,
+                        prng: int | np.random.Generator | None = None,
+                        kde_kws: dict | None = None) -> dict:
+        if coords.lower() != 'mchi':
+            raise NotImplementedError("Only mchi coordinates are supported.")
+        if not self.has_imr_result:
+            raise ValueError("No IMR result loaded.")
+        if 'm' not in self.posterior or 'chi' not in self.posterior:
+            raise ValueError("No mass or chi parameters found in posterior.")
+
+        samples = self.stacked_samples
+        prng = prng or np.random.default_rng(prng)
+        n = min(ndraw_rd or len(samples['sample']), len(samples['sample']))
+        idxs = prng.choice(samples.sizes['sample'], n, replace=False)
+        samples = samples.isel(sample=idxs)
+        xy_rd = samples[['m', 'chi']].to_array().values
+
+        n = min(ndraw_imr or len(self.imr_result), len(self.imr_result))
+        idxs = prng.choice(len(self.imr_result), n, replace=False)
+        xy_imr = [self.imr_result.final_mass[idxs],
+                  self.imr_result.final_spin[idxs]]
+
+        kde = gaussian_kde(xy_rd, **(kde_kws or {}))
+        p_rd = kde(xy_rd)
+        p_imr = kde(xy_imr)
+
+        qs = []
+        for p in p_imr:
+            q = np.sum(p_rd > p) / len(p_rd)
+            qs.append(q)
+        return np.array(qs)
+
+    def imr_consistency_summary(self, coords: str = 'mchi',
+                                imr_weight: str = 'rd',
+                                ndraw_rd: int | None = None,
+                                ndraw_imr: int | None = 1000,
+                                imr_cl: float = 0.9,
+                                prng: int | np.random.Generator | None = None,
+                                kde_kws: dict | None = None) -> dict:
+        """Compute ringdown credible level that fully encompasses the IMR
+        credible level specified by `imr_cl`.
+
+        Arguments
+        ---------
+        coords : str
+            coordinates to use for comparison (def., 'mchi')
+        imr_weight : str
+            distribution to use to define the IMR credible level, 'imr'
+            or 'rd' (def., 'rd')
+        ndraw_rd : int
+            number of RD samples to draw (def., all samples)
+        ndraw_imr : int
+            number of IMR samples to draw (def., 1000)
+        imr_cl : float
+            IMR credible level (def., 0.9)
+        prng : numpy.random.Generator
+            random number generator or seed (optional)
+        kde_kws : dict
+            additional keyword arguments to pass to `gaussian_kde`
+
+        Returns
+        -------
+        q : float
+            credible of the RD posterior that fully encompasses the IMR
+            credible level specified by `imr_cl`.
+        """
+        if coords.lower() != 'mchi':
+            raise NotImplementedError("Only mchi coordinates are supported.")
+        if not self.has_imr_result:
+            raise ValueError("No IMR result loaded.")
+        if 'm' not in self.posterior or 'chi' not in self.posterior:
+            raise ValueError("No mass or chi parameters found in posterior.")
+
+        if imr_weight not in ('imr', 'rd'):
+            raise ValueError("kind must be 'imr' or 'rd'.")
+
+        prng = prng or np.random.default_rng(prng)
+
+        # find IMR samples within the requested IMR credible interval
+        n = min(ndraw_imr or len(self.imr_result), len(self.imr_result))
+        idxs = prng.choice(len(self.imr_result), n, replace=False)
+        imr_samples = np.array([self.imr_result.final_mass[idxs],
+                                self.imr_result.final_spin[idxs]])
+        if imr_weight == 'imr':
+            kde_imr = utils.Bounded_2d_kde(imr_samples.T, **(kde_kws or {}))
+            imr_idxs = np.argsort(kde_imr(imr_samples.T))[::-1][:int(imr_cl*n)]
+            imr_samples = imr_samples[:, imr_idxs]
+
+        # find the  IMR sample with the lowest value of the RD posterior
+        samples = self.stacked_samples
+        n = min(ndraw_rd or len(samples['sample']), len(samples['sample']))
+        idxs = prng.choice(samples.sizes['sample'], n, replace=False)
+        samples = samples.isel(sample=idxs)
+        xy_rd = samples[['m', 'chi']].to_array().values
+        kde_rd = utils.Bounded_2d_kde(xy_rd.T, **(kde_kws or {}))
+        if imr_weight == 'imr':
+            rd_kde_thresh = np.min(kde_rd(imr_samples.T))
+        else:
+            p_imr = kde_rd(imr_samples.T)
+            rd_kde_thresh = np.quantile(p_imr, 1-imr_cl)
+
+        # compute the fraction of RD samples above the IMR threshold
+        p_rd = kde_rd(xy_rd.T)
+        q = np.sum(p_rd > rd_kde_thresh) / n
+        return q
+
+    def amplitude_significance(self, kind='quantile') -> float:
+        """Compute the significance of the amplitude of the signal.
+
+        Arguments
+        ---------
+
+        Returns
+        -------
+        p : float
+            p-value of the amplitude of the signal.
+        """
+        amps = self.stacked_samples['a']
+        qs = {}
+        for a in amps:
+            label = indexing.get_mode_label(a.mode.values)
+            q = stats.q_of_zero(a)
+            if kind == 'quantile':
+                qs[label] = q
+            elif kind == 'zscore':
+                qs[label] = stats.z_score(q)
+            else:
+                raise ValueError("kind must be 'quantile' or 'zscore'.")
+        return pd.Series(qs)
+
+    # ------------------------------------------------------------------------
+    # PLOTS
+
+    def plot_mass_spin(self, ndraw: int = 500, imr: bool = True,
+                    joint_kws: dict | None = None,
+                    marginal_kws: dict | None = None,
+                    imr_kws: dict | None = None,
+                    df_kws: dict | None = None,
+                    prng: int | np.random.Generator | None = None,
+                    palette=None,
+                    dropna: bool = False,
+                    height: float = 6, ratio: float = 5,
+                    space: float = .2,
+                    xlim: tuple | None = None,
+                    ylim: tuple | None = (0, 1),
+                    marginal_ticks: bool = False,
+                    x_min: float | None = None,
+                    x_max: float | None = None,
+                    y_min: float | None = 0,
+                    y_max: float | None = 1,
+                    engine: str = 'auto',
+                    **kws) -> None:
+        """Plot the mass-spin distribution for the collection.
+        Based on seaborn's jointplot but with the ability to use a truncated
+        KDE (1D and 2D), controlled by the `x_min`, `x_max`, `y_min`, and
+        `y_max` arguments.
+
+        Arguments
+        ---------
+        ndraw : int
+            number of samples to draw from the posterior (optional).
+        imr : bool
+            plot IMR samples (def., `True`).
+        joint_kws : dict
+            keyword arguments to pass to the `kdeplot` method for the joint
+            distribution (optional).
+        marginal_kws : dict
+            keyword arguments to pass to the `kdeplot` method for the marginal
+            distributions (optional).
+        imr_kws : dict
+            keyword arguments plot IMR result, accepts: `color`, `linewidth`
+            and `linestyle`.
+        df_kws : dict
+            keyword arguments to pass to the `get_parameter_dataframe` method
+            (optional).
+        prng : numpy.random.Generator | int
+            random number generator or seed (optional).
+        palette : str
+            color palette for hue variable (optional).
+        dropna : bool
+            drop NaN values from DataFrame (def., `False`).
+        height : float
+            height of the plot (def., 6).
+        ratio : float
+            aspect ratio of the plot (def., 5).
+        space : float
+            space between axes (def., 0.2).
+        xlim : tuple
+            x-axis limits (optional).
+        ylim : tuple
+            y-axis limits (def., (0, 1)).
+        marginal_ticks : bool
+            show ticks on marginal plots (def., `False`).
+        x_min : float
+            minimum mass value for KDE truncation (optional).
+        x_max : float
+            maximum mass value for KDE truncation (optional).
+        y_min : float
+            minimum spin value for KDE truncation (optional).
+        y_max : float
+            maximum spin value for KDE truncation (optional).
+        **kws : dict
+            additional keyword arguments to pass to the joint plot.
+
+        Returns
+        -------
+        grid : seaborn.JointGrid
+            joint plot object.
+        df_rd : pandas.DataFrame
+            DataFrame of parameter samples drawn from the posterior
+        """
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        imr_kws = {} if imr_kws is None else imr_kws.copy()
+        df_kws = {} if df_kws is None else df_kws.copy()
+
+        # get data
+        df_rd = self.get_parameter_dataframe(ndraw=ndraw, prng=prng,
+                                             **df_kws)
+
+        if 'm' not in df_rd.columns or 'chi' not in df_rd.columns:
+            raise ValueError("Mass and spin columns not found in results.")
+
+        if engine == 'auto':
+            if any(k is not None for k in [x_min, x_max, y_min, y_max]):
+                engine = 'bounded'
+            else:
+                engine = 'seaborn'
+        elif engine not in ['seaborn', 'bounded']:
+            raise ValueError("Invalid engine, choose from: "
+                             "'auto', 'seaborn', 'bounded'.")
+
+        if engine == 'seaborn':
+            # simply call the seaborn jointplot method
+            if 'levels' in kws:
+                # NOTE: our bounded kdeplot and sns.kdeplot have different
+                # definitions of levels!
+                kws['levels'] = [1-c for c in kws['levels']]
+            grid = sns.jointplot(data=df_rd, x='m', y='chi', palette=palette,
+                                dropna=dropna, height=height, ratio=ratio,
+                                space=space, xlim=xlim, ylim=ylim,
+                                marginal_ticks=marginal_ticks,
+                                joint_kws=joint_kws, marginal_kws=marginal_kws,
+                                **kws)
+        else:
+            color = "C0"
+
+            # parse arguments
+            kws.update({'x_min': x_min, 'x_max': x_max, 'y_min': y_min,
+                        'y_max': y_max})
+            joint_kws = {} if joint_kws is None else joint_kws.copy()
+            joint_kws.update(kws)
+            marginal_kws = {} if marginal_kws is None else marginal_kws.copy()
+            for k in ['x_min', 'x_max', 'y_min', 'y_max']:
+                if k in kws and k not in marginal_kws:
+                    marginal_kws[k] = kws[k]
+                
+            # Initialize the JointGrid object (based on sns.jointplot)
+            grid = sns.JointGrid(
+                data=df_rd, x='m', y='chi', palette=palette,
+                dropna=dropna, height=height, ratio=ratio, space=space,
+                xlim=xlim, ylim=ylim, marginal_ticks=marginal_ticks,
+            )
+
+            # if grid.hue is not None:
+            #     marginal_kws.setdefault("legend", False)
+
+            joint_kws.setdefault("color", color)
+            grid.plot_joint(utils.kdeplot, **joint_kws)
+
+            marginal_kws.setdefault("color", color)
+            if "fill" in joint_kws:
+                marginal_kws.setdefault("fill", joint_kws["fill"])
+
+            grid.plot_marginals(utils.kdeplot, **marginal_kws)
+
+        # plot IMR result
+        if imr and self.has_imr_result:
+            n_imr = len(self.imr_result)
+            if ndraw > n_imr:
+                logging.warning(f"Using fewer IMR samples ({n_imr}) than "
+                                f"requested ({ndraw}).")
+                ndraw = n_imr
+            df_imr = pd.DataFrame({
+                'm': self.imr_result.final_mass,
+                'chi': self.imr_result.final_spin,
+            }).sample(ndraw, replace=False, random_state=prng)
+
+            levels = imr_kws.pop('levels', None)
+            if levels is None:
+                if 'levels' in kws:
+                    # NOTE: our bounded kdeplot and sns.kdeplot have different
+                    # definitions of levels!
+                    levels = [1-c for c in kws['levels']]
+                else:
+                    # default to 90% CL
+                    levels = [0.1,]
+            imr_kwargs = dict(fill=False, color='k', linestyle='--')
+            imr_kwargs.update(imr_kws)
+            sns.kdeplot(data=df_imr, x='m', y='chi', levels=levels,
+                        ax=grid.ax_joint, **imr_kwargs)
+
+            imr_q = imr_kws.pop('quantile', 0.90)
+            if imr_q is not None and imr_q > 0:
+                hi, lo = (1 - imr_q) / 2, 1 - (1 - imr_q) / 2
+                cis = df_imr.quantile([hi, 0.5, lo])
+            else:
+                hi, lo = None, None
+
+            # plot IMR median
+            lkws = dict(color='k', linestyle=':')
+            for k in ['color', 'linestyle', 'linewidth']:
+                if k in imr_kws:
+                    lkws[k] = imr_kws[k]
+            grid.ax_joint.axvline(cis['m'][0.5], **lkws)
+            grid.ax_joint.axhline(cis['chi'][0.5], **lkws)
+
+            grid.ax_marg_x.axvline(cis['m'][0.5], **lkws)
+            grid.ax_marg_y.axhline(cis['chi'][0.5], **lkws)
+
+            # plor IMR CLs
+            if hi is not None:
+                bkws = dict(alpha=0.1, color=lkws.get('color', 'k'))
+                grid.ax_marg_x.axvspan(cis['m'][lo], cis['m'][hi], **bkws)
+                grid.ax_marg_y.axhspan(cis['chi'][lo], cis['chi'][hi], **bkws)
+
+        # Make the main axes active in the matplotlib state machine
+        plt.sca(grid.ax_joint)
+        return grid, df_rd
+
+
 
 class ResultCollection(utils.MultiIndexCollection):
     """Collection of results from ringdown fits."""
@@ -922,9 +1287,58 @@ class ResultCollection(utils.MultiIndexCollection):
                 _results.append(Result(r))
         super().__init__(_results, index, reference_mass, reference_time)
         self._targets = None
+        self._imr_result = None
+        self.collection_key = DEFAULT_COLLECTION_KEY
 
     def __repr__(self):
         return f"ResultCollection({self.index})"
+
+    def thin(self, n: int, start_loc: int = 0) -> 'ResultCollection':
+        """Thin the collection by taking every `n` result.
+
+        Arguments
+        ---------
+        n : int
+            number of results to skip between each result.
+        start_loc : int
+            starting location in the collection to thin from (def., 0).
+
+        Returns
+        -------
+        new_collection : ResultCollection
+            thinned collection.
+        """
+        results = self.results[start_loc::n]
+        index = self.index[start_loc::n]
+        return ResultCollection(results=results, index=index,
+                                reference_mass=self.reference_mass,
+                                reference_time=self.reference_time)
+
+    @property
+    def has_imr_result(self) -> bool:
+        """Check if the collection has an IMR result."""
+        return self.imr_result is not None and not self.imr_result.empty
+
+    @property
+    def imr_result(self) -> IMRResult:
+        """Reference IMR result"""
+        if self._imr_result is None:
+            logging.info("Looking for IMR result in first collection item")
+            return self.results[0].imr_result
+        return self._imr_result
+
+    def set_imr_result(self, imr_result: IMRResult) -> None:
+        """Set the reference IMR result for the collection.
+
+        Arguments
+        ---------
+        imr_result : IMRResult
+            IMR result to set as reference.
+        """
+        old_imr_result = self.imr_result
+        if old_imr_result is not None and not old_imr_result.empty:
+            logging.warning("Overwriting existing IMR result.")
+        self._imr_result = imr_result
 
     @property
     def results(self) -> list[Result]:
@@ -1109,7 +1523,7 @@ class ResultCollection(utils.MultiIndexCollection):
             result.to_netcdf(path, **kws)
 
     def get_parameter_dataframe(self, ndraw: int | None = None,
-                                index_label: str = 'run',
+                                index_label: str = None,
                                 split_index: bool = False,
                                 t0: bool = False,
                                 reference_mass: bool | float | None = None,
@@ -1145,6 +1559,7 @@ class ResultCollection(utils.MultiIndexCollection):
         """
         dfs = []
         key_size = self._key_size
+        index_label = index_label or self.collection_key
         # get t0 values if requested
         if t0:
             t0s = self.get_t0s(reference_mass)
@@ -1152,6 +1567,8 @@ class ResultCollection(utils.MultiIndexCollection):
         # figure out wheter to print a progress bar
         custom_tqdm = utils.get_tqdm(progress)
         n = len(self)
+        dkws = {'random_state': kws.get('prng', None)}
+        dkws.update(draw_kws or {})
         for i, (key, result) in custom_tqdm(enumerate(self.items()), total=n):
             df = result.get_parameter_dataframe(**kws)
             if key_size == 1:
@@ -1164,14 +1581,15 @@ class ResultCollection(utils.MultiIndexCollection):
             if t0:
                 df['t0m' if reference_mass else 't0'] = t0s[i]
             if ndraw is not None:
-                dfs.append(df.sample(ndraw, **(draw_kws or {})))
+
+                dfs.append(df.sample(ndraw, **dkws))
             else:
                 dfs.append(df)
         # return combined DataFrame
         return pd.concat(dfs, ignore_index=True)
 
     def get_mode_parameter_dataframe(self, ndraw: int | None = None,
-                                     index_label: str = 'run',
+                                     index_label: str = None,
                                      split_index: bool = False,
                                      t0: bool = False,
                                      reference_mass: bool | float |
@@ -1207,6 +1625,9 @@ class ResultCollection(utils.MultiIndexCollection):
         """
         dfs = []
         key_size = self._key_size
+        index_label = index_label or self.collection_key
+        dkws = {'random_state': kws.get('prng', None)}
+        dkws.update(draw_kws or {})
         if t0:
             t0s = self.get_t0s(reference_mass)
         for i, (key, result) in enumerate(self.items()):
@@ -1221,7 +1642,230 @@ class ResultCollection(utils.MultiIndexCollection):
             if t0:
                 df['t0m' if reference_mass else 't0'] = t0s[i]
             if ndraw is not None:
-                dfs.append(df.sample(ndraw, **(draw_kws or {})))
+                dfs.append(df.sample(ndraw, **dkws))
             else:
                 dfs.append(df)
         return pd.concat(dfs, ignore_index=True)
+
+    def imr_consistency(self, *args, progress=False,
+                        **kwargs) -> pd.DataFrame:
+        """Compute the IMR consistency for the collection.
+        See :meth:`Result.imr_consistency` for details.
+        """
+        tqdm = utils.get_tqdm(progress)
+        q = {k: r.imr_consistency(*args, **kwargs) for k, r in tqdm(self)}
+        return pd.DataFrame(q)
+    
+    def imr_consistency_summary(self, *args, progress: bool = False,
+                                simplify_index: bool = True, 
+                                **kws) -> pd.Series:
+        """Compute the IMR consistency summary for the collection.
+        See :meth:`Result.imr_consistency_summary` for details.
+        """
+        tqdm = utils.get_tqdm(progress)
+        q = [r.imr_consistency_summary(*args, **kws) for r in tqdm(self.results)]
+        return pd.Series(q, index=self.simplified_index)
+
+    def amplitude_significance(self, **kws) -> pd.DataFrame:
+        """Compute the significance of the amplitude of the signal.
+        See :meth:`Result.amplitude_significance` for details.
+        """
+        return pd.DataFrame({k: r.amplitude_significance(**kws)
+                             for k, r in
+                             zip(self.simplified_index, self.data)}).T
+
+    @property
+    def simplified_index(self) -> list:
+        if len(self) > 0 and len(self.index[0]) == 1:
+            index = [k[0] for k in self.index]
+        else:
+            index = self.index
+        return index
+
+    # -----------------------------------------------------------------------
+    # PLOTS
+
+    def plot_mass_spin(self, ndraw: int = 500, imr: bool = True,
+                       joint_kws: dict | None = None,
+                       marginal_kws: dict | None = None,
+                       imr_kws: dict | None = None,
+                       df_kws: dict | None = None,
+                       prng: int | np.random.Generator | None = None,
+                       index_label: str = None,
+                       hue: str = None,
+                       palette=None, hue_norm=None,
+                       dropna: bool = False,
+                       height: float = 6, ratio: float = 5,
+                       space: float = .2,
+                       xlim: tuple | None = None,
+                       ylim: tuple | None = (0, 1),
+                       marginal_ticks: bool = False,
+                       x_min: float | None = None,
+                       x_max: float | None = None,
+                       y_min: float | None = 0,
+                       y_max: float | None = 1,
+                       **kws) -> None:
+        """Plot the mass-spin distribution for the collection.
+        Based on seaborn's jointplot but with the ability to use a truncated
+        KDE (1D and 2D), controlled by the `x_min`, `x_max`, `y_min`, and
+        `y_max` arguments.
+
+        Arguments
+        ---------
+        ndraw : int
+            number of samples to draw from the posterior (optional).
+        imr : bool
+            plot IMR samples (def., `True`).
+        joint_kws : dict
+            keyword arguments to pass to the `kdeplot` method for the joint
+            distribution (optional).
+        marginal_kws : dict
+            keyword arguments to pass to the `kdeplot` method for the marginal
+            distributions (optional).
+        imr_kws : dict
+            keyword arguments plot IMR result, accepts: `color`, `linewidth`
+            and `linestyle`.
+        df_kws : dict
+            keyword arguments to pass to the `get_parameter_dataframe` method
+            (optional).
+        prng : numpy.random.Generator | int
+            random number generator or seed (optional).
+        index_label : str
+            label for the index column in the DataFrame (optional).
+        hue : str
+            alias for index_label (optional).
+        palette : str
+            color palette for hue variable (optional).
+        hue_norm : tuple
+            normalization tuple for hue variable (optional).
+        dropna : bool
+            drop NaN values from DataFrame (def., `False`).
+        height : float
+            height of the plot (def., 6).
+        ratio : float
+            aspect ratio of the plot (def., 5).
+        space : float
+            space between axes (def., 0.2).
+        xlim : tuple
+            x-axis limits (optional).
+        ylim : tuple
+            y-axis limits (def., (0, 1)).
+        marginal_ticks : bool
+            show ticks on marginal plots (def., `False`).
+        x_min : float
+            minimum mass value for KDE truncation (optional).
+        x_max : float
+            maximum mass value for KDE truncation (optional).
+        y_min : float
+            minimum spin value for KDE truncation (optional).
+        y_max : float
+            maximum spin value for KDE truncation (optional).
+        **kws : dict
+            additional keyword arguments to pass to the joint plot.
+
+        Returns
+        -------
+        grid : seaborn.JointGrid
+            joint plot object.
+        df_rd : pandas.DataFrame
+            DataFrame of parameter samples drawn from the posterior
+        """
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        # parse arguments
+        kws.update({'x_min': x_min, 'x_max': x_max, 'y_min': y_min,
+                    'y_max': y_max})
+        joint_kws = {} if joint_kws is None else joint_kws.copy()
+        joint_kws.update(kws)
+        marginal_kws = {} if marginal_kws is None else marginal_kws.copy()
+        for k in ['x_min', 'x_max', 'y_min', 'y_max']:
+            if k in kws and k not in marginal_kws:
+                marginal_kws[k] = kws[k]
+        imr_kws = {} if imr_kws is None else imr_kws.copy()
+        df_kws = {} if df_kws is None else df_kws.copy()
+
+        color = "C0"
+        index_label = index_label or hue or self.collection_key
+
+        # get data
+        df_rd = self.get_parameter_dataframe(ndraw=ndraw, prng=prng,
+                                             index_label=index_label,
+                                             **df_kws)
+
+        if 'm' not in df_rd.columns or 'chi' not in df_rd.columns:
+            raise ValueError("Mass and spin columns not found in results.")
+
+        # Initialize the JointGrid object (based on sns.jointplot)
+        grid = sns.JointGrid(
+            data=df_rd, x='m', y='chi', hue=index_label,
+            palette=palette, hue_norm=hue_norm,
+            dropna=dropna, height=height, ratio=ratio, space=space,
+            xlim=xlim, ylim=ylim, marginal_ticks=marginal_ticks,
+        )
+
+        if grid.hue is not None:
+            marginal_kws.setdefault("legend", False)
+
+        joint_kws.setdefault("color", color)
+        grid.plot_joint(utils.kdeplot, **joint_kws)
+
+        marginal_kws.setdefault("color", color)
+        if "fill" in joint_kws:
+            marginal_kws.setdefault("fill", joint_kws["fill"])
+
+        grid.plot_marginals(utils.kdeplot, **marginal_kws)
+
+        # plot IMR result
+        if imr and self.has_imr_result:
+            n_imr = len(self.imr_result)
+            if ndraw > n_imr:
+                logging.warning(f"Using fewer IMR samples ({n_imr}) than "
+                                f"requested ({ndraw}).")
+                ndraw = n_imr
+            df_imr = pd.DataFrame({
+                'm': self.imr_result.final_mass,
+                'chi': self.imr_result.final_spin,
+            }).sample(ndraw, replace=False, random_state=prng)
+
+            levels = imr_kws.pop('levels', None)
+            if levels is None:
+                if 'levels' in kws:
+                    # NOTE: our bounded kdeplot and sns.kdeplot have different
+                    # definitions of levels!
+                    levels = [1-c for c in kws['levels']]
+                else:
+                    # default to 90% CL
+                    levels = [0.1,]
+            imr_kwargs = dict(fill=False, color='k', linestyle='--')
+            imr_kwargs.update(imr_kws)
+            sns.kdeplot(data=df_imr, x='m', y='chi', levels=levels,
+                        ax=grid.ax_joint, **imr_kwargs)
+
+            imr_q = imr_kws.pop('quantile', 0.90)
+            if imr_q is not None and imr_q > 0:
+                hi, lo = (1 - imr_q) / 2, 1 - (1 - imr_q) / 2
+                cis = df_imr.quantile([hi, 0.5, lo])
+            else:
+                hi, lo = None, None
+
+            # plot IMR median
+            lkws = dict(color='k', linestyle=':')
+            for k in ['color', 'linestyle', 'linewidth']:
+                if k in imr_kws:
+                    lkws[k] = imr_kws[k]
+            grid.ax_joint.axvline(cis['m'][0.5], **lkws)
+            grid.ax_joint.axhline(cis['chi'][0.5], **lkws)
+
+            grid.ax_marg_x.axvline(cis['m'][0.5], **lkws)
+            grid.ax_marg_y.axhline(cis['chi'][0.5], **lkws)
+
+            # plor IMR CLs
+            if hi is not None:
+                bkws = dict(alpha=0.1, color=lkws.get('color', 'k'))
+                grid.ax_marg_x.axvspan(cis['m'][lo], cis['m'][hi], **bkws)
+                grid.ax_marg_y.axhspan(cis['chi'][lo], cis['chi'][hi], **bkws)
+
+        # Make the main axes active in the matplotlib state machine
+        plt.sca(grid.ax_joint)
+        return grid, df_rd

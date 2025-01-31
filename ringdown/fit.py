@@ -478,7 +478,7 @@ class Fit(object):
             logging.info("initializing fit from IMR result")
             imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
                    if k != 'initialize_fit'}
-            if 'path' not in imr and not 'imr_result' in imr:
+            if 'path' not in imr and 'imr_result' not in imr:
                 raise ValueError("no path to IMR result provided; ignoring "
                                  "IMR section in config")
             imr_path = imr.pop('path', imr.pop('imr_result', None))
@@ -501,7 +501,7 @@ class Fit(object):
         if config.has_section('imr') and not fit.has_imr_result:
             imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
                    if k != 'initialize_fit'}
-            if 'path' not in imr or not 'imr_result' in imr:
+            if 'path' not in imr or 'imr_result' not in imr:
                 imr_path = imr.pop('path', imr.pop('imr_result', None))
                 fit.add_imr_result(imr_path, **imr)
             else:
@@ -1914,7 +1914,7 @@ class Fit(object):
         fit = cls(**kws)
 
         logging.info(f"initializing fit from IMR result: {imr}")
-        
+
         # add IMR result to fit (this triggers saving IMR settings in fit)
         fit.add_imr_result(imr, approximant=approximant,
                            reference_frequency=reference_frequency, psds=psds)
@@ -1952,8 +1952,8 @@ class Fit(object):
 
         if update_model:
             opts = imr.estimate_ringdown_prior(modes=fit.modes,
-                                                      cache=True,
-                                                      **(prior_kws or {}))
+                                               cache=True,
+                                               **(prior_kws or {}))
             fit.update_model(**opts)
             logging.info(f"updated model: {opts}")
 
@@ -1971,7 +1971,7 @@ class FitSequence(Fit):
 
     def __repr__(self):
         return f"FitSequence(modes={self.modes}, ifos={self.ifos}, " \
-                f"targets={len(self.target_collection)}, {self.target})"
+            f"targets={len(self.target_collection)}, {self.target})"
 
     def __len__(self):
         return len(self.target_collection)
@@ -2101,9 +2101,10 @@ class FitSequence(Fit):
         # initialize fit with `no_cond` set to True because
         # we don't have a target yet
         fits = super().from_config(config, no_cond=True, **kws)
-        
+
         logging.info("getting target collection")
-        targets = TargetCollection.from_config(config, imr_result=fits.imr_result)
+        targets = TargetCollection.from_config(
+            config, imr_result=fits.imr_result)
         fits.set_target_collection(targets)
 
         # condition data if requested (this also stores conditioning info
