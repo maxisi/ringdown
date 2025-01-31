@@ -905,6 +905,25 @@ class Result(az.InferenceData):
         new_result = self.copy()
         new_result.posterior = samples.isel(sample=idxs)
         return new_result
+    
+    def get_generic_amplitude(self):
+
+        if 'cosi' not in self.posterior.keys(): 
+            raise KeyError('Must be result of fit using aligned model')
+        else:
+            A_j = [] # collect the computed generic amplitudes per mode, to be stacked at the end
+                
+            for mode in self.modes:
+                ### C is the "amplitude" returned by the aligned model, with angular factors still factored out
+                C = self.posterior.a.sel(mode=bytes('1,-2,{},{},{}'.format(mode.l, mode.m, mode.n), 'utf-8')).values
+                cosi = self.posterior.cosi.values
+                swsh = utils.swsh.construct_sYlm(-2, mode.l, mode.m)
+                ylm_p = swsh(cosi)
+                ylm_m = swsh(-cosi)
+                A = C * (np.abs(ylm_p) + np.abs(ylm_m))
+                A_j.append(A)
+            
+            return np.stack(A_j, axis=-1)
 
 
 class ResultCollection(utils.MultiIndexCollection):
