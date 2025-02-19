@@ -941,7 +941,33 @@ class Result(az.InferenceData):
                         ndraw_rd: int | None = None,
                         ndraw_imr: int | None = 1000,
                         prng: int | np.random.Generator | None = None,
-                        kde_kws: dict | None = None) -> dict:
+                        kde_kws: dict | None = None) -> np.ndarray:
+        """Computes credible levels (CLs) at which each IMR sample is found
+        relative to the ringdown posterior, returning a distribution of CLs.
+
+        The comparison is done in coordinates specified by the ``coords``
+        argument (NOTE: only 'mchi' currently supported).
+
+        Arguments
+        ---------
+        coords : str
+            coordinates to use for comparison (def., 'mchi'), currently only
+            'mchi' is supported.
+        ndraw_rd : int
+            number of RD samples to draw (def., all samples)
+        ndraw_imr : int
+            number of IMR samples to draw (def., 1000)
+        prng : numpy.random.Generator
+            random number generator or seed (optional)
+        kde_kws : dict
+            additional keyword arguments to pass to `gaussian_kde`
+
+        Returns
+        -------
+        qs : array
+            distribution of CLs at which each IMR sample is found relative to
+            the ringdown posterior.
+        """
         if coords.lower() != 'mchi':
             raise NotImplementedError("Only mchi coordinates are supported.")
         if not self.has_imr_result:
@@ -949,6 +975,7 @@ class Result(az.InferenceData):
         if 'm' not in self.posterior or 'chi' not in self.posterior:
             raise ValueError("No mass or chi parameters found in posterior.")
 
+        # get random subset of M-chi samples from ringdown analysis
         samples = self.stacked_samples
         prng = prng or np.random.default_rng(prng)
         n = min(ndraw_rd or len(samples['sample']), len(samples['sample']))
@@ -956,19 +983,24 @@ class Result(az.InferenceData):
         samples = samples.isel(sample=idxs)
         xy_rd = samples[['m', 'chi']].to_array().values
 
+        # get random subset of M-chi samples from IMR analysis
         n = min(ndraw_imr or len(self.imr_result), len(self.imr_result))
         idxs = prng.choice(len(self.imr_result), n, replace=False)
         xy_imr = [self.imr_result.final_mass[idxs],
                   self.imr_result.final_spin[idxs]]
 
+        # compute support of RD distribution for each RD and IMR sample
         kde = gaussian_kde(xy_rd, **(kde_kws or {}))
         p_rd = kde(xy_rd)
         p_imr = kde(xy_imr)
 
+        # compute CL of RD distribution at each IMR sample
         qs = []
         for p in p_imr:
             q = np.sum(p_rd > p) / len(p_rd)
             qs.append(q)
+
+        # return distribution of CLs
         return np.array(qs)
 
     def imr_consistency_summary(self, coords: str = 'mchi',
@@ -977,9 +1009,17 @@ class Result(az.InferenceData):
                                 ndraw_imr: int | None = 1000,
                                 imr_cl: float = 0.9,
                                 prng: int | np.random.Generator | None = None,
-                                kde_kws: dict | None = None) -> dict:
-        """Compute ringdown credible level that fully encompasses the IMR
-        credible level specified by `imr_cl`.
+                                kde_kws: dict | None = None) -> float:
+        """Compute ringdown credible level that fully encompasses certain IMR
+        credible level specified, or that encompasses a certain fraction of
+        IMR samples.
+
+        If `imr_weight` is 'imr', the output is the smallest credible level of
+        the RD posterior that encompasses the entirety of the IMR credible
+        level specified by `imr_cl`.
+
+        If `imr_weight` is 'rd', the output is the ringdown credible level 
+        that encompasses `imr_cl` of the IMR samples.
 
         Arguments
         ---------
@@ -1017,27 +1057,40 @@ class Result(az.InferenceData):
 
         prng = prng or np.random.default_rng(prng)
 
-        # find IMR samples within the requested IMR credible interval
+        # select a random subset of IMR samples
         n = min(ndraw_imr or len(self.imr_result), len(self.imr_result))
         idxs = prng.choice(len(self.imr_result), n, replace=False)
         imr_samples = np.array([self.imr_result.final_mass[idxs],
                                 self.imr_result.final_spin[idxs]])
+
         if imr_weight == 'imr':
+            # further subselect IMR samples to thosw within the IMR credible
+            # level specified by `imr_cl`
             kde_imr = utils.Bounded_2d_kde(imr_samples.T, **(kde_kws or {}))
             imr_idxs = np.argsort(kde_imr(imr_samples.T))[::-1][:int(imr_cl*n)]
             imr_samples = imr_samples[:, imr_idxs]
 
-        # find the  IMR sample with the lowest value of the RD posterior
+        # select a random subset of RD samples and KDE them
         samples = self.stacked_samples
         n = min(ndraw_rd or len(samples['sample']), len(samples['sample']))
         idxs = prng.choice(samples.sizes['sample'], n, replace=False)
         samples = samples.isel(sample=idxs)
         xy_rd = samples[['m', 'chi']].to_array().values
         kde_rd = utils.Bounded_2d_kde(xy_rd.T, **(kde_kws or {}))
+
+        # evaluate RD KDE on IMR samples
+        p_imr = kde_rd(imr_samples.T)
+
+        # set the thrshold CL based on the RD posterior
         if imr_weight == 'imr':
-            rd_kde_thresh = np.min(kde_rd(imr_samples.T))
+            # find the IMR sample inside the `imr_cl` IMR region that
+            # has the lowest amount of RD posterior probability and record
+            # that value as a threshold
+            rd_kde_thresh = np.min(p_imr)
         else:
-            p_imr = kde_rd(imr_samples.T)
+            # rank all IMR samples based on the RD posterior and take
+            # the `1-imr_cl`-th quantile, thus identifying the value of the
+            # RD posterior that encompasses `imr_cl` of the IMR samples
             rd_kde_thresh = np.quantile(p_imr, 1-imr_cl)
 
         # compute the fraction of RD samples above the IMR threshold
