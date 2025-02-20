@@ -45,6 +45,8 @@ def compute_hpd(samples, p=0.68, out="both"):
 
 
 def q_of_zero(xs):
+    """Compute the quantile of zero for a given set of samples
+    """
     xs = np.sort(xs)
     xmin = np.min(xs)
 

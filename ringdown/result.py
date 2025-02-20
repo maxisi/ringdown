@@ -1098,15 +1098,24 @@ class Result(az.InferenceData):
         q = np.sum(p_rd > rd_kde_thresh) / n
         return q
 
-    def amplitude_significance(self, kind='quantile') -> float:
-        """Compute the significance of the amplitude of the signal.
+    def amplitude_significance(self, kind='quantile') -> pd.Series:
+        """Compute a measure of support for non-vanishing mode amplitudes.
+
+        If `kind` is 'quantile', the output is the quantile of the amplitude
+        distribution at zero, computed using the HPD.
+
+        If `kind` is 'zscore', translates the quantile into a z-score using
+        the standard normal distribution.
 
         Arguments
         ---------
+        kind : str
+            method to compute significance, 'quantile' or 'zscore' (def.,
+            'quantile')
 
         Returns
         -------
-        p : float
+        p : pd.Series
             p-value of the amplitude of the signal.
         """
         amps = self.stacked_samples['a']
@@ -1460,6 +1469,22 @@ class ResultCollection(utils.MultiIndexCollection):
                 reference_time: float | None = None,
                 decimals: int | None = None) -> np.ndarray:
         """Get analysis start times for the collection.
+
+        Arguments
+        ---------
+        reference_mass : float or bool
+            reference mass to use for time labeling; if `True`, use the
+            reference mass of the targets; if `False`, do not use a reference
+            mass and return time as recorded (def., `None`)
+        reference_time : float
+            reference time to use for time labeling (def., `0`)
+        decimals : int
+            number of decimal places to round the times to (optional)
+
+        Returns
+        -------
+        t0s : np.ndarray
+            array of analysis start times.
         """
         if reference_mass:
             targets = self.targets
@@ -1712,16 +1737,50 @@ class ResultCollection(utils.MultiIndexCollection):
     def imr_consistency_summary(self, *args, progress: bool = False,
                                 simplify_index: bool = True, 
                                 **kws) -> pd.Series:
-        """Compute the IMR consistency summary for the collection.
+        """Compute the IMR consistency summary for each element in the 
+        collection.
+        
         See :meth:`Result.imr_consistency_summary` for details.
+
+        Arguments
+        ---------
+        progress : bool
+            show progress bar (def., `False`)
+        simplify_index : bool
+            simplify the index to a single column (def., `True`)
+        **kws : dict
+            additional keyword arguments to pass to the `imr
+            consistency_summary` method of each result
+
+        Returns
+        -------
+        q : pd.Series
+            summary of IMR consistency for each result in the collection
         """
         tqdm = utils.get_tqdm(progress)
         q = [r.imr_consistency_summary(*args, **kws) for r in tqdm(self.results)]
-        return pd.Series(q, index=self.simplified_index)
+        if simplify_index:
+            index = self.simplified_index
+        else:
+            index = self.index
+        return pd.Series(q, index=index)
 
     def amplitude_significance(self, **kws) -> pd.DataFrame:
-        """Compute the significance of the amplitude of the signal.
+        """Compute the significance for non-vanishing mode amplitudes for each
+        result in the collection.
+        
         See :meth:`Result.amplitude_significance` for details.
+
+        Arguments
+        ---------
+        **kws : dict
+            additional keyword arguments to pass to the `amplitude_significance`
+            method of each result
+
+        Returns
+        -------
+        p : pd.DataFrame
+            DataFrame of amplitude significance for each result in the collection
         """
         return pd.DataFrame({k: r.amplitude_significance(**kws)
                              for k, r in
@@ -1729,6 +1788,8 @@ class ResultCollection(utils.MultiIndexCollection):
 
     @property
     def simplified_index(self) -> list:
+        """Simplified index for the collection, with unit-lenght tuples
+        converted to standalone items."""
         if len(self) > 0 and len(self.index[0]) == 1:
             index = [k[0] for k in self.index]
         else:
