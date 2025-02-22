@@ -41,7 +41,7 @@ class IMRResult(pd.DataFrame):
     _f_key = 'f_{mode}'
     _g_key = 'g_{mode}'
 
-    _meta = ['attrs', '_psds']
+    _meta = ['attrs', '_psds', '_ringdown_fit', '_ringdown_result']
 
     def __init__(self, *args, attrs=None, psds=None, **kwargs):
         super().__init__(*args, **kwargs)
