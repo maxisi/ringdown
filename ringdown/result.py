@@ -91,6 +91,7 @@ class Result(az.InferenceData):
             else:
                 logging.info("No IMR section found in config.")
                 return IMRResult()
+            self._imr_result.set_ringdown_reference(self)
         return self._imr_result
 
     def set_imr_result(self, imr_result: IMRResult) -> None:
@@ -98,6 +99,7 @@ class Result(az.InferenceData):
             self._imr_result = imr_result
         else:
             self._imr_result = IMRResult(imr_result)
+        self._imr_result.set_ringdown_reference(self)
 
     @property
     def _df_parameters(self) -> dict[str, qnms.ParameterLabel]:
@@ -210,6 +212,11 @@ class Result(az.InferenceData):
         return self._config_dict
 
     @property
+    def info(self) -> dict[str, dict[str, str]]:
+        """Alias for `config`."""
+        return self.config
+
+    @property
     def _config_object(self) -> configparser.ConfigParser:
         """Configuration file stored as ConfigParser object."""
         config = configparser.ConfigParser()
@@ -253,6 +260,21 @@ class Result(az.InferenceData):
         `fit.analysis_data[i].time`."""
         shape = (self.posterior.sizes['ifo'], 1)
         return self.constant_data.time + np.array(self.epoch).reshape(shape)
+
+    @property
+    def analysis_data(self):
+        """Same as observed_strain but in dict format as in Fit"""
+        return dict(zip(self.ifos.values, self.observed_strain.values))
+
+    @property
+    def start_times(self) -> dict:
+        """Same as epoch but in dict format as in Fit"""
+        return dict(zip(self.ifos.values, self.epoch.values))
+
+    @property
+    def n_analyze(self) -> int:
+        """Number of samples in the analysis."""
+        return self.constant_data.sizes['time_index']
 
     @property
     def a_scale_max(self) -> float:
@@ -481,39 +503,7 @@ class Result(az.InferenceData):
             return np.linalg.norm(snrs, axis=0)
         else:
             return snrs
-
-    def compute_posterior_snr_timeseries(self, **kwargs) -> np.ndarray:
-        """Efficiently computes cumulative signal-to-noise ratio from
-        posterior samples as a function of time.
-
-        WARNING: this function is deprecated and will be removed in future;
-                 use :meth:`compute_posterior_snrs` with ``cumulative=True``
-                 instead.
-
-        Arguments
-        ---------
-        optimal : bool
-            return optimal SNR, instead of matched filter SNR (def., ``True``)
-        network : bool
-            return network SNR, instead of individual-detector SNRs (def.,
-            ``True``)
-
-        Returns
-        -------
-        snrs : array
-            stacked array of cumulative SNRs, with shape ``(time, samples,)``
-            if ``network = True``, or ``(ifo, time, samples)`` otherwise;
-            the number of samples equals the number of chains times the number
-            of draws.
-
-        See Also
-        --------
-        compute_posterior_snrs : Computes the overall signal-to-noise ratio.
-        """
-        logging.warning("deprecated; use compute_posterior_snrs with "
-                        "`cumulative=True` instead")
-        return self.compute_posterior_snrs(**kwargs, cumulative=True)
-
+        
     @property
     def log_likelihood_timeseries(self):
         """Compute the likelihood timeseries for the posterior samples.
@@ -1356,7 +1346,7 @@ class ResultCollection(utils.MultiIndexCollection):
         return f"ResultCollection({self.index})"
 
     def thin(self, n: int, start_loc: int = 0) -> 'ResultCollection':
-        """Thin the collection by taking every `n` result.
+        """Thin the collection by taking every `n`th result.
 
         Arguments
         ---------
@@ -1568,8 +1558,9 @@ class ResultCollection(utils.MultiIndexCollection):
         else:
             cpaths = [None]*len(paths)
         results = []
-        custom_tqdm = utils.get_tqdm(progress)
-        for path, cpath in custom_tqdm(zip(paths, cpaths), total=len(paths)):
+        tqdm = utils.get_tqdm(progress)
+        for path, cpath in tqdm(zip(paths, cpaths), total=len(paths),
+                                desc='results'):
             results.append(Result.from_netcdf(path, config=cpath))
         info = kws.get('info', {})
         info['provenance'] = paths
@@ -1643,11 +1634,12 @@ class ResultCollection(utils.MultiIndexCollection):
             t0s = self.get_t0s(reference_mass)
         # iterate over results and get DataFrames for each
         # figure out wheter to print a progress bar
-        custom_tqdm = utils.get_tqdm(progress)
+        tqdm = utils.get_tqdm(progress)
         n = len(self)
         dkws = {'random_state': kws.get('prng', None)}
         dkws.update(draw_kws or {})
-        for i, (key, result) in custom_tqdm(enumerate(self.items()), total=n):
+        for i, (key, result) in tqdm(enumerate(self.items()), total=n,
+                                     desc='results'):
             df = result.get_parameter_dataframe(**kws)
             if key_size == 1:
                 df[index_label] = key[0]
@@ -1731,7 +1723,8 @@ class ResultCollection(utils.MultiIndexCollection):
         See :meth:`Result.imr_consistency` for details.
         """
         tqdm = utils.get_tqdm(progress)
-        q = {k: r.imr_consistency(*args, **kwargs) for k, r in tqdm(self)}
+        q = {k: r.imr_consistency(*args, **kwargs)
+             for k, r in tqdm(self, desc='results')}
         return pd.DataFrame(q)
     
     def imr_consistency_summary(self, *args, progress: bool = False,
@@ -1758,14 +1751,16 @@ class ResultCollection(utils.MultiIndexCollection):
             summary of IMR consistency for each result in the collection
         """
         tqdm = utils.get_tqdm(progress)
-        q = [r.imr_consistency_summary(*args, **kws) for r in tqdm(self.results)]
+        q = [r.imr_consistency_summary(*args, **kws)
+             for r in tqdm(self.results, desc='results')]
         if simplify_index:
             index = self.simplified_index
         else:
             index = self.index
         return pd.Series(q, index=index)
 
-    def amplitude_significance(self, **kws) -> pd.DataFrame:
+    def amplitude_significance(self, simplified_index: bool = True,
+                               **kws) -> pd.DataFrame:
         """Compute the significance for non-vanishing mode amplitudes for each
         result in the collection.
         
@@ -1782,9 +1777,12 @@ class ResultCollection(utils.MultiIndexCollection):
         p : pd.DataFrame
             DataFrame of amplitude significance for each result in the collection
         """
+        if simplified_index:
+            index = self.simplified_index
+        else:
+            index = self.index
         return pd.DataFrame({k: r.amplitude_significance(**kws)
-                             for k, r in
-                             zip(self.simplified_index, self.data)}).T
+                             for k, r in zip(index, self.data)}).T
 
     @property
     def simplified_index(self) -> list:
@@ -1796,6 +1794,71 @@ class ResultCollection(utils.MultiIndexCollection):
             index = self.index
         return index
 
+    def compute_posterior_snrs(self, **kws) -> np.ndarray:
+        """Compute the posterior SNRs for each result in the collection.
+        See :meth:`Result.compute_posterior_snrs` for details.
+
+        Returns an array of shape (n_collection, n_ifo, n_samples) if
+        network is False, and (n_collection, n_samples) if network is True.
+        """
+        return np.stack([r.compute_posterior_snrs(**kws) for r in self.data])
+
+    def compute_imr_snrs(self, **kws) -> np.ndarray:
+        """Compute the IMR SNRs for each result in the collection.
+        See :meth:`IMRResult.compute_ringdown_snrs` for details.
+
+        Returns an array of shape (n_collection, n_ifo, n_samples) if
+        network is False, and (n_collection, n_samples) if network is True.
+        """
+        return np.stack([r.imr_result.compute_ringdown_snrs(**kws)
+                         for r in self.data])
+
+    def compute_imr_snrs_by_t0(self, optimal: bool = True,
+                               network: bool = False,
+                               cumulative: bool = False, 
+                               approximate: bool = True,
+                               progress: bool = True, **kws) -> np.ndarray:
+        """
+        """
+        snrs = []
+        t0s = self.get_t0s()
+        if approximate:
+            # get earliest fit as reference
+            reference_result = self.results[np.argmin(self.get_t0s())]
+            wfs = reference_result.imr_result.get_waveforms(
+                ringdown_slice=True, **kws)
+            times = reference_result.sample_times
+            data = reference_result.observed_strain
+            for _, r in sorted(zip(t0s, self.results)):
+                # get indices for start_times in times
+                delta_times = (times - r.epoch).values
+                i0s = np.argmin(np.abs(delta_times), axis=1)
+                # slice waveforms
+                n = min(times.shape[-1] - i0s)
+                wfs_sliced = wfs.slice(i0s, n)
+                # compute SNRs based on sliced waveforms
+                chol = r.cholesky_factors[:,:n,:n]
+                if optimal:
+                    d = None
+                else:
+                    d = [dd[i0:i0+n] for i0, dd in zip(i0s, data)]
+                snr = wfs_sliced.compute_snr(chol, data=d, network=network,
+                                             cumulative=cumulative)
+                snrs.append(snr)
+        else:
+            # directly compute SNRs by recreating a fit for each result
+            # (this takes longer than the above, but is more representative
+            # of the actual rigdown analysis)
+            tqdm = utils.get_tqdm(progress)
+            for _, r in tqdm(sorted(zip(t0s, self.results)), desc='results'):
+                snr = r.imr_result.compute_ringdown_snrs(progress=False,
+                                                         network=network,
+                                                         cumulative=cumulative,
+                                                         optimal=optimal,
+                                                         **kws)
+                snrs.append(snr)
+        return np.stack(snrs)
+        
     # -----------------------------------------------------------------------
     # PLOTS
 

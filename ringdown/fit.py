@@ -1773,104 +1773,11 @@ class Fit(object):
             self.imr_result = imr_result
         else:
             self.imr_result = imr.IMRResult.construct(imr_result, **kws)
+        # point to this Fit as reference
+        self.imr_result.set_ringdown_reference(self)
         # record settings
         settings['imr_result'] = self.imr_result.path
         self.update_info('imr', **settings)
-
-    def get_imr_templates(self, condition: bool = True,
-                          ifos: list | None = None,
-                          **kws) -> np.ndarray:
-        """Return IMR templates based on reference IMR result.
-
-        NOTE: make use of the `nsamp` argument to subselect from the IMR
-        samples---will produce templates for all samples if not provided.
-
-        Arguments
-        ---------
-        condition : bool
-            if True, condition templates based on `Data.condition` method;
-            this replicates the conditioning applied to the data, but will
-            slow things down.
-        ifos : list
-            list of detector keys for which to return templates;
-            defaults to all detectors in Fit.
-        **kws :
-            additional keyword arguments passed to
-            :meth:`ringdown.imr.IMRResult.get_waveforms`.
-
-        Returns
-        -------
-        templates : np.ndarray
-            array of IMR with shape `(nifo, ntime, nsamp)`.
-        """
-        if self.imr_result is None:
-            raise ValueError("no IMR result found; use `add_imr_result`")
-
-        ifos = ifos or self.ifos
-        nsamp = kws.get('nsamp', len(self.imr_result))
-        if nsamp > 1000:
-            logging.warning('large number of IMR samples requested; use'
-                            '`nsamp` to subselect for speed')
-
-        if condition:
-            # get time arrays
-            t = {i: d.time.values for i, d in self._raw_data.items()}
-            # inspect Data.condition for conditioning options
-            x = inspect.signature(Data.condition).parameters.keys()
-            c = {k: v for k, v in self.info['condition'].items() if k in x}
-            c['t0'] = self.start_times
-            # produce conditioned waveforms
-            wfs = self.imr_result.get_waveforms(time=t, ifos=ifos, condition=c,
-                                                **kws)
-        else:
-            # produce unconditioned waveforms
-            wfs = self.imr_result.get_waveforms(time=self.times, ifos=ifos,
-                                                **kws)
-        return StrainStack(wfs)
-
-    def get_imr_analysis_templates(self, **kws) -> np.ndarray:
-        """Return IMR templates for analysis segment.
-
-        Arguments
-        ---------
-        ifos : list
-            list of detector keys for which to return templates;
-            defaults to all detectors in Fit.
-        **kws :
-            all keyword arguments passed to
-            :meth:`ringdown.Fit.get_imr_templates`.
-
-        Returns
-        -------
-        templates : np.ndarray
-            array of IMR timeplates with shape `(nifo, ntime, nsamp)` where
-            `ntime = fit.n_analyze`.
-        """
-        wfs = self.get_imr_templates(ifos=self.ifos, **kws)
-        return wfs.slice(self.start_indices, self.n_analyze)
-
-    def compute_imr_snrs(self, optimal=False, cumulative=False, network=False,
-                         **kws) -> dict:
-        """Compute SNR of IMR templates for each detector.
-
-        Arguments
-        ---------
-        **kws :
-            all keyword arguments passed to
-            :meth:`ringdown.Fit.get_imr_analysis_templates`.
-
-        Returns
-        -------
-        snrs : dict
-            dictionary of IMR SNRs for each detector.
-        """
-        wfs = self.get_imr_analysis_templates(**kws)
-        if optimal:
-            data = None
-        else:
-            data = self.analysis_data
-        return wfs.compute_snr(self.cholesky_factors, data=data,
-                               cumulative=cumulative, network=network)
 
     @property
     def delta_t(self) -> float:
