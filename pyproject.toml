@@ -1,6 +1,6 @@
 [project]
 name = "ringdown"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Bayesian analysis of black hole ringdowns in gravitational-wave data."
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [
@@ -36,5 +36,8 @@ ringdown_pipe = "ringdown.cli.ringdown_pipe:main"
 ringdown_scan = "ringdown.cli.ringdown_scan:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
