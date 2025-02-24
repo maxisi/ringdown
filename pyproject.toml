@@ -31,9 +31,9 @@ dependencies = [
 ]
 
 [project.scripts]
-ringdown_fit = "bin.ringdown_fit:main"
-ringdown_pipe = "bin.ringdown_pipe:main"
-ringdown_scan = "bin.ringdown_scan:main"
+ringdown_fit = "ringdown.cli.ringdown_fit:main"
+ringdown_pipe = "ringdown.cli.ringdown_pipe:main"
+ringdown_scan = "ringdown.cli.ringdown_scan:main"
 
 [build-system]
 requires = ["hatchling"]
