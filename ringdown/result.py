@@ -1817,19 +1817,20 @@ class ResultCollection(utils.MultiIndexCollection):
                                network: bool = False,
                                cumulative: bool = False, 
                                approximate: bool = True,
-                               progress: bool = True, **kws) -> np.ndarray:
+                               progress: bool = False, **kws) -> np.ndarray:
         """
         """
         snrs = []
         t0s = self.get_t0s()
+        tqdm = utils.get_tqdm(progress)
         if approximate:
             # get earliest fit as reference
             reference_result = self.results[np.argmin(self.get_t0s())]
             wfs = reference_result.imr_result.get_waveforms(
-                ringdown_slice=True, **kws)
+                ringdown_slice=True, progress=False, **kws)
             times = reference_result.sample_times
             data = reference_result.observed_strain
-            for _, r in sorted(zip(t0s, self.results)):
+            for _, r in tqdm(sorted(zip(t0s, self.results)), desc='results'):
                 # get indices for start_times in times
                 delta_times = (times - r.epoch).values
                 i0s = np.argmin(np.abs(delta_times), axis=1)
@@ -1849,7 +1850,6 @@ class ResultCollection(utils.MultiIndexCollection):
             # directly compute SNRs by recreating a fit for each result
             # (this takes longer than the above, but is more representative
             # of the actual rigdown analysis)
-            tqdm = utils.get_tqdm(progress)
             for _, r in tqdm(sorted(zip(t0s, self.results)), desc='results'):
                 snr = r.imr_result.compute_ringdown_snrs(progress=False,
                                                          network=network,
