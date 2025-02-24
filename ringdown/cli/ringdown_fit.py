@@ -23,23 +23,22 @@ import os
 import argparse
 from ast import literal_eval
 import logging
-from jax import config as jax_config
-import numpyro
 import ringdown as rd
 
 ##############################################################################
 # PARSE INPUT
 ##############################################################################
 
-DEFOUT = "ringdown_scan/*.nc"
+DEFOUT = "ringdown_fit.nc"
 _HELP = "Set up and run a ringdown analysis from a configuration file."
 
 
 def get_parser():
     p = argparse.ArgumentParser(description=_HELP)
     p.add_argument('config', help="path to configuration file.")
-    p.add_argument('-o', '--output', default=DEFOUT,
+    p.add_argument('-o', '--output', default=None,
                    help="output result path (default: `{}`).".format(DEFOUT))
+    p.add_argument('--prior', action='store_true', help="sample from prior.")
     p.add_argument('--omp-num-threads', help='number of threads for numpy.',
                    type=int, default=1)
     p.add_argument('--platform', choices=['cpu', 'gpu'], default='cpu',
@@ -48,15 +47,13 @@ def get_parser():
                    help="number of devices to use.")
     p.add_argument('--force', action='store_true',
                    help="overwrites output file if it already exists.")
-    p.add_argument('--individual-progress-bars', action='store_true',
-                   help="show progress bar for each target.")
     p.add_argument('-v', '--verbose', action='store_true')
     return p
 
 
-if __name__ == "__main__":
+def main(args=None, defout=DEFOUT):
     parser = get_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(args)
 
     if args.verbose:
         logging.getLogger().setLevel(logging.INFO)
@@ -75,9 +72,6 @@ if __name__ == "__main__":
 
     print("Loading: {}".format(os.path.abspath(args.config)))
 
-    if not os.path.exists(args.config):
-        raise FileNotFoundError(f"config file not found: {args.config}")
-
     config = rd.utils.load_config(args.config)
 
     if config.has_section('run'):
@@ -88,14 +82,16 @@ if __name__ == "__main__":
                             "option instead.")
     else:
         run_kws = {}
-    run_kws['individual_progress_bars'] = args.individual_progress_bars \
-        or args.verbose
+    run_kws['prior'] = args.prior or run_kws.get('prior', False)
 
+    from jax import config as jax_config
     jax_config.update("jax_enable_x64", not run_kws.pop('float32', False))
 
-    out = os.path.abspath(args.output or DEFOUT)
-    out = config.get('pipe', 'outpath', fallback=out)
+    if run_kws['prior']:
+        defout = defout.replace('fit', 'prior')
+    out = args.output or defout
 
+    import numpyro
     numpyro.set_platform(args.platform)
     if args.device_count is not None:
         if args.platform == 'cpu' and args.device_count > cpu_count:
@@ -107,25 +103,31 @@ if __name__ == "__main__":
         else:
             numpyro.set_host_device_count(args.device_count)
 
+    if os.path.exists(out):
+        if args.force:
+            logging.warning("overwriting output file: {}".format(out))
+        else:
+            raise FileExistsError("output file already exists: {}".format(out))
+
     ##########################################################################
     # RUN FIT
     ##########################################################################
 
-    fit = rd.FitSequence.from_config(config)
+    fit = rd.Fit.from_config(config)
+    fit.run(**run_kws)
 
-    # check if output files exist
-    if not args.force:
-        new_targets = []
-        for t0, target in fit.targets:
-            path = out.replace('*', '{}').format(t0)
-            if os.path.exists(path):
-                logging.warning(f"output file already exists: {path}")
-            else:
-                outdir = os.path.dirname(path)
-                os.makedirs(outdir, exist_ok=True)
-                new_targets.append(target)
-        fit.set_target_collection(new_targets)
+    if run_kws['prior']:
+        result = fit.prior
+    else:
+        result = fit.result
 
-    fit.run(**run_kws, output_path=out)
+    ext = os.path.splitext(out)[-1]
+    if ext.lower() == '.nc':
+        result.to_netcdf(out)
+    else:
+        result.to_json(out)
 
-    print("Saved ringdown fits: {}".format(out))
+    print("Saved ringdown fit: {}".format(out))
+
+if __name__ == '__main__':
+    main()
