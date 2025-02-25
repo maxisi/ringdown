@@ -9,6 +9,6 @@ jupyterlab
 tqdm
 ipywidgets
 ipykernel
-numpyro~=0.15
-jax~=0.4
+numpyro~=0.17
+jax~=0.5
 parse

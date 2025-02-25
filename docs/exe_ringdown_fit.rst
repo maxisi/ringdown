@@ -2,7 +2,7 @@ Command line
 ============
 
 .. argparse::
-   :filename: ../bin/ringdown_fit
+   :filename: ../ringdown/cli/ringdown_fit.py
    :func: get_parser
    :prog: ringdown_fit
 
