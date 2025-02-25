@@ -85,7 +85,7 @@ def main(args=None):
     if not os.path.isfile(config_path):
         raise FileNotFoundError(f"unable to load: {config_path}")
     logging.info(f"Loading config from {config_path}")
-    config = config = rd.utils.load_config(config_path)
+    config = rd.utils.load_config(config_path)
 
     # set random seed (purposedly fail if not provided)
     seed = args.seed or config.getint('pipe', 'seed')
