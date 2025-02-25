@@ -29,7 +29,6 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest coverage pytest-xdist nbmake pytest-cov
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         pip install .
         python -m ipykernel install --user --name ringdown
     - name: Test examples
