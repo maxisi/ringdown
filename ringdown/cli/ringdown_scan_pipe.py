@@ -54,18 +54,6 @@ args = parser.parse_args()
 if args.verbose:
     logging.getLogger().setLevel(logging.INFO)
 
-try:
-    import git
-    repo = git.Repo(search_parent_directories=True)
-    githash = repo.head.object.hexsha
-    logging.info('GIT {}'.format(githash))
-except ImportError:
-    githash = 'unknown'
-    logging.info("install gitpython to report repo hash")
-except Exception:
-    githash = 'unknown'
-    logging.warning("failed to locate git repo")
-
 # load config file
 config_path = os.path.abspath(args.config)
 if not os.path.isfile(config_path):
@@ -117,7 +105,6 @@ with open(PATHS['command'], 'w') as f:
     for k, v in vars(args).items():
         f.write("# {}: {}\n".format(k, v))
     f.write("\n# {}".format(os.path.realpath(__file__)))
-    f.write("\n# GIT hash: {}".format(githash))
     f.write("\n# ringdown v {}".format(getattr(rd, '__version__', 'unknown')))
 
 # Identify target analysis times. There will be three possibilities:
