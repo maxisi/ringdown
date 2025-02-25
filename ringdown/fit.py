@@ -478,7 +478,7 @@ class Fit(object):
             logging.info("initializing fit from IMR result")
             imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
                    if k != 'initialize_fit'}
-            if 'path' not in imr and not 'imr_result' in imr:
+            if 'path' not in imr and 'imr_result' not in imr:
                 raise ValueError("no path to IMR result provided; ignoring "
                                  "IMR section in config")
             imr_path = imr.pop('path', imr.pop('imr_result', None))
@@ -501,7 +501,7 @@ class Fit(object):
         if config.has_section('imr') and not fit.has_imr_result:
             imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
                    if k != 'initialize_fit'}
-            if 'path' not in imr or not 'imr_result' in imr:
+            if 'path' not in imr or 'imr_result' not in imr:
                 imr_path = imr.pop('path', imr.pop('imr_result', None))
                 fit.add_imr_result(imr_path, **imr)
             else:
@@ -1773,104 +1773,11 @@ class Fit(object):
             self.imr_result = imr_result
         else:
             self.imr_result = imr.IMRResult.construct(imr_result, **kws)
+        # point to this Fit as reference
+        self.imr_result.set_ringdown_reference(self)
         # record settings
         settings['imr_result'] = self.imr_result.path
         self.update_info('imr', **settings)
-
-    def get_imr_templates(self, condition: bool = True,
-                          ifos: list | None = None,
-                          **kws) -> np.ndarray:
-        """Return IMR templates based on reference IMR result.
-
-        NOTE: make use of the `nsamp` argument to subselect from the IMR
-        samples---will produce templates for all samples if not provided.
-
-        Arguments
-        ---------
-        condition : bool
-            if True, condition templates based on `Data.condition` method;
-            this replicates the conditioning applied to the data, but will
-            slow things down.
-        ifos : list
-            list of detector keys for which to return templates;
-            defaults to all detectors in Fit.
-        **kws :
-            additional keyword arguments passed to
-            :meth:`ringdown.imr.IMRResult.get_waveforms`.
-
-        Returns
-        -------
-        templates : np.ndarray
-            array of IMR with shape `(nifo, ntime, nsamp)`.
-        """
-        if self.imr_result is None:
-            raise ValueError("no IMR result found; use `add_imr_result`")
-
-        ifos = ifos or self.ifos
-        nsamp = kws.get('nsamp', len(self.imr_result))
-        if nsamp > 1000:
-            logging.warning('large number of IMR samples requested; use'
-                            '`nsamp` to subselect for speed')
-
-        if condition:
-            # get time arrays
-            t = {i: d.time.values for i, d in self._raw_data.items()}
-            # inspect Data.condition for conditioning options
-            x = inspect.signature(Data.condition).parameters.keys()
-            c = {k: v for k, v in self.info['condition'].items() if k in x}
-            c['t0'] = self.start_times
-            # produce conditioned waveforms
-            wfs = self.imr_result.get_waveforms(time=t, ifos=ifos, condition=c,
-                                                **kws)
-        else:
-            # produce unconditioned waveforms
-            wfs = self.imr_result.get_waveforms(time=self.times, ifos=ifos,
-                                                **kws)
-        return StrainStack(wfs)
-
-    def get_imr_analysis_templates(self, **kws) -> np.ndarray:
-        """Return IMR templates for analysis segment.
-
-        Arguments
-        ---------
-        ifos : list
-            list of detector keys for which to return templates;
-            defaults to all detectors in Fit.
-        **kws :
-            all keyword arguments passed to
-            :meth:`ringdown.Fit.get_imr_templates`.
-
-        Returns
-        -------
-        templates : np.ndarray
-            array of IMR timeplates with shape `(nifo, ntime, nsamp)` where
-            `ntime = fit.n_analyze`.
-        """
-        wfs = self.get_imr_templates(ifos=self.ifos, **kws)
-        return wfs.slice(self.start_indices, self.n_analyze)
-
-    def compute_imr_snrs(self, optimal=False, cumulative=False, network=False,
-                         **kws) -> dict:
-        """Compute SNR of IMR templates for each detector.
-
-        Arguments
-        ---------
-        **kws :
-            all keyword arguments passed to
-            :meth:`ringdown.Fit.get_imr_analysis_templates`.
-
-        Returns
-        -------
-        snrs : dict
-            dictionary of IMR SNRs for each detector.
-        """
-        wfs = self.get_imr_analysis_templates(**kws)
-        if optimal:
-            data = None
-        else:
-            data = self.analysis_data
-        return wfs.compute_snr(self.cholesky_factors, data=data,
-                               cumulative=cumulative, network=network)
 
     @property
     def delta_t(self) -> float:
@@ -1914,7 +1821,7 @@ class Fit(object):
         fit = cls(**kws)
 
         logging.info(f"initializing fit from IMR result: {imr}")
-        
+
         # add IMR result to fit (this triggers saving IMR settings in fit)
         fit.add_imr_result(imr, approximant=approximant,
                            reference_frequency=reference_frequency, psds=psds)
@@ -1952,8 +1859,8 @@ class Fit(object):
 
         if update_model:
             opts = imr.estimate_ringdown_prior(modes=fit.modes,
-                                                      cache=True,
-                                                      **(prior_kws or {}))
+                                               cache=True,
+                                               **(prior_kws or {}))
             fit.update_model(**opts)
             logging.info(f"updated model: {opts}")
 
@@ -1971,7 +1878,7 @@ class FitSequence(Fit):
 
     def __repr__(self):
         return f"FitSequence(modes={self.modes}, ifos={self.ifos}, " \
-                f"targets={len(self.target_collection)}, {self.target})"
+            f"targets={len(self.target_collection)}, {self.target})"
 
     def __len__(self):
         return len(self.target_collection)
@@ -2101,9 +2008,10 @@ class FitSequence(Fit):
         # initialize fit with `no_cond` set to True because
         # we don't have a target yet
         fits = super().from_config(config, no_cond=True, **kws)
-        
+
         logging.info("getting target collection")
-        targets = TargetCollection.from_config(config, imr_result=fits.imr_result)
+        targets = TargetCollection.from_config(
+            config, imr_result=fits.imr_result)
         fits.set_target_collection(targets)
 
         # condition data if requested (this also stores conditioning info
