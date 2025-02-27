@@ -119,7 +119,8 @@ def main(args=None):
         for t0, target in fit.targets:
             path = out.replace('*', '{}').format(t0)
             if os.path.exists(path):
-                logging.warning(f"output file already exists: {path}")
+                logging.warning("output file already exists "
+                                f"(skipping target): {path}")
             else:
                 outdir = os.path.dirname(path)
                 os.makedirs(outdir, exist_ok=True)
