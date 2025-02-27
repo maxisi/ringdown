@@ -398,6 +398,10 @@ class Fit(object):
         simulated signal and to compute or load ACFs. Does not run the fit
         automatically.
 
+        Can initialize a fit from an IMR result, if the 'imr' section contains
+        a path to an IMR result file and the 'initialize_fit' option is set to
+        True.
+
         Arguments
         ---------
         config_input : str, configparser.ConfigParser
@@ -478,8 +482,15 @@ class Fit(object):
                    for k, v in config[IMR_CONFIG_SECTION].items()
                    if k != 'initialize_fit'}
             if 'path' not in imr and 'imr_result' not in imr:
-                raise ValueError("no path to IMR result provided; ignoring "
-                                 "IMR section in config")
+                raise ValueError("IMR fit initialization requested but no "
+                                 "path to IMR result found in config")
+            if 'seed' in imr:
+                if 'prng' in imr:
+                    raise ValueError("two PRNG seed options provided in config")
+                imr['prng'] = imr.pop('seed')
+            elif 'prng' not in imr:
+                raise ValueError("IMR fit initialization requested but no "
+                                 "PRNG seed found in IMR section of config")
             imr_path = imr.pop('path', imr.pop('imr_result', None))
             if 'data' in config:
                 logging.info("loading data from disk (ignoring IMR data)")
@@ -1816,6 +1827,7 @@ class Fit(object):
                         psds: dict | None = None,
                         approximant: str | None = None,
                         reference_frequency: float | None = None,
+                        prng: int | np.random.Generator | None = None,
                         **kws):
         """Create a new `Fit` object from an IMR result."""
         fit = cls(**kws)
@@ -1834,8 +1846,10 @@ class Fit(object):
 
         if set_target:
             if duration == 'auto':
-                duration = imr.estimate_ringdown_duration(cache=True)
+                duration = imr.estimate_ringdown_duration(cache=True,
+                                                          prng=prng)
             peak_kws = peak_kws or {}
+            peak_kws['prng'] = peak_kws.get('prng', prng)
             t = imr.get_best_peak_target(**peak_kws, duration=duration)
             if advance_target_by_mass:
                 m = reference_mass or imr.remnant_mass_scale_reference
@@ -1858,9 +1872,10 @@ class Fit(object):
                                 "not conditioned!")
 
         if update_model:
-            opts = imr.estimate_ringdown_prior(modes=fit.modes,
-                                               cache=True,
-                                               **(prior_kws or {}))
+            prior_kws = prior_kws or {}
+            prior_kws['prng'] = prior_kws.get('prng', prng)
+            opts = imr.estimate_ringdown_prior(modes=fit.modes, cache=True, 
+                                               **prior_kws)
             fit.update_model(**opts)
             logging.info(f"updated model: {opts}")
 
@@ -2059,7 +2074,6 @@ class FitSequence(Fit):
         settings for the IMR result. The `pipe` section can include targetting
         entries pointing to the IMR result (e.g., `t0-ref = imr`); see the docs
         for `TargetCollection.from_config` for more information.
-        
 
         Arguments
         ---------
@@ -2078,7 +2092,8 @@ class FitSequence(Fit):
         config = utils.load_config(config_input)
 
         # initialize fit with `no_cond` set to True because
-        # we don't have a target yet
+        # we may not have a target yet (it will have a target if initializing
+        # from IMR result, but not otherwise)
         fits = super().from_config(config, no_cond=True, **kws)
 
         logging.info("getting target collection")
