@@ -491,6 +491,7 @@ class Fit(object):
             elif 'prng' not in imr:
                 raise ValueError("IMR fit initialization requested but no "
                                  "PRNG seed found in IMR section of config")
+            imr['prng'] = int(imr['prng'])
             imr_path = imr.pop('path', imr.pop('imr_result', None))
             if 'data' in config:
                 logging.info("loading data from disk (ignoring IMR data)")
