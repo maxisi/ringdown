@@ -25,7 +25,7 @@ from .model import make_model, get_arviz, MODEL_DIMENSIONS
 from . import indexing
 from . import waveforms
 from . import imr
-from .qnms import T_MSUN
+from .config import T_MSUN, IMR_CONFIG_SECTION
 import pandas as pd
 
 # TODO: support different samplers?
@@ -45,8 +45,6 @@ RUNTIME_MODEL_ARGS = ['modes', 'prior', 'predictive', 'store_h_det',
 
 DEF_RUN_KWS = dict(dense_mass=True, num_warmup=1000, num_samples=1000,
                    num_chains=4)
-
-IMR_CONFIG_SECTION = 'imr'
 
 
 def get_sampling_kwargs(**kwargs):
@@ -476,7 +474,8 @@ class Fit(object):
         # initialize fit object, potentially from IMR result
         if config.get(IMR_CONFIG_SECTION, 'initialize_fit', fallback=False):
             logging.info("initializing fit from IMR result")
-            imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
+            imr = {k: utils.try_parse(v)
+                   for k, v in config[IMR_CONFIG_SECTION].items()
                    if k != 'initialize_fit'}
             if 'path' not in imr and 'imr_result' not in imr:
                 raise ValueError("no path to IMR result provided; ignoring "
@@ -498,8 +497,9 @@ class Fit(object):
             fit = cls(**model_opts)
 
         # load reference imr result if requested
-        if config.has_section('imr') and not fit.has_imr_result:
-            imr = {k: utils.try_parse(v) for k, v in config['imr'].items()
+        if config.has_section(IMR_CONFIG_SECTION) and not fit.has_imr_result:
+            imr = {k: utils.try_parse(v) 
+                   for k, v in config[IMR_CONFIG_SECTION].items()
                    if k != 'initialize_fit'}
             if 'path' not in imr or 'imr_result' not in imr:
                 imr_path = imr.pop('path', imr.pop('imr_result', None))
@@ -1777,7 +1777,7 @@ class Fit(object):
         self.imr_result.set_ringdown_reference(self)
         # record settings
         settings['imr_result'] = self.imr_result.path
-        self.update_info('imr', **settings)
+        self.update_info(IMR_CONFIG_SECTION, **settings)
 
     @property
     def delta_t(self) -> float:
@@ -1868,6 +1868,25 @@ class Fit(object):
 
 
 class FitSequence(Fit):
+    """ A sequence of ringdown fits of the same model to the same data at 
+    different times. Contains the same information as a single `Fit` object,
+    with the addition of a `target_collection` attribute that stores multiple
+    `Target` objects that are looped over at runtime.
+
+    Example usage::
+
+        import ringdown as rd
+        fit = rd.Fit(modes=[(1,-2,2,2,0), (1,-2,2,2,1)])
+        fit.load_data('{i}-{i}1_GWOSC_16KHZ_R1-1126259447-32.hdf5',
+                      ifos=['H1', 'L1'], kind='gwosc')
+        fit.set_target_collection(
+            t0_ref=1126259462.4083147, m_ref=70, t0_start=0, t0_end=5,
+            t0_step=1, ra=1.95, dec=-1.27, psi=0.82, duration=0.05
+        )
+        fit.condition_data(ds=8)
+        fit.update_model(a_scale_max=1e-21, m_min=50, m_max=150, cosi=-1)
+        fit.run()
+    """
 
     def __init__(self, *args, target_collection=None, **kws):
         # initialize parent class
@@ -1894,11 +1913,19 @@ class FitSequence(Fit):
         return self.target_collection
 
     def set_target_collection(self, *args, **kws):
+        """Set a collection of targets for the fit sequence.
+        All arguments are passed to `TargetCollection.construct`,
+        whose docs are included below.
+
+        {}
+        """
         self.target_collection = TargetCollection.construct(*args, **kws)
         # initialize to first target
         if len(self.target_collection) > 0:
             self.set_target(target=self.target_collection[0])
         logging.info(f"set target collection: {self.target_collection}")
+    set_target_collection.__doc__ = set_target_collection.__doc__.format(
+        TargetCollection.construct.__doc__)
 
     def run(self,
             predictive: bool = True,
@@ -1914,6 +1941,46 @@ class FitSequence(Fit):
             recondition: bool = True,
             output_path: str | None = None,
             **kwargs):
+        """Run the sequence of fits iteratively.
+
+        The options are the same as for `Fit.run`, with the addition of
+        a `recondition` argument that specifies whether to recondition the
+        data to each target before running the fit.
+
+        There is also an `output_path` argument that allows for saving results
+        to disk as they are produced. This argument should be a path string 
+        with a `*` placeholder that will be replaced by the target time, e.g.
+        `output_path='results/*/result.nc'`.
+
+        Arguments
+        ---------
+        predictive : bool
+            if True, compute predictive posterior samples.
+        store_h_det : bool
+            if True, store detector-frame strain in results.
+        store_h_det_mode : bool
+            if True, store mode-frame strain in results.
+        store_residuals : bool
+            if True, store residuals in results.
+        rescale_strain : bool
+            if True, rescale strain by amplitude scale factor.
+        suppress_warnings : bool
+            if True, suppress warnings during run.
+        min_ess : int
+            minimum effective sample size required for each target.
+        prng : int, np.random.Generator
+            random number generator seed or object.
+        validation_enabled : bool
+            if True, enable validation checks during run.
+        individual_progress_bars : bool
+            if True, show individual progress bars for each target.
+        recondition : bool
+            if True, recondition data to each target before running.
+        output_path : str
+            path to save results to, with `{}` replaced by target time.
+        **kwargs :
+            additional keyword arguments passed to `Fit.run`.
+        """
         # record all arguments
         settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kwargs').items():
@@ -1969,7 +2036,7 @@ class FitSequence(Fit):
             r.append(result)
 
             if output_path:
-                path = output_path.replace('*', '{}').format(t0)
+                path = output_path.replace('*', '{:.9f}').format(t0)
                 dirname = os.path.dirname(os.path.abspath(path))
                 if dirname and not os.path.exists(dirname):
                     os.makedirs(dirname)
@@ -1985,9 +2052,14 @@ class FitSequence(Fit):
     def from_config(cls, config_input: str | dict,
                     no_cond: bool = False, **kws):
         """Create a `FitSequence` object from a configuration file or
-        dictionary.
+        dictionary. See `Fit.from_config` for additional keyword arguments.
 
-        See `Fit.from_config` for additional keyword arguments.
+        This supports creating a `FitSequence` based on an IMR result. In this
+        case, the configuration file should include an `imr` section with
+        settings for the IMR result. The `pipe` section can include targetting
+        entries pointing to the IMR result (e.g., `t0-ref = imr`); see the docs
+        for `TargetCollection.from_config` for more information.
+        
 
         Arguments
         ---------

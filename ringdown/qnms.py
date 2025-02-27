@@ -2,11 +2,9 @@ __all__ = ['KerrMode', 'get_ftau']
 
 import numpy as np
 import qnm
-import lal
 from . import indexing
 from .utils import docstring_parameter
-
-T_MSUN = lal.GMSUN_SI / lal.C_SI**3
+from .config import T_MSUN
 
 
 def get_ftau(M, chi, n, l=2, m=2):  # noqa: E741
