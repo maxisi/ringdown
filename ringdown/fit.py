@@ -25,7 +25,7 @@ from .model import make_model, get_arviz, MODEL_DIMENSIONS
 from . import indexing
 from . import waveforms
 from . import imr
-from .config import T_MSUN, IMR_CONFIG_SECTION
+from .config import T_MSUN, IMR_CONFIG_SECTION, PIPE_SECTION
 import pandas as pd
 
 # TODO: support different samplers?
@@ -2095,6 +2095,6 @@ class FitSequence(Fit):
             fits.condition_data(**cond_kws)
 
         # record pipe info in config
-        fits.update_info('pipe', **config['pipe'])
+        fits.update_info(PIPE_SECTION, **config[PIPE_SECTION])
 
         return fits

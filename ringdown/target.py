@@ -10,7 +10,7 @@ from dataclasses import dataclass, asdict
 from abc import ABC, abstractmethod
 from .utils import utils
 from .utils.utils import try_parse
-from .config import T_MSUN, IMR_CONFIG_SECTION
+from .config import T_MSUN, IMR_CONFIG_SECTION, PIPE_SECTION
 
 # Define valid options to specify the start times
 T0_KEYS = {
@@ -27,7 +27,6 @@ T0_INCOMPATIBLE_OPTS = [['ref', 'list'], ['delta', 'list']]
 T0_INCOMPATIBLE_OPTS += [[k, 'delta'] for k in ['start', 'stop', 'step']]
 MREF_KEY = 'm-ref'
 TREF_KEY = T0_KEYS['ref']
-PIPE_SEC = 'pipe'
 
 
 class Target(ABC):
@@ -505,7 +504,7 @@ class TargetCollection(utils.MultiIndexCollection):
 
     @property
     def _step(self) -> float | None:
-        tdef = self.info.get(PIPE_SEC, {}).get('t0-step', None)
+        tdef = self.info.get(PIPE_SECTION, {}).get('t0-step', None)
         return self.info.get('t0-step', tdef)
 
     @property
@@ -616,7 +615,7 @@ class TargetCollection(utils.MultiIndexCollection):
                    reference_time=t0ref, info=info)
 
     @classmethod
-    def from_config(cls, config_input, t0_sect=PIPE_SEC, sky_sect='target',
+    def from_config(cls, config_input, t0_sect=PIPE_SECTION, sky_sect='target',
                     imr_result=None):
         """Create a collection of targets from a configuration file.
 
