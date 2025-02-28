@@ -13,6 +13,7 @@ from . indexing import ModeIndexList
 from . import utils
 from .utils import get_tqdm, get_hdf5_value, get_bilby_dict, \
     get_dict_from_pattern
+from .config import IMR_CONFIG_SECTION
 import lal
 import multiprocessing as mp
 from lalsimulation import nrfits
@@ -1103,7 +1104,7 @@ class IMRResult(pd.DataFrame):
 
     @classmethod
     def from_config(cls, config_input, overwrite_data=False,
-                    imr_sec='imr', **kws):
+                    imr_sec=IMR_CONFIG_SECTION, **kws):
         """Create an IMRResult from a configuration file."""
         config = utils.load_config(config_input)
 
