@@ -1124,6 +1124,12 @@ class Result(az.InferenceData):
     # ------------------------------------------------------------------------
     # PLOTS
 
+    def plot_trace(self, var_names: list[str] = ['a'], compact: bool = True,
+                   *args, **kwargs):
+        """Alias for :func:`arviz.plot_trace`."""
+        return az.plot_trace(self, compact=compact, var_names=var_names,
+                             *args, **kwargs)
+
     def plot_mass_spin(self, ndraw: int = 500, imr: bool = True,
                     joint_kws: dict | None = None,
                     marginal_kws: dict | None = None,
