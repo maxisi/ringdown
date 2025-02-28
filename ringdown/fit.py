@@ -1228,7 +1228,6 @@ class Fit(object):
 
         tslide = slide or {}
         for ifo, path in path_dict.items():
-            print(ifo, path)
             self.add_data(Data.load(path, ifo=ifo, channel=channel_dict[ifo],
                                     **kws))
         # apply time slide if requested
