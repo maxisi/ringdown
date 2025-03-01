@@ -381,7 +381,7 @@ class IMRResult(pd.DataFrame):
             df = self
         else:
             logging.info(f"subselecting {nsamp} IMR samples for peak time "
-                         "calculation with random seed {prng}")
+                         f"calculation with random seed {prng}")
             df = self.sample(nsamp, random_state=prng)
 
         if ifos is None:

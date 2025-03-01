@@ -740,10 +740,15 @@ class Fit(object):
         for k, v in settings.pop('kwargs').items():
             settings[k] = v
 
+        if self.has_target:
+            t0s = self.start_times
+        else:
+            warn("conditioning without target")
+            t0s = {i: None for i in self.ifos}
+            
         new_data = {}
         for k, d in self.data.items():
-            t0 = self.start_times[k]
-            new_data[k] = d.condition(t0=t0, **kwargs)
+            new_data[k] = d.condition(t0=t0s[k], **kwargs)
         self._raw_data = self.data
         self.data = new_data
         if not preserve_acfs:
@@ -2042,10 +2047,13 @@ class FitSequence(Fit):
             logging.info(f"setting target: {t0}")
             self.set_target(target=target, force=True)
 
-            if recondition:
+            # if conditioning had been applied to the data, recondition it to
+            # the new target time (making sure the new t0 is preserved when
+            # downsampling), if requested
+            if recondition and 'condition' in self.info:
                 logging.info("reconditioning data to new target")
                 self.data = self._raw_data
-                ckws = self.info['condition']
+                ckws = self.info.pop('condition')
                 ckws.update({'preserve_acfs': True, 'silent': True})
                 self.condition_data(**ckws)
 
@@ -2104,40 +2112,12 @@ class FitSequence(Fit):
         """
         config = utils.load_config(config_input)
 
-        # initialize fit with `no_cond` to ignore conditioning options in
-        # config because we may not have a target yet (it will have a target
-        # if initializing from IMR result, but not otherwise)
-        fits = super().from_config(config, no_cond=True, **kws)
-
-        # data may have still been conditioned if loading from IMR result
-        # so reset the data to avoid double conditioning below
-        # (preserving ACFs) and collect info about any conditioning that
-        # was applied
-        logging.info("temporarily resetting data to raw data")
-        cond_kws = fits.info.pop('condition', {})
-        fits.data = fits._raw_data
-        if fits.has_acfs:
-            logging.info("will preserve IMR ACFs")
-            cond_kws.update({'preserve_acfs': True, 'silent': True})
+        fits = super().from_config(config, **kws)
 
         logging.info("getting target collection")
         targets = TargetCollection.from_config(
             config, imr_result=fits.imr_result)
         fits.set_target_collection(targets)
-
-        # condition data if requested (this also stores conditioning info
-        # in FitSequences so that it can be re-applied later if requested)
-        if config.has_section('condition') and not no_cond:
-            logging.info("conditioning data based on configuration")
-            cond_kws.update({'preserve_acfs': False})
-            cond_kws.update({k: utils.try_parse(v)
-                             for k, v in config['condition'].items()})
-            if fits.has_acfs and not cond_kws.get('preserve_acfs', True):
-                logging.warning("ignoring IMR ACFs due to 'condition' section "
-                                "in config")
-        if cond_kws:
-            logging.info("reconditioning data")
-            fits.condition_data(**cond_kws)
 
         # record pipe info in config
         fits.update_info(PIPE_SECTION, **config[PIPE_SECTION])
