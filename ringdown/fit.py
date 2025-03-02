@@ -1873,7 +1873,8 @@ class Fit(object):
             fit.set_target(target=t)
 
         if condition:
-            logging.info("conditioning data based on IMR result")
+            logging.info("conditioning data based on IMR result: "
+                         f"{imr.condition_options}")
             fit.condition_data(**imr.condition_options)
 
         if load_acfs:

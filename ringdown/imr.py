@@ -813,7 +813,7 @@ class IMRResult(pd.DataFrame):
         else:
             logging.warning("missing sampling frequency in config")
             ds = None
-        return {'ds': ds}
+        return {'ds': ds, 'trim': 0}
 
     def get_patched_psds(self, f_min: float | None = 0,
                          f_max: float | None = None,
