@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.stats import gaussian_kde, norm
 from .kde_contour import Bounded_1d_kde
+import logging
 
 
 def compute_hpd(samples, p=0.68, out="both", sorted=False):
@@ -34,9 +35,94 @@ def compute_hpd(samples, p=0.68, out="both", sorted=False):
     else:
         raise ValueError("Invalid output type.")
 
+def compute_hpd_with_kde(xs, q=0.68, min=None, max=None, grid=1000):
+    if min is not None or max is not None:
+        kde = Bounded_1d_kde(xs, x_min=min, x_max=max)
+    else:
+        kde = gaussian_kde(xs)
+    if min is None:
+        min = xs.min()
+    if max is None:
+        max = xs.max()
 
-def q_of_zero(xs, q_min=0.01, q_tol=0.005) -> float:
-    """Compute the quantile of zero for a given set of nonnegative samples.
+    # evaluate the KDE over a grid
+    if isinstance(grid, int):
+        grid = np.linspace(min, max, grid)
+    density = kde(grid)
+
+    # Compute threshold to find the highest density region
+    sorted_indices = np.argsort(density)[::-1]
+    density_cumsum = np.cumsum(density[sorted_indices])
+    idx = np.searchsorted(density_cumsum, q * density_cumsum[-1])
+    density_threshold = density[sorted_indices][idx]
+
+    # Identify HPD region
+    hpd_mask = density >= density_threshold
+    hpd_bounds = grid[np.flatnonzero(hpd_mask)[[0, -1]]]  # Get min and max bounds
+
+    return hpd_bounds[0], hpd_bounds[1]
+
+def kde_hpd_multimodal_optimized(samples, p=0.95, n_grid=1000):
+    """
+    Compute disjoint HPD intervals using KDE for a (potentially 
+    multimodal) distribution.
+    
+    Parameters:
+      samples : array-like
+          Posterior samples.
+      p : float
+          Desired probability mass (e.g., 0.95 for a 95% HPD region).
+      n_grid : int
+          Number of points in the grid for density evaluation.
+    
+    Returns:
+      intervals : list of tuples
+          List of intervals [(low1, high1), (low2, high2), ...] that together
+          cover at least p probability mass.
+    """
+    # Compute the KDE over a grid spanning the sample range.
+    kde = gaussian_kde(samples)
+    x_min, x_max = samples.min(), samples.max()
+    grid = np.linspace(x_min, x_max, n_grid)
+    density = kde(grid)
+    
+    # Compute grid spacing.
+    dx = grid[1] - grid[0]
+    
+    # Sort density values in descending order.
+    sort_idx = np.argsort(density)[::-1]
+    density_sorted = density[sort_idx]
+    
+    # Compute cumulative probability mass over the sorted grid points.
+    cumulative_prob = np.cumsum(density_sorted) * dx
+    # Find the index where cumulative probability reaches p.
+    idx_threshold = np.searchsorted(cumulative_prob, p)
+    if idx_threshold >= len(density_sorted):
+        idx_threshold = len(density_sorted) - 1
+    threshold = density_sorted[idx_threshold]
+    
+    # Identify grid points where the density exceeds the threshold.
+    mask = density >= threshold
+    indices = np.nonzero(mask)[0]
+    if len(indices) == 0:
+        return []
+    
+    # Group contiguous indices using a vectorized approach.
+    # Compute the difference between consecutive indices.
+    diff = np.diff(indices)
+    # Where the difference is greater than 1, there is a break.
+    split_indices = np.where(diff > 1)[0] + 1
+    groups = np.split(indices, split_indices)
+    
+    # Build the list of intervals from the groups.
+    intervals = [(grid[group[0]], grid[group[-1]]) for group in groups]
+    
+    return intervals
+
+
+def q_of_zero(xs, q_min=0.01, q_tol=0.001, kde=False, xmin=None, **kws) -> float:
+    """Compute the quantile of zero for a given set of nonnegative samples with
+    a unimodal distribution.
 
     This function computes the quantile of zero for a given set of nonnegative
     samples. The quantile of zero is the smallest value of q such that the
@@ -48,6 +134,9 @@ def q_of_zero(xs, q_min=0.01, q_tol=0.005) -> float:
     mid-point; otherwise, the lower bound is shrunk to the mid-point. The 
     algorithm continues until the interval is smaller than a given tolerance.
 
+    It is different from the CL computation because it does not max out
+    at 1/len(xs).
+
     Arguments
     ---------
     xs : array_like
@@ -55,7 +144,7 @@ def q_of_zero(xs, q_min=0.01, q_tol=0.005) -> float:
     q_min : float, optional
         The lower bound of the quantile. The default is 0.01.
     q_tol : float, optional
-        The tolerance for the quantile. The default is 0.005.
+        The tolerance for the quantile. The default is 0.001.
 
     Returns
     -------
@@ -63,13 +152,24 @@ def q_of_zero(xs, q_min=0.01, q_tol=0.005) -> float:
         The quantile of zero.
     """
     xs = np.sort(xs)
-    xmin = xs[0]
-
+    if xmin is None:
+        xmin = xs[0]
+    
     if xmin < 0:
         raise ValueError("The smallest sample is less than zero.")
 
-    if compute_hpd(xs, q_min, sorted=True)[0] < xmin:
-        # if the lower bound of the q_min credible interval is less than the
+    if kde:
+        hpd = compute_hpd_with_kde
+        # make sure we are using the bounded KDE or this will not work
+        # well if the posterior is close to zero
+        kws['min'] = kws.get('min', 0)
+        xmin = 0
+    else:
+        kws["sorted"] = True
+        hpd = compute_hpd
+
+    if hpd(xs, q_min, **kws)[0] < xmin:
+        # if the lower bound of the q_min credible interval is below the
         # smallest sample, then the peak is against an edge so set the 
         # quantile of the origin to zero
         return 0.0
@@ -81,7 +181,7 @@ def q_of_zero(xs, q_min=0.01, q_tol=0.005) -> float:
     while q_max - q_min > q_tol:
         # find the lower edge of the HPD corresponding to the average CL
         q_mid = 0.5*(q_min + q_max)
-        l, _ = compute_hpd(xs, q_mid, sorted=True)
+        l, _ = hpd(xs, q_min, **kws)
 
         if l == xmin:
             # this HPD hits the left edge, so we can shrink the upper bound
@@ -95,14 +195,16 @@ def q_of_zero(xs, q_min=0.01, q_tol=0.005) -> float:
     return 0.5*(q_min + q_max)
 
 
-def hpd_zero_p_value(xs, min=None, max=None):
+def quantile_at_value(xs, target=0, min=None, max=None):
     if min is not None or max is not None:
         kde = Bounded_1d_kde(xs, x_min=min, x_max=max)
     else:
         kde = gaussian_kde(xs)
-    p0 = kde(0)
+    p0 = kde(target)
     pxs = kde(xs)
-    n = np.sum(pxs < p0)
+    n = np.sum(pxs > p0)
+    if n == len(xs):
+        logging.warning("CL maxed out at 1/N")
     return n/len(xs)
 
 
@@ -112,23 +214,6 @@ def z_score(credible_level, two_tailed=False):
     if two_tailed:
         alpha /= 2
     return norm.ppf(1 - alpha)
-
-def get_hpd_from_samples(xs, q=0.68, min=None, max=None, n_grid=1000):
-    if min is not None or max is not None:
-        kde = Bounded_1d_kde(xs, x_min=min, x_max=max)
-    else:
-        kde = gaussian_kde(xs)
-    if min is None:
-        min = xs.min()
-    if max is None:
-        max = xs.max()
-    grid = np.linspace(min, max, n_grid)
-    density = kde(grid)
-    density_sorted = np.sort(density)[::-1]
-    density_threshold = density_sorted[int(q * len(density_sorted))]
-    hpd_mask = density >= density_threshold
-    return grid[hpd_mask][0], grid[hpd_mask][-1]
-    
 
 def get_hpd_from_grid(x, q=0.68, A_min=0):
     xs = x.sort_values(ascending=False)
