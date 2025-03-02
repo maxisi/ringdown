@@ -1380,7 +1380,7 @@ class StrainStack(np.ndarray):
         ntime = np.shape(cholesky)[1]
         matching_axes = [i for i, n in enumerate(h.shape) if n == ntime]
         if len(matching_axes) == 0:
-            raise ValueError("No matching time axis found:"
+            raise ValueError("No matching time axis found: "
                              f"strain shape {h.shape}, cholesky shape "
                              f"{np.shape(cholesky)}")
         elif len(matching_axes) > 1:
@@ -1394,11 +1394,11 @@ class StrainStack(np.ndarray):
         nifo = len(cholesky)
         matching_axes = [i for i, n in enumerate(h.shape) if n == nifo]
         if len(matching_axes) == 0:
-            raise ValueError("No matching detector axis found:"
+            raise ValueError("No matching detector axis found: "
                              f"strain shape {h.shape}, cholesky shape "
                              f"{np.shape(cholesky)}")
         elif len(matching_axes) > 1:
-            raise ValueError("Multiple matching detector axes found:"
+            raise ValueError("Multiple matching detector axes found: "
                              f"strain shape {h.shape}, cholesky shape "
                              f"{np.shape(cholesky)}")
         return matching_axes[0]
