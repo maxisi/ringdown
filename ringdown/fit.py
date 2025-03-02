@@ -2013,7 +2013,6 @@ class FitSequence(Fit):
         settings = {k: v for k, v in locals().items() if k != 'self'}
         for k, v in settings.pop('kwargs').items():
             settings[k] = v
-        self.update_info('run', **settings)
 
         logging.info(f"running sequence of {len(self)} targets")
 
@@ -2067,7 +2066,7 @@ class FitSequence(Fit):
             r.append(result)
 
             if output_path:
-                path = output_path.replace('*', '{:.9f}').format(t0)
+                path = self.format_output_path(output_path, t0)
                 dirname = os.path.dirname(os.path.abspath(path))
                 if dirname and not os.path.exists(dirname):
                     os.makedirs(dirname)
@@ -2077,7 +2076,15 @@ class FitSequence(Fit):
         self.result = ResultCollection(r, index=self.target_collection.index)
         self._numpyro_sampler = sampler
         # update info to reflect the last-used sampler settings
-        self.update_info('run', **sampler_kws)
+        settings.update(sampler_kws)
+        self.update_info('run', **settings)
+        
+
+    @staticmethod
+    def format_output_path(path_template: str, t0: float) -> str:
+        """Get the output path for a target time based on a template string.
+        """
+        return path_template.replace('*', '{:.9f}').format(t0)
 
     @classmethod
     def from_config(cls, config_input: str | dict,
