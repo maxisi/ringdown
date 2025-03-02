@@ -118,6 +118,13 @@ class IMRResult(pd.DataFrame):
     def set_psds(self, psds: dict | str, ifos: list | None = None) -> None:
         """Set the PSDs used in the analysis.
 
+        The PSDs are stored as a dictionary of PowerSpectralDensity objects
+        indexed by detector name, or a dictionary of paths to ASCII files.
+
+        The PSDs are stored as PowerSpectralDensity objects, which are
+        interpolated to a uniform frequency grid and gated to avoid issues with
+        dynamic range.
+
         Arguments
         --------
         psds : dict | str
@@ -138,7 +145,14 @@ class IMRResult(pd.DataFrame):
                     p = np.loadtxt(p)
                 else:
                     raise FileNotFoundError(f"PSD file not found: {p}")
-            p = data.PowerSpectrum(p).fill_low_frequencies().gate()
+            # often, PSDs may only be recorded over a frequency range that 
+            # does not extend to zero, so we should fill in those low 
+            # frequencies by padding; BayesWave PSDs may also be not exactly
+            # uniformly sampled or even sampled over a monotonic grid, so we
+            # interpolate to a uniform grid; finally, we gate the PSD to
+            # avoid issues with dynamic range
+            p = (data.PowerSpectrum(p).fill_low_frequencies().gate()
+                 .interpolate_to_index())
             self.__dict__['_psds'][i] = p
 
     @property
@@ -950,7 +964,8 @@ class IMRResult(pd.DataFrame):
             dt_wf = time_dict[ifo][1] - time_dict[ifo][0]
             if acf.delta_t != dt_wf:
                 raise ValueError(f"ACF for {ifo} has different "
-                                 "time step than waveforms")
+                                 f"time step ({acf.delta_t}) than waveforms "
+                                 f"({dt_wf})")
             if dt_wf != dt:
                 raise ValueError(f"waveform time step {dt_wf} does not "
                                  f"match requested time step {dt}")
@@ -1087,7 +1102,7 @@ class IMRResult(pd.DataFrame):
                 r = cls.from_pesummary(path, attrs=attrs, **kws)
             except Exception as e:
                 logging.warning(f"failed to read pesummary file: {e}")
-                r = pd.read_hdf(path,**kws)
+                r = pd.read_hdf(path, **kws)
             path = os.path.abspath(path)
             r.attrs['path'] = path
             r.attrs.update(attrs)
@@ -1124,6 +1139,10 @@ class IMRResult(pd.DataFrame):
         if 'path' not in imr and not 'imr_result' in imr:
             raise ValueError("no path to IMR result provided")
         imr_path = imr.pop('path', imr.pop('imr_result', None))
+
+        # get rid of PRNG seed since it may be present but not needed
+        imr.pop('prng', None)
+        imr.pop('seed', None)
 
         # check if we should overwrite data based on 'data' section
         overwrite_data |= config.get('data', 'overwrite_data', fallback=False)
