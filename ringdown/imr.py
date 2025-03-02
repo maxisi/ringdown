@@ -654,7 +654,7 @@ class IMRResult(pd.DataFrame):
             data = self.ringdown_reference.analysis_data
         chol = self.ringdown_reference.cholesky_factors
         return wfs.compute_snr(chol, data=data, cumulative=cumulative,
-                               network=network)
+                               network=network, ifo_axis=0, time_axis=1)
 
     _FAVORED_APPROXIMANT = 'NRSur7dq4'
 
@@ -912,6 +912,7 @@ class IMRResult(pd.DataFrame):
         duration : int
             Estimated duration of the analysis in seconds.
         """
+        logging.info("estimating ringdown duration")
         if acfs is None:
             acfs = self.get_acfs(**(acf_kws or {}))
 
@@ -962,7 +963,8 @@ class IMRResult(pd.DataFrame):
             for ifo, acf in acfs.items():
                 cholesky[ifo] = acf.iloc[:n].cholesky
             wfs = waveforms.slice(start_indices, n)
-            snrs = wfs.compute_snr(cholesky, cumulative=True, network=True)
+            snrs = wfs.compute_snr(cholesky, cumulative=True, network=True,
+                                   ifo_axis=0, time_axis=1)
 
             # check if SNR at midpoint is within bounds
             snr_l, snr_m, snr_h = np.quantile(snrs[-1, :], qs)
