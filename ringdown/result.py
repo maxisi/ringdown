@@ -503,7 +503,7 @@ class Result(az.InferenceData):
             return np.linalg.norm(snrs, axis=0)
         else:
             return snrs
-        
+
     @property
     def log_likelihood_timeseries(self):
         """Compute the likelihood timeseries for the posterior samples.
@@ -1008,7 +1008,7 @@ class Result(az.InferenceData):
         the RD posterior that encompasses the entirety of the IMR credible
         level specified by `imr_cl`.
 
-        If `imr_weight` is 'rd', the output is the ringdown credible level 
+        If `imr_weight` is 'rd', the output is the ringdown credible level
         that encompasses `imr_cl` of the IMR samples.
 
         Arguments
@@ -1131,24 +1131,24 @@ class Result(az.InferenceData):
                              *args, **kwargs)
 
     def plot_mass_spin(self, ndraw: int = 500, imr: bool = True,
-                    joint_kws: dict | None = None,
-                    marginal_kws: dict | None = None,
-                    imr_kws: dict | None = None,
-                    df_kws: dict | None = None,
-                    prng: int | np.random.Generator | None = None,
-                    palette=None,
-                    dropna: bool = False,
-                    height: float = 6, ratio: float = 5,
-                    space: float = .2,
-                    xlim: tuple | None = None,
-                    ylim: tuple | None = (0, 1),
-                    marginal_ticks: bool = False,
-                    x_min: float | None = None,
-                    x_max: float | None = None,
-                    y_min: float | None = 0,
-                    y_max: float | None = 1,
-                    engine: str = 'auto',
-                    **kws) -> None:
+                       joint_kws: dict | None = None,
+                       marginal_kws: dict | None = None,
+                       imr_kws: dict | None = None,
+                       df_kws: dict | None = None,
+                       prng: int | np.random.Generator | None = None,
+                       palette=None,
+                       dropna: bool = False,
+                       height: float = 6, ratio: float = 5,
+                       space: float = .2,
+                       xlim: tuple | None = None,
+                       ylim: tuple | None = (0, 1),
+                       marginal_ticks: bool = False,
+                       x_min: float | None = None,
+                       x_max: float | None = None,
+                       y_min: float | None = 0,
+                       y_max: float | None = 1,
+                       engine: str = 'auto',
+                       **kws) -> None:
         """Plot the mass-spin distribution for the collection.
         Based on seaborn's jointplot but with the ability to use a truncated
         KDE (1D and 2D), controlled by the `x_min`, `x_max`, `y_min`, and
@@ -1237,11 +1237,12 @@ class Result(az.InferenceData):
                 # definitions of levels!
                 kws['levels'] = [1-c for c in kws['levels']]
             grid = sns.jointplot(data=df_rd, x='m', y='chi', palette=palette,
-                                dropna=dropna, height=height, ratio=ratio,
-                                space=space, xlim=xlim, ylim=ylim,
-                                marginal_ticks=marginal_ticks,
-                                joint_kws=joint_kws, marginal_kws=marginal_kws,
-                                **kws)
+                                 dropna=dropna, height=height, ratio=ratio,
+                                 space=space, xlim=xlim, ylim=ylim,
+                                 marginal_ticks=marginal_ticks,
+                                 joint_kws=joint_kws,
+                                 marginal_kws=marginal_kws,
+                                 **kws)
         else:
             color = "C0"
 
@@ -1254,7 +1255,7 @@ class Result(az.InferenceData):
             for k in ['x_min', 'x_max', 'y_min', 'y_max']:
                 if k in kws and k not in marginal_kws:
                     marginal_kws[k] = kws[k]
-                
+
             # Initialize the JointGrid object (based on sns.jointplot)
             grid = sns.JointGrid(
                 data=df_rd, x='m', y='chi', palette=palette,
@@ -1327,7 +1328,6 @@ class Result(az.InferenceData):
         # Make the main axes active in the matplotlib state machine
         plt.sca(grid.ax_joint)
         return grid, df_rd
-
 
 
 class ResultCollection(utils.MultiIndexCollection):
@@ -1732,13 +1732,13 @@ class ResultCollection(utils.MultiIndexCollection):
         q = {k: r.imr_consistency(*args, **kwargs)
              for k, r in tqdm(self, desc='results')}
         return pd.DataFrame(q)
-    
+
     def imr_consistency_summary(self, *args, progress: bool = False,
-                                simplify_index: bool = True, 
+                                simplify_index: bool = True,
                                 **kws) -> pd.Series:
-        """Compute the IMR consistency summary for each element in the 
+        """Compute the IMR consistency summary for each element in the
         collection.
-        
+
         See :meth:`Result.imr_consistency_summary` for details.
 
         Arguments
@@ -1769,19 +1769,19 @@ class ResultCollection(utils.MultiIndexCollection):
                                **kws) -> pd.DataFrame:
         """Compute the significance for non-vanishing mode amplitudes for each
         result in the collection.
-        
+
         See :meth:`Result.amplitude_significance` for details.
 
         Arguments
         ---------
         **kws : dict
-            additional keyword arguments to pass to the `amplitude_significance`
-            method of each result
+            additional keyword arguments to pass to the
+            `amplitude_significance` method of each result
 
         Returns
         -------
         p : pd.DataFrame
-            DataFrame of amplitude significance for each result in the collection
+            DataFrame of amplitude significance for each result.
         """
         if simplified_index:
             index = self.simplified_index
@@ -1821,7 +1821,7 @@ class ResultCollection(utils.MultiIndexCollection):
 
     def compute_imr_snrs_by_t0(self, optimal: bool = True,
                                network: bool = False,
-                               cumulative: bool = False, 
+                               cumulative: bool = False,
                                approximate: bool = True,
                                progress: bool = False, **kws) -> np.ndarray:
         """
@@ -1844,7 +1844,7 @@ class ResultCollection(utils.MultiIndexCollection):
                 n = min(times.shape[-1] - i0s)
                 wfs_sliced = wfs.slice(i0s, n)
                 # compute SNRs based on sliced waveforms
-                chol = r.cholesky_factors[:,:n,:n]
+                chol = r.cholesky_factors[:, :n, :n]
                 if optimal:
                     d = None
                 else:
@@ -1864,7 +1864,7 @@ class ResultCollection(utils.MultiIndexCollection):
                                                          **kws)
                 snrs.append(snr)
         return np.stack(snrs)
-        
+
     # -----------------------------------------------------------------------
     # PLOTS
 
