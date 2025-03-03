@@ -13,10 +13,12 @@ from . indexing import ModeIndexList
 from . import utils
 from .utils import get_tqdm, get_hdf5_value, get_bilby_dict, \
     get_dict_from_pattern
+from .config import IMR_CONFIG_SECTION
 import lal
 import multiprocessing as mp
 from lalsimulation import nrfits
 import logging
+import inspect
 
 MASS_ALIASES = ['final_mass', 'mf', 'mfinal', 'm_final', 'final_mass_source',
                 'remnant_mass']
@@ -40,7 +42,7 @@ class IMRResult(pd.DataFrame):
     _f_key = 'f_{mode}'
     _g_key = 'g_{mode}'
 
-    _meta = ['attrs', '_psds']
+    _meta = ['attrs', '_psds', '_ringdown_fit', '_ringdown_result']
 
     def __init__(self, *args, attrs=None, psds=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -49,7 +51,44 @@ class IMRResult(pd.DataFrame):
         self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
         self.__dict__['_psds'] = psds if psds is not None else {}
         self.__dict__['_waveforms'] = None
+        self.__dict__['_ringdown_fit'] = None
+        self.__dict__['_ringdown_result'] = None
 
+    def set_ringdown_reference(self, reference):
+        """Set the ringdown reference object."""
+        from .fit import Fit
+        from .result import Result
+        if isinstance(reference, Fit):
+            self.__dict__['_ringdown_fit'] = reference
+        elif isinstance(reference, Result):
+            self.__dict__['_ringdown_result'] = reference
+        else:
+            raise ValueError("invalid ringdown reference object")
+        
+    @property
+    def has_ringdown_fit(self) -> bool:
+        """Check if ringdown fit is present."""
+        return self.__dict__['_ringdown_fit'] is not None
+
+    @property
+    def has_ringdown_result(self) -> bool:
+        """Check if ringdown result is present."""
+        return self.__dict__['_ringdown_result'] is not None
+
+    @property
+    def has_ringdown_reference(self) -> bool:
+        """Check if ringdown analysis is present."""
+        return self.has_ringdown_fit or self.has_ringdown_result
+
+    @property
+    def ringdown_reference(self):
+        """Reference ringdown object."""
+        if self.has_ringdown_fit:
+            return self.__dict__['_ringdown_fit']
+        elif self.has_ringdown_result:
+            return self.__dict__['_ringdown_result']
+        return None
+    
     @property
     def config(self):
         """Configuration settings used in the analysis."""
@@ -79,6 +118,13 @@ class IMRResult(pd.DataFrame):
     def set_psds(self, psds: dict | str, ifos: list | None = None) -> None:
         """Set the PSDs used in the analysis.
 
+        The PSDs are stored as a dictionary of PowerSpectralDensity objects
+        indexed by detector name, or a dictionary of paths to ASCII files.
+
+        The PSDs are stored as PowerSpectralDensity objects, which are
+        interpolated to a uniform frequency grid and gated to avoid issues with
+        dynamic range.
+
         Arguments
         --------
         psds : dict | str
@@ -91,16 +137,22 @@ class IMRResult(pd.DataFrame):
         if ifos is None:
             ifos = self.ifos
         psds = get_dict_from_pattern(psds, ifos)
-        if 'psds' not in self.attrs:
-            self.attrs['psds'] = {}
+        if '_psds' not in self.__dict__:
+            self.__dict__['_psds'] = {}
         for i, p in psds.items():
             if isinstance(p, str):
                 if os.path.isfile(p):
                     p = np.loadtxt(p)
-                    self.attrs['psds'][i] = p
                 else:
                     raise FileNotFoundError(f"PSD file not found: {p}")
-            p = data.PowerSpectrum(p).fill_low_frequencies().gate()
+            # often, PSDs may only be recorded over a frequency range that 
+            # does not extend to zero, so we should fill in those low 
+            # frequencies by padding; BayesWave PSDs may also be not exactly
+            # uniformly sampled or even sampled over a monotonic grid, so we
+            # interpolate to a uniform grid; finally, we gate the PSD to
+            # avoid issues with dynamic range
+            p = (data.PowerSpectrum(p).fill_low_frequencies().gate()
+                 .interpolate_to_index())
             self.__dict__['_psds'][i] = p
 
     @property
@@ -342,6 +394,8 @@ class IMRResult(pd.DataFrame):
         if nsamp is None:
             df = self
         else:
+            logging.info(f"subselecting {nsamp} IMR samples for peak time "
+                         f"calculation with random seed {prng}")
             df = self.sample(nsamp, random_state=prng)
 
         if ifos is None:
@@ -468,6 +522,8 @@ class IMRResult(pd.DataFrame):
                       cache: bool = False,
                       prng: np.random.RandomState | int | None = None,
                       progress: bool = True,
+                      ringdown_settings : bool = None,
+                      ringdown_slice : bool = None,
                       **kws) -> data.StrainStack:
         """Get the peak times of the waveform for a given set of detectors.
 
@@ -502,6 +558,39 @@ class IMRResult(pd.DataFrame):
         else:
             df = self.sample(nsamp, random_state=prng)
 
+        if len(df) > 1000:
+            logging.warning('large number of IMR waveforms requested; use'
+                            '`nsamp` to subselect for speed')
+
+        # make ringdown options match by default
+        if ringdown_settings is None:
+            ringdown_settings = ringdown_slice
+            logging.info("ringdown_settings not specified setting to "
+                         f"{ringdown_slice}")
+        if ringdown_slice is None:
+            ringdown_slice = ringdown_settings
+            logging.info("ringdown_slice not specified setting to "
+                         f"{ringdown_settings}")
+
+        if ringdown_settings:
+            if not self.has_ringdown_reference:
+                raise ValueError("no ringdown analysis to reference; "
+                                 "use set_ringdown_reference to add "
+                                 "Result or Fit object")
+            if condition is None and not self.has_ringdown_fit:
+                # to condition we need the raw data, which can requires a Fit
+                logging.info("producing Fit from result, prevent this by "
+                             "setting condition or ringdown_settings to False")
+                self.set_ringdown_reference(self.ringdown_reference.get_fit())
+            rdref = self.ringdown_reference
+            ifos = ifos or rdref.ifos
+            if condition is None:
+                x = inspect.signature(data.Data.condition).parameters.keys()
+                condition = {k: v for k, v in rdref.info['condition'].items()
+                             if k in x}
+                condition['t0'] = rdref.start_times
+                time = {i: d.time.values for i, d in rdref._raw_data.items()}
+
         # get ifos
         if ifos is None:
             ifos = self.ifos
@@ -522,6 +611,7 @@ class IMRResult(pd.DataFrame):
             t0 = condition.pop('t0', {})
 
         wf_dict = {ifo: [] for ifo in ifos}
+        time_dict = {}
         tqdm = get_tqdm(progress)
         tqdm_kws = dict(total=len(df), ncols=None, desc='waveforms')
         for _, sample in tqdm(df.iterrows(), **tqdm_kws):
@@ -537,6 +627,8 @@ class IMRResult(pd.DataFrame):
                 else:
                     hi = h[ifo]
                 wf_dict[ifo].append(hi)
+                if ifo not in time_dict:
+                    time_dict[ifo] = hi.time.values
         # waveforms array will be shaped (nifo, nsamp, ntime)
         wfs = np.array([wf_dict[ifo] for ifo in ifos])
         # swap axes to get (nifo, ntime, nsamp)
@@ -547,7 +639,36 @@ class IMRResult(pd.DataFrame):
         elif self._waveforms is not None:
             logging.info("wiping waveform cache")
             self._waveforms = None
+
+        if ringdown_slice:
+            if not self.has_ringdown_reference:
+                raise ValueError("no ringdown analyses to reference; "
+                                 "use set_ringdown_fit")
+            start_times = self.ringdown_reference.start_times
+            i0_dict = {}
+            # make sure that start times are encompassed by time array
+            for i, t0_i in start_times.items():
+                if t0_i < time_dict[i][0] or t0_i > time_dict[i][-1]:
+                    raise ValueError("{} start time not in data".format(i))
+            # find sample closest to requested start time
+            for i, t in time_dict.items():
+                i0_dict[i] = np.argmin(abs(t - start_times[i]))
+            return h.slice(i0_dict, self.ringdown_reference.n_analyze)
+        
         return h
+
+    def compute_ringdown_snrs(self, optimal: bool = False,
+                              cumulative: bool = False,
+                              network: bool = False,
+                              **kws):
+        wfs = self.get_waveforms(ringdown_slice=True, **kws)
+        if optimal:
+            data = None
+        else:
+            data = self.ringdown_reference.analysis_data
+        chol = self.ringdown_reference.cholesky_factors
+        return wfs.compute_snr(chol, data=data, cumulative=cumulative,
+                               network=network, ifo_axis=0, time_axis=1)
 
     _FAVORED_APPROXIMANT = 'NRSur7dq4'
 
@@ -706,7 +827,7 @@ class IMRResult(pd.DataFrame):
         else:
             logging.warning("missing sampling frequency in config")
             ds = None
-        return {'ds': ds}
+        return {'ds': ds, 'trim': 0}
 
     def get_patched_psds(self, f_min: float | None = 0,
                          f_max: float | None = None,
@@ -805,6 +926,7 @@ class IMRResult(pd.DataFrame):
         duration : int
             Estimated duration of the analysis in seconds.
         """
+        logging.info("estimating ringdown duration")
         if acfs is None:
             acfs = self.get_acfs(**(acf_kws or {}))
 
@@ -842,7 +964,8 @@ class IMRResult(pd.DataFrame):
             dt_wf = time_dict[ifo][1] - time_dict[ifo][0]
             if acf.delta_t != dt_wf:
                 raise ValueError(f"ACF for {ifo} has different "
-                                 "time step than waveforms")
+                                 f"time step ({acf.delta_t}) than waveforms "
+                                 f"({dt_wf})")
             if dt_wf != dt:
                 raise ValueError(f"waveform time step {dt_wf} does not "
                                  f"match requested time step {dt}")
@@ -855,7 +978,8 @@ class IMRResult(pd.DataFrame):
             for ifo, acf in acfs.items():
                 cholesky[ifo] = acf.iloc[:n].cholesky
             wfs = waveforms.slice(start_indices, n)
-            snrs = wfs.compute_snr(cholesky, cumulative=True, network=True)
+            snrs = wfs.compute_snr(cholesky, cumulative=True, network=True,
+                                   ifo_axis=0, time_axis=1)
 
             # check if SNR at midpoint is within bounds
             snr_l, snr_m, snr_h = np.quantile(snrs[-1, :], qs)
@@ -978,7 +1102,7 @@ class IMRResult(pd.DataFrame):
                 r = cls.from_pesummary(path, attrs=attrs, **kws)
             except Exception as e:
                 logging.warning(f"failed to read pesummary file: {e}")
-                r = pd.read_hdf(path,**kws)
+                r = pd.read_hdf(path, **kws)
             path = os.path.abspath(path)
             r.attrs['path'] = path
             r.attrs.update(attrs)
@@ -999,7 +1123,7 @@ class IMRResult(pd.DataFrame):
 
     @classmethod
     def from_config(cls, config_input, overwrite_data=False,
-                    imr_sec='imr', **kws):
+                    imr_sec=IMR_CONFIG_SECTION, **kws):
         """Create an IMRResult from a configuration file."""
         config = utils.load_config(config_input)
 
@@ -1015,6 +1139,10 @@ class IMRResult(pd.DataFrame):
         if 'path' not in imr and not 'imr_result' in imr:
             raise ValueError("no path to IMR result provided")
         imr_path = imr.pop('path', imr.pop('imr_result', None))
+
+        # get rid of PRNG seed since it may be present but not needed
+        imr.pop('prng', None)
+        imr.pop('seed', None)
 
         # check if we should overwrite data based on 'data' section
         overwrite_data |= config.get('data', 'overwrite_data', fallback=False)

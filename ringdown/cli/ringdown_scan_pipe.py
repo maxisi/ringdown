@@ -22,6 +22,7 @@
 import sys
 import os
 import ringdown as rd
+from ringdown.config import PIPE_SECTION
 import numpy as np
 import argparse
 import configparser
@@ -63,12 +64,12 @@ config = configparser.ConfigParser()
 config.read(config_path)
 
 # set random seed (purposedly fail if not provided)
-seed = args.seed or config.getint('pipe', 'seed')
+seed = args.seed or config.getint(PIPE_SECTION, 'seed')
 logging.info("Random seed set to {}".format(seed))
 rng = np.random.default_rng(seed)
 
 # determine run directory
-outdir = args.outdir or config.get('pipe', 'outdir', fallback=None)
+outdir = args.outdir or config.get(PIPE_SECTION, 'outdir', fallback=None)
 if not outdir:
     outdir = 'ringdown_pipe_{:.0f}'.format(time.time())
     logging.warning("No run dir provided, defaulting to {}".format(outdir))
@@ -148,7 +149,7 @@ if config.has_option("pipe", "nref"):
     if config.has_option("pipe", T0_KEYS['ref']):
         raise ValueError(f"incompatible options: 'nref', {T0_KEYS['ref']}")
 
-    nref = config.getint('pipe', 'nref')
+    nref = config.getint(PIPE_SECTION, 'nref')
     logging.info(f"Selecting {nref} reference times.")
 
     # Determine boundaries of injection region: an interval determined by the
@@ -156,9 +157,9 @@ if config.has_option("pipe", "nref"):
     # the indicated trigger time (potentially of zero width, if no exclusion
     # required, i.e., `safe_zone_duration = 0`)
     safe_zone_duration = config.getfloat(
-        'pipe', 'safe-zone-duration', fallback=0)
+        PIPE_SECTION, 'safe-zone-duration', fallback=0)
     inj_zone_duration = config.getfloat(
-        'pipe', 'inj-zone-duration', fallback=np.inf)
+        PIPE_SECTION, 'inj-zone-duration', fallback=np.inf)
 
     # Create a fit object, which we will use to manipulate data and obtain
     # prior this fit will automatically take care of all data handling based
@@ -216,7 +217,7 @@ for t0ref in t0refs:
     t0_dict[t0ref] = t0s
 
 
-anchor_inj = config.getboolean('pipe', 'anchor-injection', fallback=True)
+anchor_inj = config.getboolean(PIPE_SECTION, 'anchor-injection', fallback=True)
 if anchor_inj and config.has_section('injection'):
     logging.info("Anchoring injections to reference time.")
     if config.has_option('injection', 't0'):

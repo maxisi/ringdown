@@ -418,7 +418,8 @@ class FrequencySeries(Series):
                              delta_f: float | None = None,
                              f_min: float | None = None,
                              f_max: float | None = None,
-                             log: bool = False, **kws):
+                             log: bool = False, force: bool = False,
+                             **kws):
         """Interpolate the :class:`FrequencySeries` to new index. Inherits
         from :func:`Series.interpolate_to_index`.
 
@@ -450,6 +451,11 @@ class FrequencySeries(Series):
         f_min_orig = self.freq.min()
         f_max_orig = self.freq.max()
         if freq is None:
+            n_dfs = np.unique(np.diff(self.index)).size
+            if n_dfs == 1 and f_min is None and f_max is None and not force:
+                logging.info("frequency grid already uniformly spaced: "
+                             "skipping interpolation (override with 'force')")
+                return self
             # construct frequency index with uniform spacing
             f_min = f_min_orig if f_min is None else f_min
             f_max = f_max_orig if f_max is None else f_max
@@ -570,11 +576,11 @@ class Data(TimeSeries):
 
         decimate_kws = decimate_kws or {}
 
+        ds = int(ds or 1)
         if t0 is not None:
             if t0 < raw_time[0] or t0 > raw_time[-1]:
                 raise ValueError(f"t0 must be within the time series: {t0} "
                                  f"not in [{raw_time[0]}, {raw_time[-1]}]")
-            ds = int(ds or 1)
             i = np.argmin(abs(raw_time - t0))
             raw_time = np.roll(raw_time, -(i % ds))
             raw_data = np.roll(raw_data, -(i % ds))
@@ -667,7 +673,8 @@ class PowerSpectrum(FrequencySeries):
     _meta = ['ifo', 'attrs']
 
     def __init__(self, *args, delta_f=None, ifo=None, attrs=None,
-                 fill_power_of_two=True, **kwargs):
+                 fill_power_of_two=True, enforce_uniform_spacing=True,
+                 **kwargs):
         """Initialize power spectral density.
 
         Arguments
@@ -1380,7 +1387,7 @@ class StrainStack(np.ndarray):
         ntime = np.shape(cholesky)[1]
         matching_axes = [i for i, n in enumerate(h.shape) if n == ntime]
         if len(matching_axes) == 0:
-            raise ValueError("No matching time axis found:"
+            raise ValueError("No matching time axis found: "
                              f"strain shape {h.shape}, cholesky shape "
                              f"{np.shape(cholesky)}")
         elif len(matching_axes) > 1:
@@ -1394,11 +1401,11 @@ class StrainStack(np.ndarray):
         nifo = len(cholesky)
         matching_axes = [i for i, n in enumerate(h.shape) if n == nifo]
         if len(matching_axes) == 0:
-            raise ValueError("No matching detector axis found:"
+            raise ValueError("No matching detector axis found: "
                              f"strain shape {h.shape}, cholesky shape "
                              f"{np.shape(cholesky)}")
         elif len(matching_axes) > 1:
-            raise ValueError("Multiple matching detector axes found:"
+            raise ValueError("Multiple matching detector axes found: "
                              f"strain shape {h.shape}, cholesky shape "
                              f"{np.shape(cholesky)}")
         return matching_axes[0]
