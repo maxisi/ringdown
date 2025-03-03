@@ -35,6 +35,7 @@ def compute_hpd(samples, p=0.68, out="both", sorted=False):
     else:
         raise ValueError("Invalid output type.")
 
+
 def compute_hpd_with_kde(xs, q=0.68, min=None, max=None, grid=1000):
     if min is not None or max is not None:
         kde = Bounded_1d_kde(xs, x_min=min, x_max=max)
@@ -58,15 +59,17 @@ def compute_hpd_with_kde(xs, q=0.68, min=None, max=None, grid=1000):
 
     # Identify HPD region
     hpd_mask = density >= density_threshold
-    hpd_bounds = grid[np.flatnonzero(hpd_mask)[[0, -1]]]  # Get min and max bounds
+    # Get min and max bounds
+    hpd_bounds = grid[np.flatnonzero(hpd_mask)[[0, -1]]]
 
     return hpd_bounds[0], hpd_bounds[1]
 
-def kde_hpd_multimodal_optimized(samples, p=0.95, n_grid=1000):
+
+def compute_hpd_with_kde_multimodal(samples, q=0.68, n_grid=1000):
     """
-    Compute disjoint HPD intervals using KDE for a (potentially 
+    Compute disjoint HPD intervals using KDE for a (potentially
     multimodal) distribution.
-    
+
     Parameters:
       samples : array-like
           Posterior samples.
@@ -74,7 +77,7 @@ def kde_hpd_multimodal_optimized(samples, p=0.95, n_grid=1000):
           Desired probability mass (e.g., 0.95 for a 95% HPD region).
       n_grid : int
           Number of points in the grid for density evaluation.
-    
+
     Returns:
       intervals : list of tuples
           List of intervals [(low1, high1), (low2, high2), ...] that together
@@ -85,42 +88,43 @@ def kde_hpd_multimodal_optimized(samples, p=0.95, n_grid=1000):
     x_min, x_max = samples.min(), samples.max()
     grid = np.linspace(x_min, x_max, n_grid)
     density = kde(grid)
-    
+
     # Compute grid spacing.
     dx = grid[1] - grid[0]
-    
+
     # Sort density values in descending order.
     sort_idx = np.argsort(density)[::-1]
     density_sorted = density[sort_idx]
-    
+
     # Compute cumulative probability mass over the sorted grid points.
     cumulative_prob = np.cumsum(density_sorted) * dx
     # Find the index where cumulative probability reaches p.
-    idx_threshold = np.searchsorted(cumulative_prob, p)
+    idx_threshold = np.searchsorted(cumulative_prob, q)
     if idx_threshold >= len(density_sorted):
         idx_threshold = len(density_sorted) - 1
     threshold = density_sorted[idx_threshold]
-    
+
     # Identify grid points where the density exceeds the threshold.
     mask = density >= threshold
     indices = np.nonzero(mask)[0]
     if len(indices) == 0:
         return []
-    
+
     # Group contiguous indices using a vectorized approach.
     # Compute the difference between consecutive indices.
     diff = np.diff(indices)
     # Where the difference is greater than 1, there is a break.
     split_indices = np.where(diff > 1)[0] + 1
     groups = np.split(indices, split_indices)
-    
+
     # Build the list of intervals from the groups.
     intervals = [(grid[group[0]], grid[group[-1]]) for group in groups]
-    
+
     return intervals
 
 
-def q_of_zero(xs, q_min=0.01, q_tol=0.001, kde=False, xmin=None, **kws) -> float:
+def q_of_zero_old(xs, q_min=0.01, q_tol=0.001, kde=False, xmin=None,
+                  **kws) -> float:
     """Compute the quantile of zero for a given set of nonnegative samples with
     a unimodal distribution.
 
@@ -131,7 +135,7 @@ def q_of_zero(xs, q_min=0.01, q_tol=0.001, kde=False, xmin=None, **kws) -> float
     The algorithm works through bisection by progressively halving the
     interval between q_min and 1, and checking if the HPD of the samples at
     the mid-point includes zero. If it does, the upper bound is shrunk to the
-    mid-point; otherwise, the lower bound is shrunk to the mid-point. The 
+    mid-point; otherwise, the lower bound is shrunk to the mid-point. The
     algorithm continues until the interval is smaller than a given tolerance.
 
     It is different from the CL computation because it does not max out
@@ -151,10 +155,12 @@ def q_of_zero(xs, q_min=0.01, q_tol=0.001, kde=False, xmin=None, **kws) -> float
     q: float
         The quantile of zero.
     """
+    logging.warning("This function is deprecated. Use `quantile_at_zero`.")
+
     xs = np.sort(xs)
     if xmin is None:
         xmin = xs[0]
-    
+
     if xmin < 0:
         raise ValueError("The smallest sample is less than zero.")
 
@@ -170,20 +176,20 @@ def q_of_zero(xs, q_min=0.01, q_tol=0.001, kde=False, xmin=None, **kws) -> float
 
     if hpd(xs, q_min, **kws)[0] < xmin:
         # if the lower bound of the q_min credible interval is below the
-        # smallest sample, then the peak is against an edge so set the 
+        # smallest sample, then the peak is against an edge so set the
         # quantile of the origin to zero
         return 0.0
 
     # start from the fact that the quantile of zero must be between q_min
-    # and q_max = 1, and progressively halve the interval following a 
+    # and q_max = 1, and progressively halve the interval following a
     # root-finding algorithm
     q_max = 1.0
     while q_max - q_min > q_tol:
         # find the lower edge of the HPD corresponding to the average CL
         q_mid = 0.5*(q_min + q_max)
-        l, _ = hpd(xs, q_min, **kws)
+        low, _ = hpd(xs, q_min, **kws)
 
-        if l == xmin:
+        if low == xmin:
             # this HPD hits the left edge, so we can shrink the upper bound
             q_max = q_mid
         else:
@@ -195,7 +201,30 @@ def q_of_zero(xs, q_min=0.01, q_tol=0.001, kde=False, xmin=None, **kws) -> float
     return 0.5*(q_min + q_max)
 
 
-def quantile_at_value(xs, target=0, min=None, max=None):
+def quantile_at_zero(xs, z_score=False):
+    # make regular (unbounded) KDE so that the value of the KDE bounded
+    # at zero would be KDE_bounded(x) = kde(x) + kde(-x)
+    kde = gaussian_kde(xs)
+
+    # evaluate the KDE on the samples
+    densities = kde(xs) + kde(-xs)
+
+    # get the (bounded) density of zero: kde(0) + kde(-0)
+    zero_density = 2*kde(0)
+
+    # get quantile of zero
+    n = np.sum(densities > zero_density)
+    if n == len(xs):
+        logging.warning("CL maxed out at 1/N")
+        q = 1 - 1/len(xs)
+    else:
+        q = n/len(xs)
+    if z_score:
+        return z_score(q)
+    return q
+
+
+def quantile_at_value(xs, target=0, min=None, max=None, z_score=False):
     if min is not None or max is not None:
         kde = Bounded_1d_kde(xs, x_min=min, x_max=max)
     else:
@@ -205,7 +234,10 @@ def quantile_at_value(xs, target=0, min=None, max=None):
     n = np.sum(pxs > p0)
     if n == len(xs):
         logging.warning("CL maxed out at 1/N")
-    return n/len(xs)
+    q = n/len(xs)
+    if z_score:
+        return z_score(q)
+    return q
 
 
 def z_score(credible_level, two_tailed=False):
@@ -214,44 +246,3 @@ def z_score(credible_level, two_tailed=False):
     if two_tailed:
         alpha /= 2
     return norm.ppf(1 - alpha)
-
-def get_hpd_from_grid(x, q=0.68, A_min=0):
-    xs = x.sort_values(ascending=False)
-    d = x.index[1] - x.index[0]
-    lebesgue_integral = np.cumsum(xs)*d
-    # normalize it
-    lebesgue_integral /= max(lebesgue_integral)
-    l, h = np.sort(np.abs(lebesgue_integral-q).sort_values().index.values[:2])
-    if np.abs(l-h) < 2*d:
-        # the interval has effectively zero width
-        # assume that's because we've hit an edge on the LHS and set
-        # that lower value to the minimum
-        l = A_min
-    # print(q, lebesgue_integral[l], lebesgue_integral[h])
-    return l, h
-
-
-def get_quantile_from_grid(x, q=0.5, return_q=False):
-    xs = x.sort_index(ascending=True)
-    d = x.index[1] - x.index[0]
-    cdf = np.cumsum(xs)*d
-    cdf /= max(cdf)
-    i = (np.abs(cdf - q)).idxmin()
-    if np.abs(cdf[i] - q) > 0.01:
-        print(f"WARNING: quantile error greater than 1% ({cdf[i]})")
-    if return_q:
-        return i, cdf[i]
-    else:
-        return i
-
-
-def get_sym_from_grid(x, q=0.68):
-    xs = x.sort_index(ascending=True)
-    d = x.index[1] - x.index[0]
-    # integrate from left and right until reaching half of the unenclosed prob
-    p = (1 - q)/2
-    cdf = np.cumsum(xs)*d
-    cdf /= max(cdf)
-    l = (np.abs(cdf - p)).idxmin()
-    h = (np.abs(1 - cdf - p)).idxmin()
-    return l, h
