@@ -635,7 +635,15 @@ class Data(TimeSeries):
         if remove_mean:
             cond_data -= np.mean(cond_data)
 
-        return Data(cond_data, index=cond_time, ifo=self.ifo)
+        d = Data(cond_data, index=cond_time, ifo=self.ifo)
+        
+        # check for a corner case wherein the time series can end up out of 
+        # order to rolling and _not_ trimming
+        dts = np.diff(d.time)
+        if min(dts) != max(dts):
+            logging.info("time series out of order")
+            d.sort_index(inplace=True, ascending=True)
+        return d
 
     def get_acf(self, **kws):
         """Estimate ACF from data, see :meth:`AutoCovariance.from_data`.
