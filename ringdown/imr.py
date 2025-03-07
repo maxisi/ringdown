@@ -554,7 +554,14 @@ class IMRResult(pd.DataFrame):
         """
         if cache and self._waveforms is not None:
             logging.info("using cached waveforms")
-            return self._waveforms
+            wf = self._waveforms
+            if wf.shape[-1] < nsamp:
+                logging.warning("cache does not have enough waveforms")
+            elif wf.shape[-1] > nsamp:
+                return wf[..., :nsamp]
+            else:
+                return wf
+            
 
         # subselect samples if requested
         if nsamp is None:
@@ -676,12 +683,6 @@ class IMRResult(pd.DataFrame):
         wfs = np.array([wf_dict[ifo] for ifo in ifos])
         # swap axes to get (nifo, ntime, nsamp)
         h = data.StrainStack(np.swapaxes(wfs, 1, 2))
-        if cache:
-            logging.info("caching waveforms")
-            self._waveforms = h
-        elif self._waveforms is not None:
-            logging.info("wiping waveform cache")
-            self._waveforms = None
 
         if ringdown_slice:
             if not self.has_ringdown_reference:
@@ -702,6 +703,13 @@ class IMRResult(pd.DataFrame):
                 new_time_dict[i] = t[i0_dict[i]:i0_dict[i]+n]
             h = h.slice(i0_dict, n)
             time_dict = new_time_dict
+
+        if cache:
+            logging.info("caching waveforms")
+            self._waveforms = h
+        elif self._waveforms is not None:
+            logging.info("wiping waveform cache")
+            self._waveforms = None
 
         if return_time:
             return h, time_dict
@@ -728,10 +736,9 @@ class IMRResult(pd.DataFrame):
                              "use set_ringdown_reference to add "
                              "Result or Fit object")
         rdref = self.ringdown_reference
-        ifos = rdref.ifos
         kws['ringdown_slice'] = True
         wfs = self.get_waveforms(**kws)
-        datas = np.array([rdref.analysis_data[i] for i in ifos])
+        datas = np.array(list(rdref.analysis_data.values()))
         residuals = data.StrainStack(datas[..., np.newaxis] - wfs)
         residuals_whitened = residuals.whiten(rdref.cholesky_factors,
                                               ifo_axis=0, time_axis=1)
@@ -741,7 +748,7 @@ class IMRResult(pd.DataFrame):
 
         coords = {
             'chain': np.array([0]),
-            'ifo': ifos,
+            'ifo': rdref.ifos,
             'time_index': np.arange(residuals_whitened.shape[1]),
             'draw': np.arange(residuals_whitened.shape[2])
         }
@@ -1251,7 +1258,7 @@ class IMRResult(pd.DataFrame):
                if k != 'initialize_fit'}
 
         # get path to IMR result file
-        if 'path' not in imr and not 'imr_result' in imr:
+        if 'path' not in imr and 'imr_result' not in imr:
             raise ValueError("no path to IMR result provided")
         imr_path = imr.pop('path', imr.pop('imr_result', None))
 
