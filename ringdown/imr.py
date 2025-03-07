@@ -645,7 +645,7 @@ class IMRResult(pd.DataFrame):
                         time[i] = t[:n]
                     # check delta_t consistency
                     dts = [np.diff(t) for t in time.values()]
-                    if not min(dts) == max(dts):
+                    if not np.min(dts) == np.max(dts):
                         raise ValueError("time arrays have inconsistent delta_t")
                 else:
                     return_dict = True
