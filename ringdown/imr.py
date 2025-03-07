@@ -524,6 +524,7 @@ class IMRResult(pd.DataFrame):
                       progress: bool = True,
                       ringdown_settings : bool = None,
                       ringdown_slice : bool = None,
+                      return_time: bool = False,
                       **kws) -> data.StrainStack:
         """Get the peak times of the waveform for a given set of detectors.
 
@@ -614,6 +615,42 @@ class IMRResult(pd.DataFrame):
         time_dict = {}
         tqdm = get_tqdm(progress)
         tqdm_kws = dict(total=len(df), ncols=None, desc='waveforms')
+        return_dict = False
+        if isinstance(time, dict):
+            # check all times of same length
+            t_ok = len(set([len(t) for t in time.values()])) == 1
+            if not t_ok:
+                if ringdown_slice:
+                    logging.info("ringdown slice requested with inconsistent "
+                                 "time arrays; enforcing consistency")
+
+                    # enforce time truncation
+                    tmin, tmax = -np.inf, np.inf
+                    for i, t in time.items():
+                        tmin = max(tmin, t[0])
+                        tmax = min(tmax, t[-1])
+                    for i, t in time.items():
+                        if t[0] < tmin or t[-1] > tmax:
+                            logging.warning(f"truncating time array for {i} to "
+                                            f"{tmin} to {tmax}")
+                        time[i] = t[(t >= tmin) & (t <= tmax)]
+                    
+                    # enforce equal lengths and warn if not the same already (catches
+                    # off by one errors)
+                    n = min([len(t) for t in time.values()])
+                    for i, t in time.items():
+                        if len(t) > n:
+                            logging.info(f"truncating {i} time array length "
+                                         f"from {len(t)} to {n}")
+                        time[i] = t[:n]
+                    # check delta_t consistency
+                    dts = [np.diff(t) for t in time.values()]
+                    if not min(dts) == max(dts):
+                        raise ValueError("time arrays have inconsistent delta_t")
+                else:
+                    return_dict = True
+                    logging.warning("time arrays have inconsistent lengths")
+            
         for _, sample in tqdm(df.iterrows(), **tqdm_kws):
             h = waveforms.get_detector_signals(times=time, ifos=ifos,
                                                **sample, **kws)
@@ -621,14 +658,17 @@ class IMRResult(pd.DataFrame):
                 if condition:
                     # look for target time 't0' which can be a dict with
                     # entries for each ifo or just a float for all ifos
-                    if isinstance(t0, dict):
-                        t0 = t0.get(ifo)
-                    hi = h[ifo].condition(t0=t0, **condition)
+                    t0_ifo = t0.get(ifo) if isinstance(t0, dict) else t0
+                    hi = h[ifo].condition(t0=t0_ifo, **condition)
                 else:
                     hi = h[ifo]
                 wf_dict[ifo].append(hi)
                 if ifo not in time_dict:
                     time_dict[ifo] = hi.time.values
+        if return_dict and return_time:
+            return wf_dict, time_dict
+        elif return_dict:
+            return wf_dict
         # waveforms array will be shaped (nifo, nsamp, ntime)
         wfs = np.array([wf_dict[ifo] for ifo in ifos])
         # swap axes to get (nifo, ntime, nsamp)
@@ -649,12 +689,19 @@ class IMRResult(pd.DataFrame):
             # make sure that start times are encompassed by time array
             for i, t0_i in start_times.items():
                 if t0_i < time_dict[i][0] or t0_i > time_dict[i][-1]:
-                    raise ValueError("{} start time not in data".format(i))
+                    raise ValueError(f"{i} start time {t0_i} not in data "
+                                     f"[{time_dict[i][0]}, {time_dict[i][-1]}]")
             # find sample closest to requested start time
+            n = self.ringdown_reference.n_analyze
+            new_time_dict = {}
             for i, t in time_dict.items():
                 i0_dict[i] = np.argmin(abs(t - start_times[i]))
-            return h.slice(i0_dict, self.ringdown_reference.n_analyze)
-        
+                new_time_dict[i] = t[i0_dict[i]:i0_dict[i]+n]
+            h = h.slice(i0_dict, n)
+            time_dict = new_time_dict
+
+        if return_time:
+            return h, time_dict
         return h
 
     def compute_ringdown_snrs(self, optimal: bool = False,
