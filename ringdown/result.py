@@ -15,6 +15,7 @@ from .imr import IMRResult
 from .target import Target, TargetCollection
 from . import utils
 from .utils import stats
+from .config import WHITENED_LOGLIKE_KEY
 import pandas as pd
 import json
 import configparser
@@ -22,8 +23,6 @@ from glob import glob
 from parse import parse
 import logging
 from scipy.stats import gaussian_kde
-
-_WHITENED_LOGLIKE_KEY = 'whitened_pointwise_loglike'
 
 _DATAFRAME_PARAMETERS = ['m', 'chi', 'f', 'g',
                          'a', 'phi', 'theta', 'ellip', 'df', 'dg']
@@ -536,9 +535,9 @@ class Result(az.InferenceData):
         See https://arxiv.org/abs/1507.04544 for definitions and discussion.  A
         larger WAIC indicates that the model has better predictive accuarcy on
         the fitted data set."""
-        if _WHITENED_LOGLIKE_KEY not in self.get('log_likelihood', {}):
+        if WHITENED_LOGLIKE_KEY not in self.get('log_likelihood', {}):
             self._generate_whitened_residuals()
-        return az.waic(self, var_name=_WHITENED_LOGLIKE_KEY)
+        return az.waic(self, var_name=WHITENED_LOGLIKE_KEY)
 
     @property
     def loo(self) -> az.ELPDData:
@@ -552,9 +551,9 @@ class Result(az.InferenceData):
         evaluated on hypothetical data from a replication of the observation
         averaged over the posterior) of the model; larger LOO values indicate
         higher predictive accuracy (i.e. explanatory power) for the model."""
-        if _WHITENED_LOGLIKE_KEY not in self.get('log_likelihood', {}):
+        if WHITENED_LOGLIKE_KEY not in self.get('log_likelihood', {}):
             self._generate_whitened_residuals()
-        return az.loo(self, var_name=_WHITENED_LOGLIKE_KEY)
+        return az.loo(self, var_name=WHITENED_LOGLIKE_KEY)
 
     def _generate_whitened_residuals(self) -> None:
         """Adduct the whitened residuals to the result.
@@ -582,14 +581,14 @@ class Result(az.InferenceData):
             self.posterior.whitened_residual.transpose(*keys)
         lnlike = -self.posterior.whitened_residual**2/2
         if hasattr(self, 'log_likelihood'):
-            self.log_likelihood[_WHITENED_LOGLIKE_KEY] = lnlike
+            self.log_likelihood[WHITENED_LOGLIKE_KEY] = lnlike
         else:
             # We assume that log-likelihood isn't created yet.
             self.add_groups(dict(
                 log_likelihood=dict_to_dataset(
-                    {_WHITENED_LOGLIKE_KEY: lnlike},
+                    {WHITENED_LOGLIKE_KEY: lnlike},
                     coords=self.posterior.coords,
-                    dims={_WHITENED_LOGLIKE_KEY: list(keys)}
+                    dims={WHITENED_LOGLIKE_KEY: list(keys)}
                 )))
 
     @property

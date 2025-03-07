@@ -14,7 +14,7 @@ from . indexing import ModeIndexList
 from . import utils
 from .utils import get_tqdm, get_hdf5_value, get_bilby_dict, \
     get_dict_from_pattern
-from .config import IMR_CONFIG_SECTION
+from .config import IMR_CONFIG_SECTION, WHITENED_LOGLIKE_KEY
 import lal
 import multiprocessing as mp
 from lalsimulation import nrfits
@@ -26,8 +26,6 @@ MASS_ALIASES = ['final_mass', 'mf', 'mfinal', 'm_final', 'final_mass_source',
 SPIN_ALIASES = ['final_spin', 'remnant_spin', 'chif', 'chi_f', 'chi_final',
                 'af', 'a_final']
 TIME_KEY = '_time'
-
-_WHITENED_LOGLIKE_KEY = 'whitened_pointwise_loglike'
 
 
 def get_remnant(mass_1, mass_2, spin_1x, spin_1y, spin_1z,
@@ -767,11 +765,11 @@ class IMRResult(pd.DataFrame):
 
         lnlike = -dataset_1.whitened_residual**2/2
         dims = {
-            _WHITENED_LOGLIKE_KEY: ['chain', 'draw', 'ifo', 'time_index']
+            WHITENED_LOGLIKE_KEY: ['chain', 'draw', 'ifo', 'time_index']
         }
 
         dataset_2 = az.convert_to_dataset(
-            {_WHITENED_LOGLIKE_KEY: lnlike},
+            {WHITENED_LOGLIKE_KEY: lnlike},
             coords=coords,
             dims=dims,
         )
@@ -790,7 +788,7 @@ class IMRResult(pd.DataFrame):
         averaged over the posterior) of the model; larger LOO values indicate
         higher predictive accuracy (i.e. explanatory power) for the model."""
         inference_data = self._generate_whitened_residuals(**kws)
-        return az.loo(inference_data, var_name=_WHITENED_LOGLIKE_KEY)
+        return az.loo(inference_data, var_name=WHITENED_LOGLIKE_KEY)
 
     _FAVORED_APPROXIMANT = 'NRSur7dq4'
 
