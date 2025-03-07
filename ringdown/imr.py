@@ -4,6 +4,7 @@ import h5py
 import os
 import numpy as np
 import pandas as pd
+import arviz as az
 from . import indexing
 from . import qnms
 from . import waveforms
@@ -25,6 +26,8 @@ MASS_ALIASES = ['final_mass', 'mf', 'mfinal', 'm_final', 'final_mass_source',
 SPIN_ALIASES = ['final_spin', 'remnant_spin', 'chif', 'chi_f', 'chi_final',
                 'af', 'a_final']
 TIME_KEY = '_time'
+
+_WHITENED_LOGLIKE_KEY = 'whitened_pointwise_loglike'
 
 
 def get_remnant(mass_1, mass_2, spin_1x, spin_1y, spin_1z,
@@ -717,6 +720,71 @@ class IMRResult(pd.DataFrame):
         return wfs.compute_snr(chol, data=data, cumulative=cumulative,
                                network=network, ifo_axis=0, time_axis=1)
 
+    def _generate_whitened_residuals(self, **kws) -> az.InferenceData:
+        """Adduct the whitened residuals to the result.
+        """
+        if not self.has_ringdown_reference:
+            raise ValueError("no ringdown analysis to reference; "
+                             "use set_ringdown_reference to add "
+                             "Result or Fit object")
+        rdref = self.ringdown_reference
+        ifos = rdref.ifos
+        kws['ringdown_slice'] = True
+        wfs = self.get_waveforms(**kws)
+        datas = np.array([rdref.analysis_data[i] for i in ifos])
+        residuals = data.StrainStack(datas[..., np.newaxis] - wfs)
+        residuals_whitened = residuals.whiten(rdref.cholesky_factors,
+                                              ifo_axis=0, time_axis=1)
+
+        # Add a dummy chain dimension
+        res_w_expanded = residuals_whitened[None, :, :, :]
+
+        coords = {
+            'chain': np.array([0]),
+            'ifo': ifos,
+            'time_index': np.arange(residuals_whitened.shape[1]),
+            'draw': np.arange(residuals_whitened.shape[2])
+        }
+
+        dims = {
+            'whitened_residual': ['chain', 'ifo', 'time_index', 'draw']
+        }
+        dataset_1 = az.convert_to_dataset(
+            {'whitened_residual': res_w_expanded},
+            coords=coords,
+            dims=dims
+        )
+        keys = ('chain', 'draw', 'ifo', 'time_index')
+        dataset_1['whitened_residual'] = \
+            dataset_1.whitened_residual.transpose(*keys)
+
+        lnlike = -dataset_1.whitened_residual**2/2
+        dims = {
+            _WHITENED_LOGLIKE_KEY: ['chain', 'draw', 'ifo', 'time_index']
+        }
+
+        dataset_2 = az.convert_to_dataset(
+            {_WHITENED_LOGLIKE_KEY: lnlike},
+            coords=coords,
+            dims=dims,
+        )
+
+        return az.InferenceData(posterior=dataset_1, log_likelihood=dataset_2)
+
+    def compute_ringdown_loo(self, **kws) -> az.ELPDData:
+        """Returns a leave-one-out estimate of the predictive accuracy of the
+        model.
+
+        See https://arxiv.org/abs/1507.04544 for definitions and discussion,
+        including discussion of the 'Pareto stabilization' algorithm for
+        reducing the variance of the leave-one-out estimate.  The LOO is an
+        estimate of the expected log predictive density (log of the likelihood
+        evaluated on hypothetical data from a replication of the observation
+        averaged over the posterior) of the model; larger LOO values indicate
+        higher predictive accuracy (i.e. explanatory power) for the model."""
+        inference_data = self._generate_whitened_residuals(**kws)
+        return az.loo(inference_data, var_name=_WHITENED_LOGLIKE_KEY)
+
     _FAVORED_APPROXIMANT = 'NRSur7dq4'
 
     @classmethod
@@ -759,7 +827,7 @@ class IMRResult(pd.DataFrame):
                     if cls._FAVORED_APPROXIMANT in g:
                         group = g
                         break
-                logging.warning(f"no group provided; using {group}")
+                logging.info(f"no group provided; using {group}")
             config = pe.config.get(group, {}).get('config', {})
             p = {i: data.PowerSpectrum(p).fill_low_frequencies().gate()
                  for i, p in pe.psd.get(group, {}).items()}
@@ -774,7 +842,7 @@ class IMRResult(pd.DataFrame):
                         if cls._FAVORED_APPROXIMANT in g:
                             group = g
                             break
-                    logging.warning(f"no group provided; using {group}")
+                    logging.info(f"no group provided; using {group}")
                 if group not in f:
                     raise ValueError(f"group {group} not found")
                 c = {k.replace('_', '-'): get_hdf5_value(v[()]) for k, v in
