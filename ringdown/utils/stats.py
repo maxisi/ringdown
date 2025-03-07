@@ -155,7 +155,7 @@ def q_of_zero_old(xs, q_min=0.01, q_tol=0.001, kde=False, xmin=None,
     q: float
         The quantile of zero.
     """
-    logging.warning("This function is deprecated. Use `quantile_at_zero`.")
+    logging.warning("This function is deprecated. Use `quantile_at_value`.")
 
     xs = np.sort(xs)
     if xmin is None:
@@ -201,40 +201,29 @@ def q_of_zero_old(xs, q_min=0.01, q_tol=0.001, kde=False, xmin=None,
     return 0.5*(q_min + q_max)
 
 
-def quantile_at_zero(xs, z_score=False):
-    # make regular (unbounded) KDE so that the value of the KDE bounded
-    # at zero would be KDE_bounded(x) = kde(x) + kde(-x)
-    kde = gaussian_kde(xs)
-
-    # evaluate the KDE on the samples
-    densities = kde(xs) + kde(-xs)
-
-    # get the (bounded) density of zero: kde(0) + kde(-0)
-    zero_density = 2*kde(0)
-
-    # get quantile of zero
-    n = np.sum(densities > zero_density)
-    if n == len(xs):
-        logging.warning("CL maxed out at 1/N")
-        q = 1 - 1/len(xs)
-    else:
-        q = n/len(xs)
-    if z_score:
-        return z_score(q)
-    return q
-
-
-def quantile_at_value(xs, target=0, min=None, max=None, z_score=False):
+def quantile_at_value(xs, target=0, min=None, max=None, z_score=False,
+                      interpolate=False, silent=False):
     if min is not None or max is not None:
         kde = Bounded_1d_kde(xs, x_min=min, x_max=max)
     else:
         kde = gaussian_kde(xs)
     p0 = kde(target)
     pxs = kde(xs)
-    n = np.sum(pxs > p0)
-    if n == len(xs):
+
+    if interpolate:
+        # sort densities
+        sorted_pxs = np.sort(pxs)
+        # form backwards grid to agree with q definition above
+        qs = np.linspace(1, 0, len(sorted_pxs))
+        # Interpolate handling beyond bounds
+        q = np.interp(p0, sorted_pxs, qs, left=1, right=0)[0]
+    else:
+        n = np.sum(pxs > p0)
+        q = n/len(xs)
+
+    if q == 1 and not silent:
         logging.warning("CL maxed out at 1/N")
-    q = n/len(xs)
+
     if z_score:
         return z_score(q)
     return q

@@ -1112,7 +1112,7 @@ class Result(az.InferenceData):
         qs = {}
         for a in amps:
             label = indexing.get_mode_label(a.mode.values)
-            q = stats.q_of_zero(a)
+            q = stats.quantile_at_value(a)
             if kind == 'quantile':
                 qs[label] = q
             elif kind == 'zscore':
