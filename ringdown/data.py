@@ -1597,3 +1597,55 @@ class StrainStack(np.ndarray):
         for i0, ifo_wfs in zip(start_indices, h):
             new_h.append(ifo_wfs[i0:i0+n, ...])
         return StrainStack(np.moveaxis(new_h, 0, ifo_axis))
+
+    def generate_whitened_residuals(self, cholesky: list | np.ndarray | dict,
+                                    data: list | np.ndarray | dict,
+                                    ifo_axis: int = 0, time_axis: int = 1):
+        """Generate whitened residuals between data and strain.
+
+        Arguments
+        ---------
+        cholesky : list, array, or dict
+            Cholesky factor or list of Cholesky factors; if a dict
+            the values are serialized assuming entries correspond to
+            detectors.
+        data : list, array, or dict
+            data array or list of data arrays; if a dict the values are
+            serialized assuming entries correspond to detectors.
+        ifo_axis : int, optional
+            axis indexing detectors in the strain array, default is
+            0.
+        time_axis : int, optional
+            axis indexing time in the strain array, default is 1.
+
+        Returns
+        -------
+        residuals : array
+            whitened residuals.
+        """
+        # check shape of cholesky factors (nifo, ntime, ntime)
+        if isinstance(cholesky, dict):
+            cholesky = list(cholesky.values())
+        cholesky = np.atleast_3d(cholesky)
+
+        # check shape of strain array (nifo, ntime, ...)
+        h = np.atleast_2d(self)
+
+        # check shape of data array (nifo, ntime, ...)
+        if isinstance(data, dict):
+            data = np.array(list(data.values()))
+        data = np.atleast_2d(data)
+        if np.ndim(data) > 2:
+            raise ValueError("Data array must have shape (nifo, ntime)")
+
+        # identify detector and time axes
+        if ifo_axis is None:
+            ifo_axis = self._get_ifo_axis(h, cholesky)
+        if time_axis is None:
+            time_axis = self._get_time_axis(h, cholesky)
+
+        # compute residuals
+        r = StrainStack(data[..., np.newaxis] - h)
+
+        # whiten residuals
+        return r.whiten(cholesky, ifo_axis=ifo_axis, time_axis=time_axis)
