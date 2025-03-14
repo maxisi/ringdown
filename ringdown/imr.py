@@ -775,7 +775,7 @@ class IMRResult(pd.DataFrame):
                                               ifo_axis=0, time_axis=1)
 
         # Add a dummy chain dimension
-        res_w_expanded = residuals_whitened[None, :, :, :]
+        res_w_expanded = residuals_whitened.transpose(2,0,1)[None, ...]
 
         coords = {
             'chain': np.array([0]),
@@ -785,29 +785,25 @@ class IMRResult(pd.DataFrame):
         }
 
         dims = {
-            'whitened_residual': ['chain', 'ifo', 'time_index', 'draw']
-        }
-        dataset_1 = az.convert_to_dataset(
-            {'whitened_residual': res_w_expanded},
-            coords=coords,
-            dims=dims
-        )
-        keys = ('chain', 'draw', 'ifo', 'time_index')
-        dataset_1['whitened_residual'] = \
-            dataset_1.whitened_residual.transpose(*keys)
-
-        lnlike = -dataset_1.whitened_residual**2/2
-        dims = {
+            'whitened_residual': ['chain', 'draw', 'ifo', 'time_index'],
             WHITENED_LOGLIKE_KEY: ['chain', 'draw', 'ifo', 'time_index']
         }
+        # dataset_1 = az.convert_to_dataset(
+        #     {'whitened_residual': res_w_expanded},
+        #     coords=coords,
+        #     dims=dims
+        # )
 
-        dataset_2 = az.convert_to_dataset(
-            {WHITENED_LOGLIKE_KEY: lnlike},
-            coords=coords,
-            dims=dims,
-        )
+        lnlike = -res_w_expanded**2/2
 
-        return az.InferenceData(posterior=dataset_1, log_likelihood=dataset_2)
+        # dataset_2 = az.convert_to_dataset(
+        #     {WHITENED_LOGLIKE_KEY: lnlike},
+        #     coords=coords,
+        #     dims=dims,
+        # )
+        return {'whitened_residual': res_w_expanded}, {WHITENED_LOGLIKE_KEY: lnlike}, dims, coords
+
+        # return az.InferenceData(posterior=dataset_1, log_likelihood=dataset_2)
 
     def compute_ringdown_loo(self, **kws) -> az.ELPDData:
         """Returns a leave-one-out estimate of the predictive accuracy of the
@@ -820,7 +816,7 @@ class IMRResult(pd.DataFrame):
         evaluated on hypothetical data from a replication of the observation
         averaged over the posterior) of the model; larger LOO values indicate
         higher predictive accuracy (i.e. explanatory power) for the model."""
-        inference_data = self._generate_whitened_residuals(**kws)
+        inference_data = self.to_inference_data(include_whitened_residuals=True, **kws)
         return az.loo(inference_data, var_name=WHITENED_LOGLIKE_KEY)
 
     def copy(self, *args, **kwargs):
@@ -952,11 +948,17 @@ class IMRResult(pd.DataFrame):
             coords['ifo'] = ifos
 
         if include_whitened_residuals:
-            raise NotImplementedError("whitened residuals not yet implemented")
+            res, ll, d, c = df._generate_whitened_residuals(nsamp=nsamp,
+                                                            prng=prng,
+                                                            **wf_kws)
+            posterior.update(res)
+            coords.update(c)
+            dims.update(d)
 
         idata = az.from_dict(posterior=posterior,
                              constant_data=constant_data,
-                             coords=coords, dims=dims)
+                             coords=coords, dims=dims,
+                             log_likelihood=ll)
 
         return idata
 
