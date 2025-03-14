@@ -234,7 +234,18 @@ class IMRResult(pd.DataFrame):
         """Get the reference remnant mass scale."""
         return np.median(self.remnant_mass_scale)
 
-    def get_kerr_frequencies(self, modes, **kws):
+    @property
+    def ringdown_modes(self):
+        """List of ringdown modes used in associated ringdown fit."""
+        if not self.has_ringdown_reference:
+            raise ValueError("no ringdown analysis to reference; "
+                             "use set_ringdown_reference to add "
+                             "Result or Fit object")
+        return self.ringdown_reference.modes
+
+    def get_kerr_frequencies(self,
+                             modes: list | indexing.ModeIndexList | None = None,
+                             **kws):
         """Get the Kerr QNM frequencies corresponding to the remnant mass and
         spin for a list of modes.
 
@@ -243,6 +254,8 @@ class IMRResult(pd.DataFrame):
         modes : list of str | list of indexing.ModeIndex
             any argument accepted by :class:`indexing.ModeIndexList`.
         """
+        if modes is None:
+            modes = self.ringdown_modes
         modes = indexing.ModeIndexList(modes)
         m = self.final_mass
         c = self.final_spin
@@ -262,15 +275,36 @@ class IMRResult(pd.DataFrame):
             g_keys.append(g_key)
         return self[f_keys + g_keys]
 
-    def get_mode_parameter_dataframe(self, modes, **kws):
+    def get_mode_parameter_dataframe(self,
+                                     modes: list | indexing.ModeIndexList | None = None,
+                                     bytestring_labels: bool = False,
+                                     **kws) -> pd.DataFrame:
+        """Get a DataFrame with the Kerr QNM frequencies and damping rates for
+        a list of modes.
+
+        If modes not specified, attempts to get modes from ringdown reference.
+
+        Arguments
+        ---------
+        modes : list of str | list of indexing.ModeIndex | None
+            any argument accepted by :class:`indexing.ModeIndexList`.
+        **kws : dict
+            Additional keyword arguments to pass to the Kerr
+            QNM frequency calculation.
+        """
+        if modes is None:
+            modes = self.ringdown_modes
         # get frequencies and damping rates
         fg = self.get_kerr_frequencies(modes, **kws)
         modes = indexing.ModeIndexList(modes)
         df = pd.DataFrame()
         for index in modes:
             label = index.get_label()
-            df_loc = pd.DataFrame({'f': fg[f'f_{label}'],
-                                   'g': fg[f'g_{label}']})
+            f_key = self._f_key.format(mode=label)
+            g_key = self._g_key.format(mode=label)
+            df_loc = pd.DataFrame({'f': fg[f_key], 'g': fg[g_key]})
+            if bytestring_labels:
+                label = index.get_coordinate()
             df_loc['mode'] = label
             df = pd.concat([df, df_loc], ignore_index=True)
         return df
@@ -559,7 +593,6 @@ class IMRResult(pd.DataFrame):
                 return wf[..., :nsamp]
             else:
                 return wf
-            
 
         # subselect samples if requested
         if nsamp is None:
@@ -789,6 +822,143 @@ class IMRResult(pd.DataFrame):
         higher predictive accuracy (i.e. explanatory power) for the model."""
         inference_data = self._generate_whitened_residuals(**kws)
         return az.loo(inference_data, var_name=WHITENED_LOGLIKE_KEY)
+
+    def copy(self, *args, **kwargs):
+        """Return a copy of the IMRResult."""
+        df = super().copy(*args, **kwargs)
+        if self.has_ringdown_reference:
+            df.set_ringdown_reference(self.ringdown_reference)
+        return df
+
+    def to_inference_data(self,
+                          nsamp: int | None = None,
+                          parameters: list[str] = ('final_mass', 'final_spin'),
+                          include_qnm_parameters: bool = False,
+                          include_waveforms: bool = False,
+                          include_ringdown_waveforms: bool = False,
+                          include_whitened_residuals: bool = False,
+                          modes: list[str] | None = None,
+                          prng: np.random.RandomState | int | None = None,
+                          wf_kws: dict = {}) -> az.InferenceData:
+        """Produce ArviZ InferenceData object from the IMRResult.
+
+        Arguments
+        ----------
+        nsamp : int | None
+            Number of samples to use for the InferenceData; if None, uses all
+            samples in the DataFrame.
+        parameters : list of str
+            List of parameters to include in the InferenceData, defaults to
+            []'final_mass', 'final spin'].
+        include_qnm_parameters : bool
+            If True, includes the QNM frequencies and damping rates in the
+            InferenceData (attempts to compute if not present).
+        include_waveforms : bool
+            If True, includes the IMR waveforms in the InferenceData, stored
+            in the posterior under the label 'h_imr'.
+        include_ringdown_waveforms : bool
+            If True, includes the ringdown waveforms in the InferenceData,
+            stored in the posterior under the label 'h'.
+        modes : list of str | None
+            List of ringdown modes to include in the InferenceData; if None,
+            uses the modes from the ringdown reference (if it exists).
+        prng : np.random.RandomState | int | None
+            Random number generator to use for sampling; if None, uses the
+            default random number generator.
+        wf_kws : dict
+            Additional keyword arguments to pass to the waveform generation.
+
+        Returns
+        -------
+        idata : az.InferenceData
+            ArviZ InferenceData object containing the posterior samples.
+        """
+        if nsamp is not None:
+            logging.info(f'subselecting {nsamp} samples for InferenceData')
+            df = self.sample(nsamp, random_state=prng)
+        else:
+            df = self.copy()
+
+        if self.has_ringdown_reference:
+            df.set_ringdown_reference(self.ringdown_reference)
+
+        # get scalar parameters
+        posterior = {}
+        for p in parameters:
+            if p in MASS_ALIASES:
+                posterior['final_mass'] = df.final_mass
+            elif p in SPIN_ALIASES:
+                posterior['final_spin'] = df.final_spin
+            else:
+                posterior[p] = df[p]
+
+        coords = {'chain': np.array([0]), 'draw': np.arange(len(df))}
+        dims = {p: ['chain', 'draw'] for p in posterior.keys()}
+
+        # get QNM array parameters
+        if include_qnm_parameters:
+            mode_df = df.get_mode_parameter_dataframe(
+                modes,bytestring_labels=True)
+            mode_idxs = []
+            f_data = []
+            g_data = []
+            for k, v in mode_df.groupby('mode'):
+                mode_idxs.append(k)
+                f_data.append(v['f'].values)
+                g_data.append(v['g'].values)
+            posterior['f'] = np.array(f_data).T
+            posterior['g'] = np.array(g_data).T
+            dims['f'] = ['chain', 'draw', 'mode']
+            dims['g'] = ['chain', 'draw', 'mode']
+            coords['mode'] = np.array(mode_idxs)
+
+        # add dummy chain dimensions to posterior samples
+        for k, v in posterior.items():
+            posterior[k] = np.array(v)[None, ...]
+
+        constant_data = {}
+
+        # get IMR waveforms
+        ifos = self.ifos
+        if include_waveforms:
+            # add strain to posterior, original wf shape [ifo, time, draw]
+            wfs, tdict = df.get_waveforms(nsamp=None, ringdown_slice=False, 
+                                          return_time=True, ifos=ifos,
+                                          **wf_kws)
+            # transpose array so that it is in order (draw, ifo, time)
+            posterior['h_imr'] = wfs.transpose(2, 0, 1)[None, ...]
+            dims['h_imr'] = ['chain', 'draw', 'ifo', 'time_imr_index']
+            coords['time_imr_index'] = np.arange(wfs.shape[1])
+            # record time array in constant data
+            constant_data['time_imr'] = [tdict[ifo] for ifo in ifos]
+            dims['time_imr'] = ['ifo', 'time_imr_index']
+            # record ifos
+            coords['ifo'] = ifos
+
+        # get ringdown waveforms
+        if include_ringdown_waveforms:
+            # add strain to posterior
+            wf_kws['cache'] = wf_kws.get('cache', True)
+            wfs, tdict = df.get_waveforms(nsamp=None, ringdown_slice=True,
+                                          return_time=True, ifos=ifos,
+                                          **wf_kws)
+            posterior['h'] = wfs.transpose(2, 0, 1)[None, ...]
+            dims['h'] = ['chain',  'draw', 'ifo', 'time_index']
+            coords['time_index'] = np.arange(wfs.shape[1])
+            # record time array in constant data
+            constant_data['time'] = [tdict[ifo] for ifo in ifos]
+            dims['time'] = ['ifo', 'time_index']
+            # record ifos
+            coords['ifo'] = ifos
+
+        if include_whitened_residuals:
+            raise NotImplementedError("whitened residuals not yet implemented")
+
+        idata = az.from_dict(posterior=posterior,
+                             constant_data=constant_data,
+                             coords=coords, dims=dims)
+
+        return idata
 
     _FAVORED_APPROXIMANT = 'NRSur7dq4'
 
