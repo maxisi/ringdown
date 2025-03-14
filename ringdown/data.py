@@ -1600,7 +1600,8 @@ class StrainStack(np.ndarray):
 
     def generate_whitened_residuals(self, cholesky: list | np.ndarray | dict,
                                     data: list | np.ndarray | dict,
-                                    ifo_axis: int = 0, time_axis: int = 1):
+                                    ifo_axis: int = None,
+                                    time_axis: int = None) :
         """Generate whitened residuals between data and strain.
 
         Arguments
@@ -1623,14 +1624,6 @@ class StrainStack(np.ndarray):
         residuals : array
             whitened residuals.
         """
-        # check shape of cholesky factors (nifo, ntime, ntime)
-        if isinstance(cholesky, dict):
-            cholesky = list(cholesky.values())
-        cholesky = np.atleast_3d(cholesky)
-
-        # check shape of strain array (nifo, ntime, ...)
-        h = np.atleast_2d(self)
-
         # check shape of data array (nifo, ntime, ...)
         if isinstance(data, dict):
             data = np.array(list(data.values()))
@@ -1638,14 +1631,8 @@ class StrainStack(np.ndarray):
         if np.ndim(data) > 2:
             raise ValueError("Data array must have shape (nifo, ntime)")
 
-        # identify detector and time axes
-        if ifo_axis is None:
-            ifo_axis = self._get_ifo_axis(h, cholesky)
-        if time_axis is None:
-            time_axis = self._get_time_axis(h, cholesky)
-
         # compute residuals
-        r = StrainStack(data[..., np.newaxis] - h)
+        r = StrainStack(data[..., np.newaxis] - self)
 
         # whiten residuals
         return r.whiten(cholesky, ifo_axis=ifo_axis, time_axis=time_axis)
