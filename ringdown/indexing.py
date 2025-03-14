@@ -223,6 +223,8 @@ class HarmonicIndex(ModeIndex):
             s = f'{self.s}{s}'
         if label_prograde:
             s = f'{self.p}{s}'
+        elif not self.is_prograde:
+            s = f'-{s}'
         return s
 
     def get_kerr_mode(self, **kws):
