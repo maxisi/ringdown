@@ -795,7 +795,9 @@ class IMRResult(pd.DataFrame):
         residuals_whitened = residuals.whiten(rdref.cholesky_factors,
                                               ifo_axis=0, time_axis=1)
 
-        # Add a dummy chain dimension
+        # residuals are shaped (nifo, ntime, nsamp) so transpose to
+        # (nsamp, nifo, ntime) and add dummy chain dimension so that
+        # we end up with (1, nsamp, nifo, ntime) for Arviz
         res_w_expanded = residuals_whitened.transpose(2, 0, 1)[None, ...]
 
         coords = {
@@ -965,13 +967,18 @@ class IMRResult(pd.DataFrame):
             posterior.update(res)
             coords.update(c)
             dims.update(d)
+            # also include observed data (which must exist if the above
+            # didn't fail)
+            data = list(self.ringdown_reference.analysis_data.values())
+            data = np.array(data).tranpose(2, 0, 1)[None, ...]
+            obs_data_dict = {'strain': data}
+            dims['strain'] = ['chain', 'draw', 'ifo', 'time_index']
+        else:
+            obs_data_dict = {}
 
-        idata = az.from_dict(posterior=posterior,
-                             constant_data=constant_data,
-                             coords=coords, dims=dims,
-                             log_likelihood=ll)
-
-        return idata
+        return az.from_dict(posterior=posterior, constant_data=constant_data,
+                            coords=coords, dims=dims, log_likelihood=ll,
+                            observed_data=obs_data_dict)
 
     _FAVORED_APPROXIMANT = 'NRSur7dq4'
 
