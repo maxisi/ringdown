@@ -65,7 +65,7 @@ class IMRResult(pd.DataFrame):
             self.__dict__['_ringdown_result'] = reference
         else:
             raise ValueError("invalid ringdown reference object")
-        
+
     @property
     def has_ringdown_fit(self) -> bool:
         """Check if ringdown fit is present."""
@@ -89,7 +89,7 @@ class IMRResult(pd.DataFrame):
         elif self.has_ringdown_result:
             return self.__dict__['_ringdown_result']
         return None
-    
+
     @property
     def config(self):
         """Configuration settings used in the analysis."""
@@ -146,8 +146,8 @@ class IMRResult(pd.DataFrame):
                     p = np.loadtxt(p)
                 else:
                     raise FileNotFoundError(f"PSD file not found: {p}")
-            # often, PSDs may only be recorded over a frequency range that 
-            # does not extend to zero, so we should fill in those low 
+            # often, PSDs may only be recorded over a frequency range that
+            # does not extend to zero, so we should fill in those low
             # frequencies by padding; BayesWave PSDs may also be not exactly
             # uniformly sampled or even sampled over a monotonic grid, so we
             # interpolate to a uniform grid; finally, we gate the PSD to
@@ -244,7 +244,8 @@ class IMRResult(pd.DataFrame):
         return self.ringdown_reference.modes
 
     def get_kerr_frequencies(self,
-                             modes: list | indexing.ModeIndexList | None = None,
+                             modes: list | indexing.ModeIndexList |
+                             None = None,
                              **kws):
         """Get the Kerr QNM frequencies corresponding to the remnant mass and
         spin for a list of modes.
@@ -276,7 +277,8 @@ class IMRResult(pd.DataFrame):
         return self[f_keys + g_keys]
 
     def get_mode_parameter_dataframe(self,
-                                     modes: list | indexing.ModeIndexList | None = None,
+                                     modes: list | indexing.ModeIndexList |
+                                     None = None,
                                      bytestring_labels: bool = False,
                                      **kws) -> pd.DataFrame:
         """Get a DataFrame with the Kerr QNM frequencies and damping rates for
@@ -557,8 +559,8 @@ class IMRResult(pd.DataFrame):
                       cache: bool = False,
                       prng: np.random.RandomState | int | None = None,
                       progress: bool = True,
-                      ringdown_settings : bool = None,
-                      ringdown_slice : bool = None,
+                      ringdown_settings: bool = None,
+                      ringdown_slice: bool = None,
                       return_time: bool = False,
                       **kws) -> data.StrainStack:
         """Get the peak times of the waveform for a given set of detectors.
@@ -672,12 +674,12 @@ class IMRResult(pd.DataFrame):
                         tmax = min(tmax, t[-1])
                     for i, t in time.items():
                         if t[0] < tmin or t[-1] > tmax:
-                            logging.warning(f"truncating time array for {i} to "
-                                            f"{tmin} to {tmax}")
+                            logging.warning(f"truncating time array for {i} to"
+                                            f" {tmin} to {tmax}")
                         time[i] = t[(t >= tmin) & (t <= tmax)]
-                    
-                    # enforce equal lengths and warn if not the same already (catches
-                    # off by one errors)
+
+                    # enforce equal lengths and warn if not the same already
+                    # (catches off by one errors)
                     n = min([len(t) for t in time.values()])
                     for i, t in time.items():
                         if len(t) > n:
@@ -687,11 +689,12 @@ class IMRResult(pd.DataFrame):
                     # check delta_t consistency
                     dts = [np.diff(t) for t in time.values()]
                     if not np.min(dts) == np.max(dts):
-                        raise ValueError("time arrays have inconsistent delta_t")
+                        raise ValueError(
+                            "time arrays have inconsistent delta_t")
                 else:
                     return_dict = True
                     logging.warning("time arrays have inconsistent lengths")
-            
+
         for _, sample in tqdm(df.iterrows(), **tqdm_kws):
             h = waveforms.get_detector_signals(times=time, ifos=ifos,
                                                **sample, **kws)
@@ -725,7 +728,8 @@ class IMRResult(pd.DataFrame):
             for i, t0_i in start_times.items():
                 if t0_i < time_dict[i][0] or t0_i > time_dict[i][-1]:
                     raise ValueError(f"{i} start time {t0_i} not in data "
-                                     f"[{time_dict[i][0]}, {time_dict[i][-1]}]")
+                                     f"[{time_dict[i][0]}, "
+                                     f"{time_dict[i][-1]}]")
             # find sample closest to requested start time
             n = self.ringdown_reference.n_analyze
             new_time_dict = {}
@@ -760,7 +764,24 @@ class IMRResult(pd.DataFrame):
                                network=network, ifo_axis=0, time_axis=1)
 
     def _generate_whitened_residuals(self, **kws) -> az.InferenceData:
-        """Adduct the whitened residuals to the result.
+        """Generate ringdown whitened residuals and log likelihoods from
+        IMR waveforms and ringdown data slice.
+
+        Arguments
+        ---------
+        kws : dict
+            Additional keyword arguments to pass to the waveform generation.
+
+        Returns
+        -------
+        res_dict : dict
+            Dictionary with whitened residuals.
+        lnlike_dict : dict
+            Dictionary with log likelihoods.
+        dims : dict
+            Dictionary with dimensions.
+        coords : dict
+            Dictionary with coordinates.
         """
         if not self.has_ringdown_reference:
             raise ValueError("no ringdown analysis to reference; "
@@ -775,7 +796,7 @@ class IMRResult(pd.DataFrame):
                                               ifo_axis=0, time_axis=1)
 
         # Add a dummy chain dimension
-        res_w_expanded = residuals_whitened.transpose(2,0,1)[None, ...]
+        res_w_expanded = residuals_whitened.transpose(2, 0, 1)[None, ...]
 
         coords = {
             'chain': np.array([0]),
@@ -788,22 +809,11 @@ class IMRResult(pd.DataFrame):
             'whitened_residual': ['chain', 'draw', 'ifo', 'time_index'],
             WHITENED_LOGLIKE_KEY: ['chain', 'draw', 'ifo', 'time_index']
         }
-        # dataset_1 = az.convert_to_dataset(
-        #     {'whitened_residual': res_w_expanded},
-        #     coords=coords,
-        #     dims=dims
-        # )
 
-        lnlike = -res_w_expanded**2/2
+        res_dict = {'whitened_residual': res_w_expanded}
+        lnlike_dict = {WHITENED_LOGLIKE_KEY: -res_w_expanded**2/2}
 
-        # dataset_2 = az.convert_to_dataset(
-        #     {WHITENED_LOGLIKE_KEY: lnlike},
-        #     coords=coords,
-        #     dims=dims,
-        # )
-        return {'whitened_residual': res_w_expanded}, {WHITENED_LOGLIKE_KEY: lnlike}, dims, coords
-
-        # return az.InferenceData(posterior=dataset_1, log_likelihood=dataset_2)
+        return res_dict, lnlike_dict, dims, coords
 
     def compute_ringdown_loo(self, **kws) -> az.ELPDData:
         """Returns a leave-one-out estimate of the predictive accuracy of the
@@ -816,7 +826,8 @@ class IMRResult(pd.DataFrame):
         evaluated on hypothetical data from a replication of the observation
         averaged over the posterior) of the model; larger LOO values indicate
         higher predictive accuracy (i.e. explanatory power) for the model."""
-        inference_data = self.to_inference_data(include_whitened_residuals=True, **kws)
+        inference_data = self.to_inference_data(
+            include_whitened_residuals=True, **kws)
         return az.loo(inference_data, var_name=WHITENED_LOGLIKE_KEY)
 
     def copy(self, *args, **kwargs):
@@ -894,7 +905,7 @@ class IMRResult(pd.DataFrame):
         # get QNM array parameters
         if include_qnm_parameters:
             mode_df = df.get_mode_parameter_dataframe(
-                modes,bytestring_labels=True)
+                modes, bytestring_labels=True)
             mode_idxs = []
             f_data = []
             g_data = []
@@ -918,7 +929,7 @@ class IMRResult(pd.DataFrame):
         ifos = self.ifos
         if include_waveforms:
             # add strain to posterior, original wf shape [ifo, time, draw]
-            wfs, tdict = df.get_waveforms(nsamp=None, ringdown_slice=False, 
+            wfs, tdict = df.get_waveforms(nsamp=None, ringdown_slice=False,
                                           return_time=True, ifos=ifos,
                                           **wf_kws)
             # transpose array so that it is in order (draw, ifo, time)
@@ -1058,7 +1069,7 @@ class IMRResult(pd.DataFrame):
             options['ifos'] = self.ifos
 
         if 'path' not in options and 'channel' not in options \
-            and self._data_dict:
+                and self._data_dict:
             # look for data locally based on config
             path = {}
             for ifo in options['ifos']:
@@ -1387,8 +1398,8 @@ class IMRResult(pd.DataFrame):
         info.update(info.pop('attrs', {}))
         info.update(info.pop('kws', {}))
         info['path'] = str(path)
-        attrs = {'construct' : info}
-        
+        attrs = {'construct': info}
+
         if isinstance(path, str):
             try:
                 r = cls.from_pesummary(path, attrs=attrs, **kws)
@@ -1439,7 +1450,7 @@ class IMRResult(pd.DataFrame):
         # check if we should overwrite data based on 'data' section
         overwrite_data |= config.get('data', 'overwrite_data', fallback=False)
         overwrite_data &= config.has_section('data')
-        
+
         if overwrite_data:
             logging.info("loading data from disk (ignoring IMR data)")
             data_kws = {k: utils.try_parse(v)
@@ -1448,6 +1459,6 @@ class IMRResult(pd.DataFrame):
                 data_kws['ifos'] = utils.get_ifo_list(config, 'data')
         else:
             data_kws = {}
-        
+
         logging.info("loading IMR result")
         return cls.construct(imr_path, **data_kws, **imr, **kws)

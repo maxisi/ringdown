@@ -17,7 +17,7 @@ import jaxlib.xla_extension
 import xarray as xr
 import lal
 import logging
-from .data import Data, AutoCovariance, PowerSpectrum, StrainStack
+from .data import Data, AutoCovariance, PowerSpectrum
 from . import utils
 from .target import Target, TargetCollection
 from .result import Result, ResultCollection
@@ -210,7 +210,8 @@ class Fit(object):
 
     @property
     def has_acfs(self) -> bool:
-        """Whether ACFs have been computed or loaded with :meth:`Fit.load_acfs`.
+        """Whether ACFs have been computed or loaded with
+        :meth:`Fit.load_acfs`.
         """
         return bool(self.acfs)
 
@@ -492,7 +493,8 @@ class Fit(object):
                                  "path to IMR result found in config")
             if 'seed' in imr:
                 if 'prng' in imr:
-                    raise ValueError("two PRNG seed options provided in config")
+                    raise ValueError(
+                        "two PRNG seed options provided in config")
                 imr['prng'] = imr.pop('seed')
             elif 'prng' not in imr:
                 raise ValueError("IMR fit initialization requested but no "
@@ -516,7 +518,7 @@ class Fit(object):
 
         # load reference imr result if requested
         if config.has_section(IMR_CONFIG_SECTION) and not fit.has_imr_result:
-            imr = {k: utils.try_parse(v) 
+            imr = {k: utils.try_parse(v)
                    for k, v in config[IMR_CONFIG_SECTION].items()
                    if k != 'initialize_fit'}
             if 'path' not in imr or 'imr_result' not in imr:
@@ -745,7 +747,7 @@ class Fit(object):
         else:
             warn("conditioning without target")
             t0s = {i: None for i in self.ifos}
-            
+
         new_data = {}
         for k, d in self.data.items():
             new_data[k] = d.condition(t0=t0s[k], **kwargs)
@@ -1887,7 +1889,7 @@ class Fit(object):
         if update_model:
             prior_kws = prior_kws or {}
             prior_kws['prng'] = prior_kws.get('prng', prng)
-            opts = imr.estimate_ringdown_prior(modes=fit.modes, cache=True, 
+            opts = imr.estimate_ringdown_prior(modes=fit.modes, cache=True,
                                                **prior_kws)
             fit.update_model(**opts)
             logging.info(f"updated model: {opts}")
@@ -1896,7 +1898,7 @@ class Fit(object):
 
 
 class FitSequence(Fit):
-    """ A sequence of ringdown fits of the same model to the same data at 
+    """A sequence of ringdown fits of the same model to the same data at
     different times. Contains the same information as a single `Fit` object,
     with the addition of a `target_collection` attribute that stores multiple
     `Target` objects that are looped over at runtime.
@@ -1976,7 +1978,7 @@ class FitSequence(Fit):
         data to each target before running the fit.
 
         There is also an `output_path` argument that allows for saving results
-        to disk as they are produced. This argument should be a path string 
+        to disk as they are produced. This argument should be a path string
         with a `*` placeholder that will be replaced by the target time, e.g.
         `output_path='results/*/result.nc'`.
 
@@ -2078,7 +2080,6 @@ class FitSequence(Fit):
         # update info to reflect the last-used sampler settings
         settings.update(sampler_kws)
         self.update_info('run', **settings)
-        
 
     @staticmethod
     def format_output_path(path_template: str, t0: float) -> str:

@@ -636,8 +636,8 @@ class Data(TimeSeries):
             cond_data -= np.mean(cond_data)
 
         d = Data(cond_data, index=cond_time, ifo=self.ifo)
-        
-        # check for a corner case wherein the time series can end up out of 
+
+        # check for a corner case wherein the time series can end up out of
         # order to rolling and _not_ trimming
         dts = np.diff(d.time)
         if min(dts) != max(dts):
@@ -1601,7 +1601,7 @@ class StrainStack(np.ndarray):
     def generate_whitened_residuals(self, cholesky: list | np.ndarray | dict,
                                     data: list | np.ndarray | dict,
                                     ifo_axis: int = None,
-                                    time_axis: int = None) :
+                                    time_axis: int = None):
         """Generate whitened residuals between data and strain.
 
         Arguments

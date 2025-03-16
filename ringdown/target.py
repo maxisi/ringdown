@@ -620,8 +620,8 @@ class TargetCollection(utils.MultiIndexCollection):
         """Create a collection of targets from a configuration file.
 
         All arguments in the `t0_sect` section of the configuration file are
-        passed to the `construct` method to create the target collection 
-        (see docs for `construct` for details), with additional special 
+        passed to the `construct` method to create the target collection
+        (see docs for `construct` for details), with additional special
         handling if an IMR result is referenced.
 
         If any of the arguments to `construct` are set to 'imr', then attempts
@@ -660,7 +660,7 @@ class TargetCollection(utils.MultiIndexCollection):
                                      "provided or IMR section in config file")
                 # get the IMR result
                 from .imr import IMRResult
-                pkws = {k: try_parse(v) 
+                pkws = {k: try_parse(v)
                         for k, v in config[IMR_CONFIG_SECTION].items()
                         if k not in ['initialize_fit', 'psds']}
                 path = pkws.pop('path')
@@ -668,7 +668,7 @@ class TargetCollection(utils.MultiIndexCollection):
                 imr_result = IMRResult.construct(path, **pkws)
             # get IMR target options
             pkws = dict(cache=True)
-            pkws.update(try_parse(config.get(IMR_CONFIG_SECTION, 
+            pkws.update(try_parse(config.get(IMR_CONFIG_SECTION,
                                              'peak_kws', fallback={})))
             imr_target = imr_result.get_best_peak_target(**pkws).settings
             # set the reference mass and time
