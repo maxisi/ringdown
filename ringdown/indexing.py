@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from ast import literal_eval
 from copy import copy
+import numpy as np
 
 
 def get_mode_label(mode, **kws):
@@ -162,7 +163,9 @@ class HarmonicIndex(ModeIndex):
             return cls(p, s, l, m, n)
 
     @classmethod
-    def from_bytestring(cls, s: bytes):
+    def from_bytestring(cls, s: bytes | np.ndarray):
+        if isinstance(s, np.ndarray):
+            s = s.tobytes()
         return cls.from_string(s.decode('utf-8'))
 
     @classmethod
@@ -186,6 +189,8 @@ class HarmonicIndex(ModeIndex):
         if isinstance(s, cls):
             return s
         elif isinstance(s, bytes):
+            return cls.from_bytestring(s)
+        elif isinstance(s, np.ndarray) and not s.shape:
             return cls.from_bytestring(s)
         elif isinstance(s, str):
             return cls.from_string(s)
@@ -218,6 +223,8 @@ class HarmonicIndex(ModeIndex):
             s = f'{self.s}{s}'
         if label_prograde:
             s = f'{self.p}{s}'
+        elif not self.is_prograde:
+            s = f'-{s}'
         return s
 
     def get_kerr_mode(self, **kws):

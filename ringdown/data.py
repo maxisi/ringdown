@@ -418,7 +418,8 @@ class FrequencySeries(Series):
                              delta_f: float | None = None,
                              f_min: float | None = None,
                              f_max: float | None = None,
-                             log: bool = False, **kws):
+                             log: bool = False, force: bool = False,
+                             **kws):
         """Interpolate the :class:`FrequencySeries` to new index. Inherits
         from :func:`Series.interpolate_to_index`.
 
@@ -450,6 +451,11 @@ class FrequencySeries(Series):
         f_min_orig = self.freq.min()
         f_max_orig = self.freq.max()
         if freq is None:
+            n_dfs = np.unique(np.diff(self.index)).size
+            if n_dfs == 1 and f_min is None and f_max is None and not force:
+                logging.info("frequency grid already uniformly spaced: "
+                             "skipping interpolation (override with 'force')")
+                return self
             # construct frequency index with uniform spacing
             f_min = f_min_orig if f_min is None else f_min
             f_max = f_max_orig if f_max is None else f_max
@@ -570,11 +576,11 @@ class Data(TimeSeries):
 
         decimate_kws = decimate_kws or {}
 
+        ds = int(ds or 1)
         if t0 is not None:
             if t0 < raw_time[0] or t0 > raw_time[-1]:
                 raise ValueError(f"t0 must be within the time series: {t0} "
                                  f"not in [{raw_time[0]}, {raw_time[-1]}]")
-            ds = int(ds or 1)
             i = np.argmin(abs(raw_time - t0))
             raw_time = np.roll(raw_time, -(i % ds))
             raw_data = np.roll(raw_data, -(i % ds))
@@ -629,7 +635,15 @@ class Data(TimeSeries):
         if remove_mean:
             cond_data -= np.mean(cond_data)
 
-        return Data(cond_data, index=cond_time, ifo=self.ifo)
+        d = Data(cond_data, index=cond_time, ifo=self.ifo)
+
+        # check for a corner case wherein the time series can end up out of
+        # order to rolling and _not_ trimming
+        dts = np.diff(d.time)
+        if min(dts) != max(dts):
+            logging.info("time series out of order")
+            d.sort_index(inplace=True, ascending=True)
+        return d
 
     def get_acf(self, **kws):
         """Estimate ACF from data, see :meth:`AutoCovariance.from_data`.
@@ -667,7 +681,8 @@ class PowerSpectrum(FrequencySeries):
     _meta = ['ifo', 'attrs']
 
     def __init__(self, *args, delta_f=None, ifo=None, attrs=None,
-                 fill_power_of_two=True, **kwargs):
+                 fill_power_of_two=True, enforce_uniform_spacing=True,
+                 **kwargs):
         """Initialize power spectral density.
 
         Arguments
@@ -1380,7 +1395,7 @@ class StrainStack(np.ndarray):
         ntime = np.shape(cholesky)[1]
         matching_axes = [i for i, n in enumerate(h.shape) if n == ntime]
         if len(matching_axes) == 0:
-            raise ValueError("No matching time axis found:"
+            raise ValueError("No matching time axis found: "
                              f"strain shape {h.shape}, cholesky shape "
                              f"{np.shape(cholesky)}")
         elif len(matching_axes) > 1:
@@ -1394,11 +1409,11 @@ class StrainStack(np.ndarray):
         nifo = len(cholesky)
         matching_axes = [i for i, n in enumerate(h.shape) if n == nifo]
         if len(matching_axes) == 0:
-            raise ValueError("No matching detector axis found:"
+            raise ValueError("No matching detector axis found: "
                              f"strain shape {h.shape}, cholesky shape "
                              f"{np.shape(cholesky)}")
         elif len(matching_axes) > 1:
-            raise ValueError("Multiple matching detector axes found:"
+            raise ValueError("Multiple matching detector axes found: "
                              f"strain shape {h.shape}, cholesky shape "
                              f"{np.shape(cholesky)}")
         return matching_axes[0]
@@ -1582,3 +1597,42 @@ class StrainStack(np.ndarray):
         for i0, ifo_wfs in zip(start_indices, h):
             new_h.append(ifo_wfs[i0:i0+n, ...])
         return StrainStack(np.moveaxis(new_h, 0, ifo_axis))
+
+    def generate_whitened_residuals(self, cholesky: list | np.ndarray | dict,
+                                    data: list | np.ndarray | dict,
+                                    ifo_axis: int = None,
+                                    time_axis: int = None):
+        """Generate whitened residuals between data and strain.
+
+        Arguments
+        ---------
+        cholesky : list, array, or dict
+            Cholesky factor or list of Cholesky factors; if a dict
+            the values are serialized assuming entries correspond to
+            detectors.
+        data : list, array, or dict
+            data array or list of data arrays; if a dict the values are
+            serialized assuming entries correspond to detectors.
+        ifo_axis : int, optional
+            axis indexing detectors in the strain array, default is
+            0.
+        time_axis : int, optional
+            axis indexing time in the strain array, default is 1.
+
+        Returns
+        -------
+        residuals : array
+            whitened residuals.
+        """
+        # check shape of data array (nifo, ntime, ...)
+        if isinstance(data, dict):
+            data = np.array(list(data.values()))
+        data = np.atleast_2d(data)
+        if np.ndim(data) > 2:
+            raise ValueError("Data array must have shape (nifo, ntime)")
+
+        # compute residuals
+        r = StrainStack(data[..., np.newaxis] - self)
+
+        # whiten residuals
+        return r.whiten(cholesky, ifo_axis=ifo_axis, time_axis=time_axis)

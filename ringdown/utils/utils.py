@@ -157,6 +157,15 @@ def load_config(config_input):
             raise FileNotFoundError(config_input)
     elif isinstance(config_input, ConfigParser):
         config = config_input
+    elif isinstance(config_input, dict):
+        config = ConfigParser()
+        for section, options in config_input.items():
+            config.add_section(section)
+            for key, value in options.items():
+                config.set(section, key, str(value))
+    else:
+        raise ValueError("config_input must be: filename, dict or ConfigParser"
+                         f"not {type(config_input)}")
     return config
 
 
@@ -220,7 +229,7 @@ class MultiIndexCollection(object):
         return iter(self.items())
 
     def get(self, key):
-        return self.data[self.index[key]]
+        return self.data[self.index.index(key)]
 
     @property
     def as_dict(self):

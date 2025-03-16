@@ -26,6 +26,7 @@ import logging
 from jax import config as jax_config
 import numpyro
 import ringdown as rd
+from ringdown.config import PIPE_SECTION
 
 ##############################################################################
 # PARSE INPUT
@@ -94,7 +95,7 @@ def main(args=None):
     jax_config.update("jax_enable_x64", not run_kws.pop('float32', False))
 
     out = os.path.abspath(args.output or DEFOUT)
-    out = config.get('pipe', 'outpath', fallback=out)
+    out = config.get(PIPE_SECTION, 'outpath', fallback=out)
 
     numpyro.set_platform(args.platform)
     if args.device_count is not None:
@@ -117,13 +118,18 @@ def main(args=None):
     if not args.force:
         new_targets = []
         for t0, target in fit.targets:
-            path = out.replace('*', '{}').format(t0)
+            path = fit.format_output_path(out, t0)
             if os.path.exists(path):
-                logging.warning(f"output file already exists: {path}")
+                logging.warning("output file already exists "
+                                f"(skipping target): {path}")
             else:
                 outdir = os.path.dirname(path)
                 os.makedirs(outdir, exist_ok=True)
                 new_targets.append(target)
+        if not new_targets:
+            logging.warning("all output files already exist: exiting "
+                            "(use --force to overwrite).")
+            return
         fit.set_target_collection(new_targets)
 
     fit.run(**run_kws, output_path=out)

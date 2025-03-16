@@ -10,7 +10,7 @@ from dataclasses import dataclass, asdict
 from abc import ABC, abstractmethod
 from .utils import utils
 from .utils.utils import try_parse
-from .qnms import T_MSUN
+from .config import T_MSUN, IMR_CONFIG_SECTION, PIPE_SECTION
 
 # Define valid options to specify the start times
 T0_KEYS = {
@@ -27,7 +27,6 @@ T0_INCOMPATIBLE_OPTS = [['ref', 'list'], ['delta', 'list']]
 T0_INCOMPATIBLE_OPTS += [[k, 'delta'] for k in ['start', 'stop', 'step']]
 MREF_KEY = 'm-ref'
 TREF_KEY = T0_KEYS['ref']
-PIPE_SEC = 'pipe'
 
 
 class Target(ABC):
@@ -505,7 +504,7 @@ class TargetCollection(utils.MultiIndexCollection):
 
     @property
     def _step(self) -> float | None:
-        tdef = self.info.get(PIPE_SEC, {}).get('t0-step', None)
+        tdef = self.info.get(PIPE_SECTION, {}).get('t0-step', None)
         return self.info.get('t0-step', tdef)
 
     @property
@@ -616,15 +615,37 @@ class TargetCollection(utils.MultiIndexCollection):
                    reference_time=t0ref, info=info)
 
     @classmethod
-    def from_config(cls, config_input, t0_sect=PIPE_SEC, sky_sect='target',
+    def from_config(cls, config_input, t0_sect=PIPE_SECTION, sky_sect='target',
                     imr_result=None):
-        """Identify target analysis times. There will be three possibilities:
-            1- listing the times explicitly
-            2- listing time differences with respect to a reference time
-            3- providing start, stop, step instructions to construct start
-            times (potentially relative to a reference time)
-        Time steps/differences can be specified in seconds or M, if a
-        reference mass  is provided (in solar masses).
+        """Create a collection of targets from a configuration file.
+
+        All arguments in the `t0_sect` section of the configuration file are
+        passed to the `construct` method to create the target collection
+        (see docs for `construct` for details), with additional special
+        handling if an IMR result is referenced.
+
+        If any of the arguments to `construct` are set to 'imr', then attempts
+        to derive them from IMR result: if `imr_result` is not provided, then
+        the IMR section of the configuration file is used to load the IMR
+        result.
+
+        Arguments
+        ---------
+        config_input : str, ConfigParser
+            configuration file or dictionary.
+        t0_sect : str
+            section of the configuration file to use for target times.
+        sky_sect : str
+            section of the configuration file to use for sky location.
+        imr_result : IMRResult, None
+            IMR result to use for reference values. If `None`, then the IMR
+            section of the configuration file is used to load the IMR result
+            if needed.
+
+        Returns
+        -------
+        targets : TargetCollection
+            collection of target objects.
         """
         config = utils.load_config(config_input)
 
@@ -634,19 +655,21 @@ class TargetCollection(utils.MultiIndexCollection):
             for k in [MREF_KEY, TREF_KEY]])
         if reference_imr:
             if imr_result is None:
-                if not config.has_section('imr'):
+                if not config.has_section(IMR_CONFIG_SECTION):
                     raise ValueError("IMR reference requested but no result "
                                      "provided or IMR section in config file")
                 # get the IMR result
                 from .imr import IMRResult
-                pkws = {k: try_parse(v) for k, v in config['imr'].items()
+                pkws = {k: try_parse(v)
+                        for k, v in config[IMR_CONFIG_SECTION].items()
                         if k not in ['initialize_fit', 'psds']}
                 path = pkws.pop('path')
                 logging.info(f"loading IMR result from from {path} and {pkws}")
                 imr_result = IMRResult.construct(path, **pkws)
             # get IMR target options
             pkws = dict(cache=True)
-            pkws.update(try_parse(config.get('imr', 'peak_kws', fallback={})))
+            pkws.update(try_parse(config.get(IMR_CONFIG_SECTION,
+                                             'peak_kws', fallback={})))
             imr_target = imr_result.get_best_peak_target(**pkws).settings
             # set the reference mass and time
             if MREF_KEY in config[t0_sect]:

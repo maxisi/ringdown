@@ -29,6 +29,7 @@ import time
 from ringdown.target import TargetCollection
 from ringdown import __version__
 import ringdown as rd
+from ringdown.config import PIPE_SECTION
 
 
 ##############################################################################
@@ -76,12 +77,12 @@ def main(args=None):
     config = rd.utils.load_config(config_path)
 
     # set random seed (purposedly fail if not provided)
-    seed = args.seed or config.getint('pipe', 'seed')
+    seed = args.seed or config.getint(PIPE_SECTION, 'seed')
     logging.info("Random seed set to {}".format(seed))
     rng = np.random.default_rng(seed)
 
     # determine run directory
-    outdir = args.outdir or config.get('pipe', 'outdir', fallback=None)
+    outdir = args.outdir or config.get(PIPE_SECTION, 'outdir', fallback=None)
     if not outdir:
         outdir = 'ringdown_pipe_{:.0f}'.format(time.time())
         logging.warning("No run dir provided, defaulting to {}".format(outdir))
