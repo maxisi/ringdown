@@ -3,6 +3,8 @@ from scipy.stats import gaussian_kde, norm
 from .kde_contour import Bounded_1d_kde
 import logging
 
+logger = logging.getLogger(__name__)
+
 
 def compute_hpd(samples, p=0.68, out="both", sorted=False):
     # NOTE: this function does the same thing as arviz.hdi
@@ -155,7 +157,7 @@ def q_of_zero_old(xs, q_min=0.01, q_tol=0.001, kde=False, xmin=None,
     q: float
         The quantile of zero.
     """
-    logging.warning("This function is deprecated. Use `quantile_at_value`.")
+    logger.warning("This function is deprecated. Use `quantile_at_value`.")
 
     xs = np.sort(xs)
     if xmin is None:
@@ -222,7 +224,7 @@ def quantile_at_value(xs, target=0, min=None, max=None, z_score=False,
         q = n/len(xs)
 
     if q == 1 and not silent:
-        logging.warning("CL maxed out at 1/N")
+        logger.warning("CL maxed out at 1/N")
 
     if z_score:
         return z_score(q)

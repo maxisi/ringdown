@@ -12,6 +12,8 @@ from .utils import utils
 from .utils.utils import try_parse
 from .config import T_MSUN, IMR_CONFIG_SECTION, PIPE_SECTION
 
+logger = logging.getLogger(__name__)
+
 # Define valid options to specify the start times
 T0_KEYS = {
     'ref': 't0-ref',
@@ -239,7 +241,7 @@ class SkyTarget(Target):
             dt = lal.TimeDelayFromEarthCenter(det.location, ra, dec, tgps)
             tgeo = t0 - dt
         if kws:
-            logging.info(f"unused keyword arguments: {kws}")
+            logger.info(f"unused keyword arguments: {kws}")
         return cls(lal.LIGOTimeGPS(tgeo), ra, dec, psi, duration)
 
     @property
@@ -272,10 +274,10 @@ class DetectorTarget(Target):
         for i, fpfc in _antenna_patterns.items():
             if fpfc is None:
                 if len(_antenna_patterns) > 1 or i is not None:
-                    logging.warning(
+                    logger.warning(
                         f"defaulting to (1, 0) antenna patterns for {i} ifo")
                 else:
-                    logging.info("defaulting to (1, 0) antenna patterns")
+                    logger.info("defaulting to (1, 0) antenna patterns")
                 fpfc = (1, 0)
             if len(fpfc) != 2:
                 raise ValueError("antenna patterns must be (Fp, Fc)")
@@ -286,7 +288,7 @@ class DetectorTarget(Target):
         if not hasattr(self.detector_times, 'keys'):
             # assume t0 is a single time, will check below
             if len(_antenna_patterns) > 1:
-                logging.warning("setting same start time for all detectors")
+                logger.warning("setting same start time for all detectors")
             self.detector_times = {i: float(self.detector_times)
                                    for i in _antenna_patterns.keys()}
         else:
@@ -362,7 +364,7 @@ class DetectorTarget(Target):
             antenna_patterns = {ifo: None for ifo in ifos}
             if len(ifos) == 1 and not ifos[0] is None:
                 # the IFO has a distinct name, warn about this
-                logging.info(
+                logger.info(
                     "assuming the unlabeled antenna patterns were meant "
                     f"for {ifos[0]}")
         elif ifos and not hasattr(antenna_patterns, 'keys'):
@@ -378,7 +380,7 @@ class DetectorTarget(Target):
                             {ifos[0]: [float(a) for a in antenna_patterns]}
                         if ifos[0] is not None:
                             # the IFO has a distinct name, warn about this
-                            logging.info(
+                            logger.info(
                                 "assuming the unlabeled antenna patterns "
                                 f"were meant for {ifos[0]}")
                     except TypeError:
@@ -405,7 +407,7 @@ class DetectorTarget(Target):
                                  "a list of tuples with the same length as "
                                  "ifos, or a single tuple for a single ifo")
         elif ifos:
-            logging.info("ignoring ifos argument")
+            logger.info("ignoring ifos argument")
         return cls(detector_times, antenna_patterns, duration)
 
 
@@ -582,7 +584,7 @@ class TargetCollection(utils.MultiIndexCollection):
         if reference_mass:
             # obtain stepping time in seconds from reference mass
             tm_ref = reference_mass * T_MSUN
-            logging.info(f"Reference mass: {reference_mass} Msun ({tm_ref} s)")
+            logger.info(f"Reference mass: {reference_mass} Msun ({tm_ref} s)")
         else:
             # no reference mass provided, so will default to seconds
             tm_ref = 1
@@ -606,8 +608,8 @@ class TargetCollection(utils.MultiIndexCollection):
             # stepping based on a GPS time and provides a reference GPS time
             start, stop, step = [t0kws[k] for k in start_stop_step]
             if start > 500 and t0ref > 1E8:
-                logging.warning("high reference time and stepping start---did "
-                                "you accidentally provide GPS times twice?")
+                logger.warning("high reference time and stepping start---did "
+                               "you accidentally provide GPS times twice?")
             t0s = np.arange(start, stop, step)*tm_ref + t0ref
 
         targets = [Target.construct(t0, **kws) for t0 in t0s]
@@ -664,7 +666,7 @@ class TargetCollection(utils.MultiIndexCollection):
                         for k, v in config[IMR_CONFIG_SECTION].items()
                         if k not in ['initialize_fit', 'psds']}
                 path = pkws.pop('path')
-                logging.info(f"loading IMR result from from {path} and {pkws}")
+                logger.info(f"loading IMR result from from {path} and {pkws}")
                 imr_result = IMRResult.construct(path, **pkws)
             # get IMR target options
             pkws = dict(cache=True)
@@ -674,18 +676,18 @@ class TargetCollection(utils.MultiIndexCollection):
             # set the reference mass and time
             if MREF_KEY in config[t0_sect]:
                 if config[t0_sect][MREF_KEY].lower() == 'imr':
-                    logging.info("using IMR result for reference mass")
+                    logger.info("using IMR result for reference mass")
                     config[t0_sect][MREF_KEY] = \
                         str(imr_result.remnant_mass_scale_reference)
             else:
-                logging.warning("no reference mass requested")
+                logger.warning("no reference mass requested")
 
             if TREF_KEY in config[t0_sect]:
                 if config[t0_sect][TREF_KEY].lower() == 'imr':
-                    logging.info("using IMR result for reference time")
+                    logger.info("using IMR result for reference time")
                     config[t0_sect][TREF_KEY] = str(imr_target.pop('t0'))
             else:
-                logging.warning("no reference time requested")
+                logger.warning("no reference time requested")
             if sky_sect not in config:
                 config[sky_sect] = {k: str(v) for k, v in imr_target.items()
                                     if k != 't0'}

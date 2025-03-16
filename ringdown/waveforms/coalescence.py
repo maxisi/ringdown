@@ -14,6 +14,8 @@ import inspect
 import h5py
 import logging
 
+logger = logging.getLogger(__name__)
+
 
 def m1m2_from_mtotq(mtot, q):
     m1 = mtot / (1 + q)
@@ -112,7 +114,7 @@ class Parameters:
             if value is not None:
                 setattr(self, f.name, float(value))
         if self.f_ref is None and self.f_low is not None:
-            logging.warning("f_ref not set, using f_low")
+            logger.warning("f_ref not set, using f_low")
             self.f_ref = self.f_low
         self._final_mass = None
         self._final_spin = None

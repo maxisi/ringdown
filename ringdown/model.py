@@ -19,6 +19,8 @@ import arviz as az
 from arviz.data.base import dict_to_dataset
 import logging
 
+logger = logging.getLogger(__name__)
+
 
 def rd_design_matrix(ts, f, gamma, Fp, Fc, Ascales, aligned=False,
                      YpYc=None, single_polarization=False):
@@ -483,8 +485,8 @@ def make_model(modes: int | list[(int, int, int, int)],
             if cosi < -1 or cosi > 1:
                 raise ValueError('cosi must be between -1 and 1')
             if cosi_min is not None or cosi_max is not None:
-                logging.warning('ignoring cosi_min and cosi_max since '
-                                'cosi is fixed')
+                logger.warning('ignoring cosi_min and cosi_max since '
+                               'cosi is fixed')
             fixed_cosi = cosi
         mode_array = np.array(modes)
         swsh = construct_sYlm(-2, mode_array[:, 2], mode_array[:, 3])
@@ -904,7 +906,7 @@ def get_arviz(sampler,
     dims = {k: v for k, v in MODEL_DIMENSIONS.items() if k in params_in_model}
     for x in params_in_model:
         if x not in MODEL_DIMENSIONS and len(samples[x].shape) > 1:
-            logging.warning(
+            logger.warning(
                 f'{x} not in model dimensions; please report issue')
 
     # get coordinates
@@ -959,13 +961,13 @@ def get_arviz(sampler,
     if store_data:
         # add observed data
         if hasattr(result, 'observed_data'):
-            logging.info("added strain to observed data")
+            logger.info("added strain to observed data")
             # make sure we have the right coordinates
             result.observed_data.coords.update(coords)
             result.observed_data['strain'] = (in_dims['strain'],
                                               obs_data['strain'])
         else:
-            logging.info("creating observed data in arviz dataset")
+            logger.info("creating observed data in arviz dataset")
             # We assume that observed_data isn't created yet.
             result.add_groups(dict(
                 observed_data=dict_to_dataset(

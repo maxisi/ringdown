@@ -28,6 +28,8 @@ from . import imr
 from .config import T_MSUN, IMR_CONFIG_SECTION, PIPE_SECTION
 import pandas as pd
 
+logger = logging.getLogger(__name__)
+
 # TODO: support different samplers?
 KERNEL = numpyro.infer.NUTS
 SAMPLER = numpyro.infer.MCMC
@@ -37,7 +39,7 @@ SAMPLER_ARGS = inspect.signature(SAMPLER).parameters.keys()
 # for safety check that there are no overlapping keys
 for k in SAMPLER_ARGS:
     if k in KERNEL_ARGS:
-        logging.warning(f"overlapping keys in {KERNEL} and {SAMPLER}: {k}")
+        logger.warning(f"overlapping keys in {KERNEL} and {SAMPLER}: {k}")
 
 MODEL_ARGS = inspect.signature(make_model).parameters.keys()
 RUNTIME_MODEL_ARGS = ['modes', 'prior', 'predictive', 'store_h_det',
@@ -322,9 +324,9 @@ class Fit(object):
         :attr:`Fit.valid_model_settings`.
         """
         if self.result is not None:
-            logging.warning("updating prior of Fit with preexisting results!")
+            logger.warning("updating prior of Fit with preexisting results!")
         if self.prior is not None:
-            logging.warning("updating prior of Fit with preexisting prior!")
+            logger.warning("updating prior of Fit with preexisting prior!")
 
         # check whether the option is valid, regardless of case
         for k, v in kws.items():
@@ -335,7 +337,7 @@ class Fit(object):
             elif k.upper() in self.valid_model_settings:
                 self._model_settings[k] = v
             else:
-                logging.warning(f"unknown model argument: {k}")
+                logger.warning(f"unknown model argument: {k}")
 
     def update_prior(self, *args, **kwargs):
         warnings.warn("update_prior is deprecated, use update_model instead")
@@ -354,10 +356,10 @@ class Fit(object):
         # temporarily rescale strain if needed (this will just be by default
         # if running on float64)
         scale = self.strain_scale
-        logging.info(f"rescaled strain by {scale}")
+        logger.info(f"rescaled strain by {scale}")
 
         if not self.acfs:
-            logging.warning("computing ACFs with default settings")
+            logger.warning("computing ACFs with default settings")
             self.compute_acfs()
 
         # ensure delta_t of ACFs is equal to delta_t of data
@@ -430,8 +432,8 @@ class Fit(object):
         if 'name' in model_opts:
             warnings.warn("model name is deprecated, use explicit"
                           "mode options instead")
-            logging.info("trying to guess mode configuration based "
-                         "on model name")
+            logger.info("trying to guess mode configuration based "
+                        "on model name")
             name = model_opts.pop('name')
             if 'aligned' in name:
                 raise NotImplementedError("aligned model not yet supported")
@@ -484,7 +486,7 @@ class Fit(object):
 
         # initialize fit object, potentially from IMR result
         if config.get(IMR_CONFIG_SECTION, 'initialize_fit', fallback=False):
-            logging.info("initializing fit from IMR result")
+            logger.info("initializing fit from IMR result")
             imr = {k: utils.try_parse(v)
                    for k, v in config[IMR_CONFIG_SECTION].items()
                    if k != 'initialize_fit'}
@@ -502,18 +504,18 @@ class Fit(object):
             imr['prng'] = int(imr['prng'])
             imr_path = imr.pop('path', imr.pop('imr_result', None))
             if 'data' in config:
-                logging.info("loading data from disk (ignoring IMR data)")
+                logger.info("loading data from disk (ignoring IMR data)")
                 data_kws = {k: utils.try_parse(v)
                             for k, v in config['data'].items()}
                 if 'ifos' in config['data']:
                     data_kws['ifos'] = utils.get_ifo_list(config, 'data')
             else:
                 data_kws = {}
-            logging.info("loading IMR result")
+            logger.info("loading IMR result")
             fit = cls.from_imr_result(imr_path, **imr, **model_opts,
                                       data_kws=data_kws)
         else:
-            logging.info("initializing fit")
+            logger.info("initializing fit")
             fit = cls(**model_opts)
 
         # load reference imr result if requested
@@ -525,8 +527,8 @@ class Fit(object):
                 imr_path = imr.pop('path', imr.pop('imr_result', None))
                 fit.add_imr_result(imr_path, **imr)
             else:
-                logging.warning("no path to IMR result provided; ignoring "
-                                " IMR section in config")
+                logger.warning("no path to IMR result provided; ignoring "
+                               " IMR section in config")
 
         if 'data' not in config and 'fake-data' not in config:
             # the rest of the options require loading data, so if no pointer to
@@ -555,7 +557,7 @@ class Fit(object):
             if not ('ra' in kws and 't0' not in kws):
                 fit.set_target(**kws)
             else:
-                logging.info(f"ignoring invalid target section: {kws}")
+                logger.info(f"ignoring invalid target section: {kws}")
 
         # inject signal if requested
         if config.has_section('injection'):
@@ -570,8 +572,8 @@ class Fit(object):
                     # check if there's an overlap between JSON and INI
                     overlap = set(json_kws.keys()).intersection(inj_kws.keys())
                     if overlap:
-                        logging.warning("overwriting injection file options "
-                                        f"with config: {overlap}")
+                        logger.warning("overwriting injection file options "
+                                       f"with config: {overlap}")
                     # merge injection settings from JSON and INI
                     # NOTE: config file overwrites JSON!
                     json_kws.update(inj_kws)
@@ -635,19 +637,19 @@ class Fit(object):
             if isinstance(result, az.InferenceData):
                 fit.result = Result(result)
             elif isinstance(result, str) and os.path.exists(result):
-                logging.warning("loading result from disk with "
-                                "no guarantee of fit correspondence!")
+                logger.warning("loading result from disk with "
+                               "no guarantee of fit correspondence!")
                 try:
                     if result.endswith('.nc'):
                         fit.result = Result(az.from_netcdf(result))
                     elif result.endswith('.json'):
                         fit.result = Result(az.from_json(result))
                     else:
-                        logging.error(f"unknown result format: {result}")
+                        logger.error(f"unknown result format: {result}")
                 except Exception as e:
-                    logging.error(f"unable to read result from {result}: {e}")
+                    logger.error(f"unable to read result from {result}: {e}")
             else:
-                logging.error(f"result file {result} not found")
+                logger.error(f"result file {result} not found")
         return fit
 
     def to_config(self, path=None):
@@ -727,11 +729,11 @@ class Fit(object):
         The `silent` argument determines whether to suppress warnings.
 
         """
-        logging.info("conditioning fit data")
+        logger.info("conditioning fit data")
         if silent:
-            warn = logging.info
+            warn = logger.info
         else:
-            warn = logging.warning
+            warn = logger.warning
 
         if self.info.get('condition'):
             warn("data has already been conditioned")
@@ -872,19 +874,19 @@ class Fit(object):
 
         # check float precision
         if not jax.config.x64_enabled:
-            logging.warning("running with float32 precision")
+            logger.warning("running with float32 precision")
 
         # create model (specifying prior and other settings)
         ms = cp.deepcopy(self.model_settings)
         if 'a_scale_max' in ms:
             ms['a_scale_max'] = ms['a_scale_max'] / self.strain_scale
 
-        logging.info('making model')
+        logger.info('making model')
         model = make_model(self.modes.value, prior=prior, **ms)
 
-        logging.info('running {} mode fit'.format(self.modes))
-        logging.info('prior run: {}'.format(prior))
-        logging.info('model settings: {}'.format(self._model_settings))
+        logger.info('running {} mode fit'.format(self.modes))
+        logger.info('prior run: {}'.format(prior))
+        logger.info('model settings: {}'.format(self._model_settings))
 
         return model
 
@@ -901,7 +903,7 @@ class Fit(object):
         ess_run = -1.0  # ess after sampling finishes, to be set by loop below
         min_ess = 0.0 if min_ess is None else min_ess
 
-        logging.info("running model with min_ess = {}".format(min_ess))
+        logger.info("running model with min_ess = {}".format(min_ess))
 
         # split PRNG key for predictive
         # create random number generator (it's BAD to reuse jax PRNG keys)
@@ -912,7 +914,7 @@ class Fit(object):
         prng, prng_pred = jax.random.split(prng)
 
         # get run input and run
-        logging.info("getting input data")
+        logger.info("getting input data")
         run_input = self.run_input
         start_times = self.start_times
         epoch = [start_times[i] for i in self.ifos]
@@ -933,20 +935,20 @@ class Fit(object):
                 prng, _ = jax.random.split(prng)
 
                 # make kernel, sampler and run
-                logging.info("making sampler from kernel")
+                logger.info("making sampler from kernel")
                 sampler = SAMPLER(kernel, **sampler_kws)
 
                 if validation_enabled:
-                    logging.info("running with validation enabled")
+                    logger.info("running with validation enabled")
                     with numpyro.validation_enabled():
                         sampler.run(prng, *run_input, **run_kws)
                 else:
-                    logging.info("running")
+                    logger.info("running")
                     sampler.run(prng, *run_input, **run_kws)
 
                 # turn sampler into Result object and store
                 # (recall that Result is a wrapper for arviz.InferenceData)
-                logging.info("creating arViz object")
+                logger.info("creating arViz object")
                 result = get_arviz(sampler, ifos=self.ifos, modes=self.modes,
                                    injections=inj, epoch=epoch,
                                    scale=scale, attrs=self.attrs,
@@ -955,9 +957,9 @@ class Fit(object):
                 # check effective number of samples and rerun if necessary
                 ess_run = result.ess
                 if np.isnan(ess_run):
-                    logging.warning("nan effective sample size")
+                    logger.warning("nan effective sample size")
                     break
-                logging.info(f"ess = {int(ess_run)} after {run_count} runs")
+                logger.info(f"ess = {int(ess_run)} after {run_count} runs")
 
                 if ess_run < min_ess:
                     run_count += 1
@@ -970,14 +972,14 @@ class Fit(object):
                     )
                     sampler_kws.update(new_kws)
 
-                    logging.warning(
+                    logger.warning(
                         f"""ess = {ess_run:.1f} below threshold {min_ess};
                         fitting again with "{new_kws['num_warmup']} tuning
                         steps and {new_kws['num_samples']} samples"""
                     )
 
         if predictive or store_h_det or store_h_det_mode:
-            logging.info("obtaining predictive distribution")
+            logger.info("obtaining predictive distribution")
             predictive = numpyro.infer.Predictive(model, sampler.get_samples())
             pred = predictive(prng_pred, *run_input, predictive=predictive,
                               store_h_det=store_h_det,
@@ -1001,7 +1003,7 @@ class Fit(object):
                     # chain and draw
                     v = np.reshape(v, tuple(shape + list(v.shape[1:])))
                     result.posterior[k] = xr.DataArray(v, coords=c, dims=d)
-                    logging.info(f"added {k} to posterior")
+                    logger.info(f"added {k} to posterior")
 
         if rescale_strain:
             result.rescale_strain()
@@ -1090,12 +1092,12 @@ class Fit(object):
         jax_device_count = jax.device_count()
         platform = jax.lib.xla_bridge.get_backend().platform.upper()
         omp_num_threads = int(os.environ.get("OMP_NUM_THREADS", 1))
-        logging.info(f"running on {jax_device_count} {platform} using "
-                     f"{omp_num_threads} OMP threads")
+        logger.info(f"running on {jax_device_count} {platform} using "
+                    f"{omp_num_threads} OMP threads")
 
-        logging.info('run settings: {}'.format(run_kws))
-        logging.info('kernel settings: {}'.format(kernel_kws))
-        logging.info('sampler settings: {}'.format(sampler_kws))
+        logger.info('run settings: {}'.format(run_kws))
+        logger.info('kernel settings: {}'.format(kernel_kws))
+        logger.info('sampler settings: {}'.format(sampler_kws))
 
         # run the model!
         result, sampler, sampler_kws = self._run_ess(
@@ -1155,8 +1157,8 @@ class Fit(object):
                 self.target.get_antenna_patterns(data.ifo)
                 self.target.get_detector_time(data.ifo)
             except ValueError:
-                logging.warning("data incompatible with target! "
-                                "removing target (please reset)")
+                logger.warning("data incompatible with target! "
+                               "removing target (please reset)")
                 self.target = None
 
     def load_data(self, path: str | None = None,
@@ -1225,7 +1227,7 @@ class Fit(object):
                 if self.t0 is None:
                     raise ValueError("no t0 provided")
                 kws['t0'] = self.t0
-                logging.info(f"using t0 = {self.t0} for segment selection")
+                logger.info(f"using t0 = {self.t0} for segment selection")
 
         if path is None:
             path_dict = {k: None for k in ifos}
@@ -1357,7 +1359,7 @@ class Fit(object):
             # get a dictionary with strings or PSD objects indexed by ifo
             psd_origins = utils.get_dict_from_pattern(psds, ifos)
             for ifo, p in psd_origins.items():
-                logging.info(f"Faking {ifo} data from PSD")
+                logger.info(f"Faking {ifo} data from PSD")
                 if isinstance(p, str) and os.path.exists(p):
                     psd = PowerSpectrum.read(p, **psd_kws)
                 elif isinstance(p, str):
@@ -1397,7 +1399,7 @@ class Fit(object):
                     delta_t = 1/f_samp
             time = np.arange(int(duration//delta_t))*delta_t
             for ifo in ifos:
-                logging.info(f"Empty {ifo} data")
+                logger.info(f"Empty {ifo} data")
                 data[ifo] = Data(np.zeros_like(time), index=time, ifo=ifo)
 
         # adjust epoch and log data
@@ -1624,7 +1626,7 @@ class Fit(object):
 
         if self.result is not None:
             if force:
-                logging.info("resetting target with preexisting results")
+                logger.info("resetting target with preexisting results")
             else:
                 raise ValueError("cannot set target with preexisting results")
 
@@ -1659,8 +1661,8 @@ class Fit(object):
             if self.data:
                 return self._n_analyze*self.data[self.ifos[0]].delta_t
             else:
-                logging.warning("add data to compute duration "
-                                "(n_analyze = {})".format(self._n_analyze))
+                logger.warning("add data to compute duration "
+                               "(n_analyze = {})".format(self._n_analyze))
                 return None
         elif self.has_target:
             return self.target.duration
@@ -1694,8 +1696,8 @@ class Fit(object):
                 dt = self.data[self.ifos[0]].delta_t
                 return int(round(self.duration/dt))
             else:
-                logging.warning("add data to compute n_analyze "
-                                "(duration = {})".format(self.duration))
+                logger.warning("add data to compute n_analyze "
+                               "(duration = {})".format(self.duration))
                 return None
         elif self.data and self.has_target:
             # set n_analyze to fit shortest data set
@@ -1815,7 +1817,7 @@ class Fit(object):
             return None
         dts = [r.delta_t for r in ref.values()]
         if len(set(dts)) > 1:
-            logging.warning("multiple delta_t values found")
+            logger.warning("multiple delta_t values found")
         return dts[0]
 
     @property
@@ -1846,7 +1848,7 @@ class Fit(object):
         """Create a new `Fit` object from an IMR result."""
         fit = cls(**kws)
 
-        logging.info(f"initializing fit from IMR result: {imr}")
+        logger.info(f"initializing fit from IMR result: {imr}")
 
         # add IMR result to fit (this triggers saving IMR settings in fit)
         fit.add_imr_result(imr, approximant=approximant,
@@ -1854,7 +1856,7 @@ class Fit(object):
         imr = fit.imr_result
 
         if load_data:
-            logging.info("loading data based on IMR result")
+            logger.info("loading data based on IMR result")
             data_opts = imr.data_options(**(data_kws or {}))
             fit.load_data(**data_opts)
 
@@ -1868,23 +1870,23 @@ class Fit(object):
             if advance_target_by_mass:
                 m = reference_mass or imr.remnant_mass_scale_reference
                 dt = advance_target_by_mass * m * T_MSUN
-                logging.info(f"advancing target time by {dt} s "
-                             f"[{advance_target_by_mass} * {m} Msun]")
+                logger.info(f"advancing target time by {dt} s "
+                            f"[{advance_target_by_mass} * {m} Msun]")
                 t.geocenter_time += dt
-            logging.info(f"setting target: {t}")
+            logger.info(f"setting target: {t}")
             fit.set_target(target=t)
 
         if condition:
-            logging.info("conditioning data based on IMR result: "
-                         f"{imr.condition_options}")
+            logger.info("conditioning data based on IMR result: "
+                        f"{imr.condition_options}")
             fit.condition_data(**imr.condition_options)
 
         if load_acfs:
-            logging.info("loading ACFs based on IMR result")
+            logger.info("loading ACFs based on IMR result")
             fit.load_acfs(from_imr_result=True, **(acf_kws or {}))
             if not condition:
-                logging.warning("ACFs derived from IMR result but data "
-                                "not conditioned!")
+                logger.warning("ACFs derived from IMR result but data "
+                               "not conditioned!")
 
         if update_model:
             prior_kws = prior_kws or {}
@@ -1892,7 +1894,7 @@ class Fit(object):
             opts = imr.estimate_ringdown_prior(modes=fit.modes, cache=True,
                                                **prior_kws)
             fit.update_model(**opts)
-            logging.info(f"updated model: {opts}")
+            logger.info(f"updated model: {opts}")
 
         return fit
 
@@ -1953,7 +1955,7 @@ class FitSequence(Fit):
         # initialize to first target
         if len(self.target_collection) > 0:
             self.set_target(target=self.target_collection[0])
-        logging.info(f"set target collection: {self.target_collection}")
+        logger.info(f"set target collection: {self.target_collection}")
     set_target_collection.__doc__ = set_target_collection.__doc__.format(
         TargetCollection.construct.__doc__)
 
@@ -2016,7 +2018,7 @@ class FitSequence(Fit):
         for k, v in settings.pop('kwargs').items():
             settings[k] = v
 
-        logging.info(f"running sequence of {len(self)} targets")
+        logger.info(f"running sequence of {len(self)} targets")
 
         # create model function
         model = self._make_model(False)
@@ -2029,12 +2031,12 @@ class FitSequence(Fit):
         jax_device_count = jax.device_count()
         platform = jax.lib.xla_bridge.get_backend().platform.upper()
         omp_num_threads = int(os.environ.get("OMP_NUM_THREADS", 1))
-        logging.info(f"running on {jax_device_count} {platform} using "
-                     f"{omp_num_threads} OMP threads")
+        logger.info(f"running on {jax_device_count} {platform} using "
+                    f"{omp_num_threads} OMP threads")
 
-        logging.info('run settings: {}'.format(run_kws))
-        logging.info('kernel settings: {}'.format(kernel_kws))
-        logging.info('sampler settings: {}'.format(sampler_kws))
+        logger.info('run settings: {}'.format(run_kws))
+        logger.info('kernel settings: {}'.format(kernel_kws))
+        logger.info('sampler settings: {}'.format(sampler_kws))
 
         # check whether to suppress individual-run progress bars in favor
         # of a single progress bar for the entire scan
@@ -2046,20 +2048,20 @@ class FitSequence(Fit):
         sampler = None
         for t0, target in tqdm(self.target_collection.items(), desc='targets',
                                total=len(self.target_collection), ncols=None):
-            logging.info(f"setting target: {t0}")
+            logger.info(f"setting target: {t0}")
             self.set_target(target=target, force=True)
 
             # if conditioning had been applied to the data, recondition it to
             # the new target time (making sure the new t0 is preserved when
             # downsampling), if requested
             if recondition and 'condition' in self.info:
-                logging.info("reconditioning data to new target")
+                logger.info("reconditioning data to new target")
                 self.data = self._raw_data
                 ckws = self.info.pop('condition')
                 ckws.update({'preserve_acfs': True, 'silent': True})
                 self.condition_data(**ckws)
 
-            logging.info(f"running target: {t0}")
+            logger.info(f"running target: {t0}")
             result, sampler, sampler_kws = self._run_ess(
                 model, kernel, sampler_kws, run_kws, rescale_strain, False,
                 suppress_warnings, min_ess, prng, validation_enabled,
@@ -2072,7 +2074,7 @@ class FitSequence(Fit):
                 dirname = os.path.dirname(os.path.abspath(path))
                 if dirname and not os.path.exists(dirname):
                     os.makedirs(dirname)
-                logging.info(f"saving results to {path}")
+                logger.info(f"saving results to {path}")
                 result.to_netcdf(path)
 
         self.result = ResultCollection(r, index=self.target_collection.index)
@@ -2123,7 +2125,7 @@ class FitSequence(Fit):
 
         fits = super().from_config(config, **kws)
 
-        logging.info("getting target collection")
+        logger.info("getting target collection")
         targets = TargetCollection.from_config(
             config, imr_result=fits.imr_result)
         fits.set_target_collection(targets)
