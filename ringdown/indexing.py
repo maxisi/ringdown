@@ -9,6 +9,8 @@ from ast import literal_eval
 from copy import copy
 import numpy as np
 
+logger = logging.getLogger(__name__)
+
 
 def get_mode_label(mode, **kws):
     return ModeIndex.construct(mode).get_label(**kws)
@@ -145,15 +147,15 @@ class HarmonicIndex(ModeIndex):
             # Try to parse old-style lmn strings:
             idxs = utils.string_to_tuple(string)
             if len(idxs) == 3:
-                logging.warning("Assuming prograde and spin weight -2 "
-                                f"for mode index: {string}; use tuple mode "
-                                "index (p,s,l,m,n) to suppress this warning.")
+                logger.warning("Assuming prograde and spin weight -2 "
+                               f"for mode index: {string}; use tuple mode "
+                               "index (p,s,l,m,n) to suppress this warning.")
                 l, m, n = idxs
                 p, s = 1, -2
             elif len(idxs) == 4:
-                logging.warning("Assuming spin weight -2 for mode index: "
-                                f"{string}; use tuple mode index (p,s,l,m,n)"
-                                " to suppress this warning.")
+                logger.warning("Assuming spin weight -2 for mode index: "
+                               f"{string}; use tuple mode index (p,s,l,m,n)"
+                               " to suppress this warning.")
                 p, l, m, n = idxs
                 s = -2
             elif len(idxs) == 5:

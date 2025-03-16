@@ -8,6 +8,8 @@ from configparser import ConfigParser
 import logging
 import sys
 
+logger = logging.getLogger(__name__)
+
 
 def get_tqdm(progress: bool = True):
     """Return the appropriate tqdm based on the execution environment.
@@ -187,7 +189,7 @@ class MultiIndexCollection(object):
             self.data = []
         elif isinstance(data, dict):
             if index is not None:
-                logging.warning("ignoring redundant index ")
+                logger.warning("ignoring redundant index ")
             self.data = []
             index = []
             for key, result in data.items():
@@ -289,7 +291,7 @@ class MultiIndexCollection(object):
         if reference_mass is not None:
             reference_mass = float(reference_mass)
         if self._reference_mass is not None:
-            logging.warning(
+            logger.warning(
                 f"overwriting reference mass ({self._reference_mass})")
         self._reference_mass = reference_mass
 
@@ -297,7 +299,7 @@ class MultiIndexCollection(object):
         if reference_time is not None:
             reference_time = float(reference_time)
         if self._reference_time is not None:
-            logging.warning(
+            logger.warning(
                 f"overwriting reference time ({self._reference_time})")
         self._reference_time = reference_time
 

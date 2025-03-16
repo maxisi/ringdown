@@ -21,6 +21,8 @@ from lalsimulation import nrfits
 import logging
 import inspect
 
+logger = logging.getLogger(__name__)
+
 MASS_ALIASES = ['final_mass', 'mf', 'mfinal', 'm_final', 'final_mass_source',
                 'remnant_mass']
 SPIN_ALIASES = ['final_spin', 'remnant_spin', 'chif', 'chi_f', 'chi_final',
@@ -221,7 +223,7 @@ class IMRResult(pd.DataFrame):
         """Get best available remmnant mass scale from samples."""
         if self.final_mass is not None:
             return self.final_mass
-        logging.info("no remnant mass found; using total mass")
+        logger.info("no remnant mass found; using total mass")
         if 'total_mass' in self:
             return self['total_mass']
         elif 'mass_1' in self and 'mass_2' in self:
@@ -380,8 +382,8 @@ class IMRResult(pd.DataFrame):
         n = (self.duration or 1) * fsamp
         time = np.arange(n)*dt + tc - dt*(n//2)
         if not self.sampling_frequency or not self.duration:
-            logging.warning("no time array provided; defaulting to "
-                            f"{n*dt} s around {tc} at {1/dt} Hz")
+            logger.warning("no time array provided; defaulting to "
+                           f"{n*dt} s around {tc} at {1/dt} Hz")
         return time
 
     @property
@@ -431,8 +433,8 @@ class IMRResult(pd.DataFrame):
         if nsamp is None:
             df = self
         else:
-            logging.info(f"subselecting {nsamp} IMR samples for peak time "
-                         f"calculation with random seed {prng}")
+            logger.info(f"subselecting {nsamp} IMR samples for peak time "
+                        f"calculation with random seed {prng}")
             df = self.sample(nsamp, random_state=prng)
 
         if ifos is None:
@@ -587,10 +589,10 @@ class IMRResult(pd.DataFrame):
             time calculation.
         """
         if cache and self._waveforms is not None:
-            logging.info("using cached waveforms")
+            logger.info("using cached waveforms")
             wf = self._waveforms
             if wf.shape[-1] < nsamp:
-                logging.warning("cache does not have enough waveforms")
+                logger.warning("cache does not have enough waveforms")
             elif wf.shape[-1] > nsamp:
                 return wf[..., :nsamp]
             else:
@@ -603,18 +605,18 @@ class IMRResult(pd.DataFrame):
             df = self.sample(nsamp, random_state=prng)
 
         if len(df) > 1000:
-            logging.warning('large number of IMR waveforms requested; use'
-                            '`nsamp` to subselect for speed')
+            logger.warning('large number of IMR waveforms requested; use'
+                           '`nsamp` to subselect for speed')
 
         # make ringdown options match by default
         if ringdown_settings is None:
             ringdown_settings = ringdown_slice
-            logging.info("ringdown_settings not specified setting to "
-                         f"{ringdown_slice}")
+            logger.info("ringdown_settings not specified setting to "
+                        f"{ringdown_slice}")
         if ringdown_slice is None:
             ringdown_slice = ringdown_settings
-            logging.info("ringdown_slice not specified setting to "
-                         f"{ringdown_settings}")
+            logger.info("ringdown_slice not specified setting to "
+                        f"{ringdown_settings}")
 
         if ringdown_settings:
             if not self.has_ringdown_reference:
@@ -623,8 +625,8 @@ class IMRResult(pd.DataFrame):
                                  "Result or Fit object")
             if condition is None and not self.has_ringdown_fit:
                 # to condition we need the raw data, which can requires a Fit
-                logging.info("producing Fit from result, prevent this by "
-                             "setting condition or ringdown_settings to False")
+                logger.info("producing Fit from result, prevent this by "
+                            "setting condition or ringdown_settings to False")
                 self.set_ringdown_reference(self.ringdown_reference.get_fit())
             rdref = self.ringdown_reference
             ifos = ifos or rdref.ifos
@@ -664,8 +666,8 @@ class IMRResult(pd.DataFrame):
             t_ok = len(set([len(t) for t in time.values()])) == 1
             if not t_ok:
                 if ringdown_slice:
-                    logging.info("ringdown slice requested with inconsistent "
-                                 "time arrays; enforcing consistency")
+                    logger.info("ringdown slice requested with inconsistent "
+                                "time arrays; enforcing consistency")
 
                     # enforce time truncation
                     tmin, tmax = -np.inf, np.inf
@@ -674,8 +676,8 @@ class IMRResult(pd.DataFrame):
                         tmax = min(tmax, t[-1])
                     for i, t in time.items():
                         if t[0] < tmin or t[-1] > tmax:
-                            logging.warning(f"truncating time array for {i} to"
-                                            f" {tmin} to {tmax}")
+                            logger.warning(f"truncating time array for {i} to"
+                                           f" {tmin} to {tmax}")
                         time[i] = t[(t >= tmin) & (t <= tmax)]
 
                     # enforce equal lengths and warn if not the same already
@@ -683,8 +685,8 @@ class IMRResult(pd.DataFrame):
                     n = min([len(t) for t in time.values()])
                     for i, t in time.items():
                         if len(t) > n:
-                            logging.info(f"truncating {i} time array length "
-                                         f"from {len(t)} to {n}")
+                            logger.info(f"truncating {i} time array length "
+                                        f"from {len(t)} to {n}")
                         time[i] = t[:n]
                     # check delta_t consistency
                     dts = [np.diff(t) for t in time.values()]
@@ -693,7 +695,7 @@ class IMRResult(pd.DataFrame):
                             "time arrays have inconsistent delta_t")
                 else:
                     return_dict = True
-                    logging.warning("time arrays have inconsistent lengths")
+                    logger.warning("time arrays have inconsistent lengths")
 
         for _, sample in tqdm(df.iterrows(), **tqdm_kws):
             h = waveforms.get_detector_signals(times=time, ifos=ifos,
@@ -740,10 +742,10 @@ class IMRResult(pd.DataFrame):
             time_dict = new_time_dict
 
         if cache:
-            logging.info("caching waveforms")
+            logger.info("caching waveforms")
             self._waveforms = h
         elif self._waveforms is not None:
-            logging.info("wiping waveform cache")
+            logger.info("wiping waveform cache")
             self._waveforms = None
 
         if return_time:
@@ -883,7 +885,7 @@ class IMRResult(pd.DataFrame):
             ArviZ InferenceData object containing the posterior samples.
         """
         if nsamp is not None:
-            logging.info(f'subselecting {nsamp} samples for InferenceData')
+            logger.info(f'subselecting {nsamp} samples for InferenceData')
             df = self.sample(nsamp, random_state=prng)
         else:
             df = self.copy()
@@ -1022,7 +1024,7 @@ class IMRResult(pd.DataFrame):
                     if cls._FAVORED_APPROXIMANT in g:
                         group = g
                         break
-                logging.info(f"no group provided; using {group}")
+                logger.info(f"no group provided; using {group}")
             config = pe.config.get(group, {}).get('config', {})
             p = {i: data.PowerSpectrum(p).fill_low_frequencies().gate()
                  for i, p in pe.psd.get(group, {}).items()}
@@ -1037,7 +1039,7 @@ class IMRResult(pd.DataFrame):
                         if cls._FAVORED_APPROXIMANT in g:
                             group = g
                             break
-                    logging.info(f"no group provided; using {group}")
+                    logger.info(f"no group provided; using {group}")
                 if group not in f:
                     raise ValueError(f"group {group} not found")
                 c = {k.replace('_', '-'): get_hdf5_value(v[()]) for k, v in
@@ -1082,10 +1084,10 @@ class IMRResult(pd.DataFrame):
             for ifo in options['ifos']:
                 p = self._data_dict.get(ifo)
                 if os.path.isfile(p):
-                    logging.info(f"found local data for {ifo}: {p}")
+                    logger.info(f"found local data for {ifo}: {p}")
                     path[ifo] = p
                 else:
-                    logging.info(f"missing local data for {ifo}: {p}")
+                    logger.info(f"missing local data for {ifo}: {p}")
                     break
             else:
                 options['path'] = path
@@ -1104,9 +1106,9 @@ class IMRResult(pd.DataFrame):
                 if v in config:
                     options[k] = config[v]
                 else:
-                    logging.warning(f"missing {v} in config")
+                    logger.warning(f"missing {v} in config")
             options['sample_rate'] = self._REFERENCE_SRATE
-        logging.info(f"using data options: {options}")
+        logger.info(f"using data options: {options}")
         return options
 
     @property
@@ -1135,7 +1137,7 @@ class IMRResult(pd.DataFrame):
             sample_rate = config['sampling-frequency']
             ds = self._REFERENCE_SRATE / sample_rate
         else:
-            logging.warning("missing sampling frequency in config")
+            logger.warning("missing sampling frequency in config")
             ds = None
         return {'ds': ds, 'trim': 0}
 
@@ -1236,7 +1238,7 @@ class IMRResult(pd.DataFrame):
         duration : int
             Estimated duration of the analysis in seconds.
         """
-        logging.info("estimating ringdown duration")
+        logger.info("estimating ringdown duration")
         if acfs is None:
             acfs = self.get_acfs(**(acf_kws or {}))
 
@@ -1301,7 +1303,7 @@ class IMRResult(pd.DataFrame):
             duration = n * dt
 
         if not stable_snr:
-            logging.warning("SNR not stable; returning maximum duration")
+            logger.warning("SNR not stable; returning maximum duration")
 
         if return_wfs:
             return duration, wfs
@@ -1365,11 +1367,11 @@ class IMRResult(pd.DataFrame):
         q = 0.5*(1 - reference_cl)
         qs = [q, 0.5, 1-q]
         if generic_modes:
-            logging.info("estimating frequency prior based on 220 mode")
+            logger.info("estimating frequency prior based on 220 mode")
             mode = (1, -2, 2, 2, 0)
             f = self.sample(nsamp).get_kerr_frequencies([mode])['f_220']
             l, m, h = np.quantile(f, qs)
-            logging.info(f"quantiles {qs}: {l}, {m}, {h}")
+            logger.info(f"quantiles {qs}: {l}, {m}, {h}")
             fmax = 0.5 * self.sampling_frequency
             fmin = 1 / self.duration
             for k in ['f', 'g']:
@@ -1382,15 +1384,15 @@ class IMRResult(pd.DataFrame):
                     opts[kk] = np.round(opts[kk])
                 # check values for safety
                 if opts[f'{k}_max'] >= fmax:
-                    logging.warning("upper frequency bound set to Nyquist")
+                    logger.warning("upper frequency bound set to Nyquist")
                     opts[f'{k}_max'] = fmax
                 if opts[f'{k}_min'] <= fmin:
-                    logging.warning("lower frequency bound set to 1/T")
+                    logger.warning("lower frequency bound set to 1/T")
                     opts[f'{k}_min'] = fmin
         else:
-            logging.info("estimating mass prior")
+            logger.info("estimating mass prior")
             l, m, h = np.quantile(self.remnant_mass_scale, qs)
-            logging.info(f"quantiles {qs}: {l}, {m}, {h}")
+            logger.info(f"quantiles {qs}: {l}, {m}, {h}")
             opts.update({
                 'm_max': np.ceil(m + frequency_scale_factor*(h - m)),
                 'm_min': np.floor(max(m/2, m - frequency_scale_factor*(m - l)))
@@ -1411,7 +1413,7 @@ class IMRResult(pd.DataFrame):
             try:
                 r = cls.from_pesummary(path, attrs=attrs, **kws)
             except Exception as e:
-                logging.warning(f"failed to read pesummary file: {e}")
+                logger.warning(f"failed to read pesummary file: {e}")
                 r = pd.read_hdf(path, **kws)
             path = os.path.abspath(path)
             r.attrs['path'] = path
@@ -1438,7 +1440,7 @@ class IMRResult(pd.DataFrame):
         config = utils.load_config(config_input)
 
         if not config.has_section(imr_sec):
-            logging.warning("no IMR section found in config")
+            logger.warning("no IMR section found in config")
             return cls()
 
         # get imr options
@@ -1459,7 +1461,7 @@ class IMRResult(pd.DataFrame):
         overwrite_data &= config.has_section('data')
 
         if overwrite_data:
-            logging.info("loading data from disk (ignoring IMR data)")
+            logger.info("loading data from disk (ignoring IMR data)")
             data_kws = {k: utils.try_parse(v)
                         for k, v in config['data'].items()}
             if 'ifos' in config['data']:
@@ -1467,5 +1469,5 @@ class IMRResult(pd.DataFrame):
         else:
             data_kws = {}
 
-        logging.info("loading IMR result")
+        logger.info("loading IMR result")
         return cls.construct(imr_path, **data_kws, **imr, **kws)

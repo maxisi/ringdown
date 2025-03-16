@@ -24,6 +24,8 @@ from parse import parse
 import logging
 from scipy.stats import gaussian_kde
 
+logger = logging.getLogger(__name__)
+
 _DATAFRAME_PARAMETERS = ['m', 'chi', 'f', 'g',
                          'a', 'phi', 'theta', 'ellip', 'df', 'dg']
 
@@ -82,13 +84,13 @@ class Result(az.InferenceData):
     def imr_result(self) -> IMRResult:
         """Reference IMR result."""
         if self._imr_result is None:
-            logging.info("Looking for IMR result in config.")
+            logger.info("Looking for IMR result in config.")
             if 'imr' in self.config:
-                logging.info("IMR section found in config")
+                logger.info("IMR section found in config")
                 self._imr_result = IMRResult.from_config(self.config)
-                logging.info("IMR result loaded.")
+                logger.info("IMR result loaded.")
             else:
-                logging.info("No IMR section found in config.")
+                logger.info("No IMR section found in config.")
                 return IMRResult()
             self._imr_result.set_ringdown_reference(self)
         return self._imr_result
@@ -143,7 +145,7 @@ class Result(az.InferenceData):
         """Autoscale the strain data in the result.
         """
         scale = scale or self.strain_scale
-        logging.info(f"rescaling strain by {scale}")
+        logger.info(f"rescaling strain by {scale}")
         if 'h_det' in self.posterior:
             self.posterior['h_det'] = scale * self.posterior['h_det']
         if 'h_det_mode' in self.posterior:
@@ -280,7 +282,7 @@ class Result(az.InferenceData):
         """Maximum amplitude scale assumed in the analysis."""
         amax = self.config.get('model', {}).get('a_scale_max')
         if amax is None:
-            logging.warning('No maximum amplitude scale found in config')
+            logger.warning('No maximum amplitude scale found in config')
             amax = self.posterior.a_scale.max().values
         return float(amax)
 
@@ -615,7 +617,7 @@ class Result(az.InferenceData):
         if 'chain' in self.posterior.dims and 'draw' in self.posterior.dims:
             return self.posterior.stack(sample=('chain', 'draw'))
         else:
-            logging.info("No chain or draw dimensions found in posterior.")
+            logger.info("No chain or draw dimensions found in posterior.")
             return self.posterior
 
     def set_dataframe_parameters(self, parameters: list[str]) -> None:
@@ -1278,8 +1280,8 @@ class Result(az.InferenceData):
         if imr and self.has_imr_result:
             n_imr = len(self.imr_result)
             if ndraw > n_imr:
-                logging.warning(f"Using fewer IMR samples ({n_imr}) than "
-                                f"requested ({ndraw}).")
+                logger.warning(f"Using fewer IMR samples ({n_imr}) than "
+                               f"requested ({ndraw}).")
                 ndraw = n_imr
             df_imr = pd.DataFrame({
                 'm': self.imr_result.final_mass,
@@ -1380,7 +1382,7 @@ class ResultCollection(utils.MultiIndexCollection):
     def imr_result(self) -> IMRResult:
         """Reference IMR result"""
         if self._imr_result is None:
-            logging.info("Looking for IMR result in first collection item")
+            logger.info("Looking for IMR result in first collection item")
             return self.results[0].imr_result
         return self._imr_result
 
@@ -1394,7 +1396,7 @@ class ResultCollection(utils.MultiIndexCollection):
         """
         old_imr_result = self.imr_result
         if old_imr_result is not None and not old_imr_result.empty:
-            logging.warning("Overwriting existing IMR result.")
+            logger.warning("Overwriting existing IMR result.")
         self._imr_result = imr_result
 
     @property
@@ -1410,8 +1412,8 @@ class ResultCollection(utils.MultiIndexCollection):
         if self._targets is None:
             self._targets = TargetCollection([r.target for r in self.results])
         elif len(self._targets) != len(self.results):
-            logging.warning("Number of targets does not match results."
-                            "Recomputing targets")
+            logger.warning("Number of targets does not match results."
+                           "Recomputing targets")
             self._targets = TargetCollection([r.target for r in self.results])
         return self._targets
 
@@ -1421,8 +1423,8 @@ class ResultCollection(utils.MultiIndexCollection):
         """
         if self.targets.reference_mass is None:
             if self._reference_mass is None:
-                logging.info("No reference mass specified; trying to infer "
-                             "from result configurations.")
+                logger.info("No reference mass specified; trying to infer "
+                            "from result configurations.")
                 m0 = None
                 for r in self.results:
                     m0 = r.config.get('pipe', {}).get(self.targets._mref_key)
@@ -1437,8 +1439,8 @@ class ResultCollection(utils.MultiIndexCollection):
         """
         if self.targets.reference_time is None:
             if self._reference_time is None:
-                logging.info("No reference time specified; trying to infer "
-                             "from result configurations.")
+                logger.info("No reference time specified; trying to infer "
+                            "from result configurations.")
                 t0 = None
                 for r in self.results:
                     t0 = r.config.get('pipe', {}).get(self.targets._tref_key)
@@ -1545,7 +1547,7 @@ class ResultCollection(utils.MultiIndexCollection):
         cpaths = []
         if isinstance(path_input, str):
             paths = sorted(glob(path_input))
-            logging.info(f"loading {len(paths)} results from {path_input}")
+            logger.info(f"loading {len(paths)} results from {path_input}")
             for path in paths:
                 pattern = parse(path_input.replace('*', '{}'), path).fixed
                 idx = tuple([utils.try_parse(k) for k in pattern])
@@ -2002,8 +2004,8 @@ class ResultCollection(utils.MultiIndexCollection):
         if imr and self.has_imr_result:
             n_imr = len(self.imr_result)
             if ndraw > n_imr:
-                logging.warning(f"Using fewer IMR samples ({n_imr}) than "
-                                f"requested ({ndraw}).")
+                logger.warning(f"Using fewer IMR samples ({n_imr}) than "
+                               f"requested ({ndraw}).")
                 ndraw = n_imr
             df_imr = pd.DataFrame({
                 'm': self.imr_result.final_mass,

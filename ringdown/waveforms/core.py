@@ -6,6 +6,8 @@ from ..data import Data, TimeSeries
 from inspect import getfullargspec
 import logging
 
+logger = logging.getLogger(__name__)
+
 
 def _ishift(hp_t: np.array, hc_t: np.array):
     """Quadratic sub-sample interpolation to estimate the peak of a waveform.
@@ -82,7 +84,7 @@ class Signal(TimeSeries):
             tmin = self.time[0]
             tmax = self.time[-1]
             if self.t0 < tmin or self.t0 > tmax:
-                logging.warning("signal time not in time array!")
+                logger.warning("signal time not in time array!")
 
     @property
     def _constructor(self):
