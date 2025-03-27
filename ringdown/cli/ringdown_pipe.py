@@ -57,7 +57,6 @@ def get_parser():
                         help="Number of threads for numpy.")
     p.add_argument('-C', '--constraints', help="SLURM constraints.")
     p.add_argument('-t', '--time', help="SLURM time directive.")
-    p.add_argument('--seed', default=None, type=int, help="Random seed.")
     p.add_argument('-v', '--verbose', action='store_true')
     return p
 
@@ -75,11 +74,6 @@ def main(args=None):
         raise FileNotFoundError(f"unable to load: {config_path}")
     logging.info(f"Loading config from {config_path}")
     config = rd.utils.load_config(config_path)
-
-    # set random seed (purposedly fail if not provided)
-    seed = args.seed or config.getint(PIPE_SECTION, 'seed')
-    logging.info("Random seed set to {}".format(seed))
-    rng = np.random.default_rng(seed)
 
     # determine run directory
     outdir = args.outdir or config.get(PIPE_SECTION, 'outdir', fallback=None)
@@ -153,7 +147,6 @@ def main(args=None):
         "-o {result}",
         f"--platform {args.platform}",
         f"--device-count {NDEVICE}",
-        f"--omp-num-threads {args.omp_num_threads}",
         "--verbose"
     ]
 
@@ -203,31 +196,41 @@ def main(args=None):
         w = "Requested number of cores ({}) above 1280 user limit."
         logging.warning(w.format(NTASK*NDEVICE))
 
+    # check for slurm constraints
+    if args.constraints:
+        command = f"sbatch -C {args.constraints} "
+    else:
+        command = "sbatch"
+
     if args.platform == 'cpu':
         EXE = [
             '#! /usr/bin/env bash',
             'cd {}'.format(outdir),
-            f"sbatch -p cca -n {NTASK} -c {NDEVICE} disBatch {PATHS['run_task']}",
+            f"{command} -p cca -n {NTASK} -c {NDEVICE} disBatch {PATHS['run_task']}",
             'cd -',
         ]
     else:
+        # these options are set to match the GPU nodes at the Flatiron Institute
         # see https://wiki.flatironinstitute.org/SCC/Software/UsingTheGPUNodes
         NCPU = 16
+        command = f"{command} -p gpu -n {NTASK} "\
+            f"--gpus-per-task={NDEVICE} "\
+            f"--cpus-per-task={NCPU} "\
+            f"--gpu-bind=closest disBatch {PATHS['run_task']}"
+    
         EXE = [
             '#! /usr/bin/env bash',
             'cd {}'.format(outdir),
-            f"sbatch -p gpu -n {NTASK} --gpus-per-task={NDEVICE} --cpus-per-task={NCPU} --gpu-bind=closest disBatch {PATHS['run_task']}",
+            command,
             'cd -',
         ]
-
-    if args.constraints:
-        EXE[2] = EXE[2].replace('sbatch', f"sbatch -C {args.constraints}")
 
     epath = PATHS['exe']
     with open(epath, 'w') as f:
         f.write('\n'.join(EXE))
     st = os.stat(epath)
     os.chmod(epath, st.st_mode | 0o111)
+    
     if args.submit:
         print("Submitting: {}".format(epath))
         import subprocess
