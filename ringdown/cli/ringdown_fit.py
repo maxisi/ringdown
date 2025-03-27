@@ -24,6 +24,8 @@ import argparse
 from ast import literal_eval
 import logging
 import ringdown as rd
+import numpyro
+from jax import config as jax_config
 
 ##############################################################################
 # PARSE INPUT
@@ -39,8 +41,6 @@ def get_parser():
     p.add_argument('-o', '--output', default=None,
                    help="output result path (default: `{}`).".format(DEFOUT))
     p.add_argument('--prior', action='store_true', help="sample from prior.")
-    p.add_argument('--omp-num-threads', help='number of threads for numpy.',
-                   type=int, default=1)
     p.add_argument('--platform', choices=['cpu', 'gpu'], default='cpu',
                    help="device platform (default: cpu).")
     p.add_argument('--device-count', type=int, default=4,
@@ -61,37 +61,26 @@ def main(args=None, defout=DEFOUT):
     cpu_count = os.cpu_count()
 
     # check for numpy threading options
-    if args.omp_num_threads > cpu_count:
-        logging.warning(f"requested OMP_NUM_THREADS ({args.omp_num_threads}) "
-                        "greater than the number of available CPUs. Setting "
-                        f"it to the maximum number of CPUs ({cpu_count}).")
-        os.environ["OMP_NUM_THREADS"] = str(cpu_count)
-    else:
-        logging.info("OMP_NUM_THREADS set to: {}".format(args.omp_num_threads))
-        os.environ["OMP_NUM_THREADS"] = str(args.omp_num_threads)
+    if 'OMP_NUM_THREADS' not in os.environ:
+        logging.info("Setting OMP_NUM_THREADS to 1.")
+        os.environ['OMP_NUM_THREADS'] = "1"
 
-    print("Loading: {}".format(os.path.abspath(args.config)))
+    print(f"Loading: {os.path.abspath(args.config)}")
 
     config = rd.utils.load_config(args.config)
 
     if config.has_section('run'):
         run_kws = {k: literal_eval(v) for k, v in config['run'].items()}
-        if run_kws.pop('omp_num_threads', False):
-            logging.warning("omp_num_threads is set in the configuration file,"
-                            " but it will be ignored. Use the command line "
-                            "option instead.")
     else:
         run_kws = {}
     run_kws['prior'] = args.prior or run_kws.get('prior', False)
 
-    from jax import config as jax_config
     jax_config.update("jax_enable_x64", not run_kws.pop('float32', False))
 
     if run_kws['prior']:
         defout = defout.replace('fit', 'prior')
     out = args.output or defout
 
-    import numpyro
     numpyro.set_platform(args.platform)
     if args.device_count is not None:
         if args.platform == 'cpu' and args.device_count > cpu_count:
@@ -105,9 +94,9 @@ def main(args=None, defout=DEFOUT):
 
     if os.path.exists(out):
         if args.force:
-            logging.warning("overwriting output file: {}".format(out))
+            logging.warning(f"overwriting output file: {out}")
         else:
-            raise FileExistsError("output file already exists: {}".format(out))
+            raise FileExistsError(f"output file already exists: {out}")
 
     ##########################################################################
     # RUN FIT
@@ -127,7 +116,7 @@ def main(args=None, defout=DEFOUT):
     else:
         result.to_json(out)
 
-    print("Saved ringdown fit: {}".format(out))
+    print(f"Saved ringdown fit: {out}")
 
 if __name__ == '__main__':
     main()

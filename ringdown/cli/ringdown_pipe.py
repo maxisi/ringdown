@@ -57,7 +57,6 @@ def get_parser():
                         help="Number of threads for numpy.")
     p.add_argument('-C', '--constraints', help="SLURM constraints.")
     p.add_argument('-t', '--time', help="SLURM time directive.")
-    p.add_argument('--seed', default=None, type=int, help="Random seed.")
     p.add_argument('-v', '--verbose', action='store_true')
     return p
 
@@ -76,18 +75,13 @@ def main(args=None):
     logging.info(f"Loading config from {config_path}")
     config = rd.utils.load_config(config_path)
 
-    # set random seed (purposedly fail if not provided)
-    seed = args.seed or config.getint(PIPE_SECTION, 'seed')
-    logging.info("Random seed set to {}".format(seed))
-    rng = np.random.default_rng(seed)
-
     # determine run directory
     outdir = args.outdir or config.get(PIPE_SECTION, 'outdir', fallback=None)
     if not outdir:
-        outdir = 'ringdown_pipe_{:.0f}'.format(time.time())
-        logging.warning("No run dir provided, defaulting to {}".format(outdir))
+        outdir = f'ringdown_pipe_{time.time():.0f}'
+        logging.warning(f"No run dir provided, defaulting to {outdir}")
     outdir = os.path.abspath(outdir)
-    logging.info("Running in {}".format(outdir))
+    logging.info(f"Running in {outdir}")
 
     rerun = False
     if os.path.exists(outdir):
@@ -115,11 +109,11 @@ def main(args=None):
         config.write(f)
 
     with open(PATHS['command'], 'w') as f:
-        f.write("{}\n\n".format(' '.join(sys.argv)))
+        f.write(f"{' '.join(sys.argv)}\n\n")
         for k, v in vars(args).items():
-            f.write("# {}: {}\n".format(k, v))
-        f.write("\n# {}".format(os.path.realpath(__file__)))
-        f.write("\n# ringdown v {}".format(__version__))
+            f.write(f"# {k}: {v}\n")
+        f.write(f"\n# {os.path.realpath(__file__)}")
+        f.write(f"\n# ringdown v {__version__}")
 
     # Identify target analysis times. There will be three possibilities:
     #     1- listing the times explicitly
@@ -153,7 +147,6 @@ def main(args=None):
         "-o {result}",
         f"--platform {args.platform}",
         f"--device-count {NDEVICE}",
-        f"--omp-num-threads {args.omp_num_threads}",
         "--verbose"
     ]
 
@@ -183,7 +176,7 @@ def main(args=None):
             with open(PATHS['run_task'], 'a') as f:
                 f.write(TASK.format(rundir=rundir, result=rpath, config=cpath))
 
-    logging.info("Done processing {} runs.".format(len(t0s)))
+    logging.info(f"Done processing {len(t0s)} runs.")
 
 
     ##############################################################################
@@ -203,37 +196,47 @@ def main(args=None):
         w = "Requested number of cores ({}) above 1280 user limit."
         logging.warning(w.format(NTASK*NDEVICE))
 
+    # check for slurm constraints
+    if args.constraints:
+        command = f"sbatch -C {args.constraints} "
+    else:
+        command = "sbatch"
+
     if args.platform == 'cpu':
         EXE = [
             '#! /usr/bin/env bash',
-            'cd {}'.format(outdir),
-            f"sbatch -p cca -n {NTASK} -c {NDEVICE} disBatch {PATHS['run_task']}",
+            f'cd {outdir}',
+            f"{command} -p cca -n {NTASK} -c {NDEVICE} disBatch {PATHS['run_task']}",
             'cd -',
         ]
     else:
+        # these options are set to match the GPU nodes at the Flatiron Institute
         # see https://wiki.flatironinstitute.org/SCC/Software/UsingTheGPUNodes
         NCPU = 16
+        command = f"{command} -p gpu -n {NTASK} "\
+            f"--gpus-per-task={NDEVICE} "\
+            f"--cpus-per-task={NCPU} "\
+            f"--gpu-bind=closest disBatch {PATHS['run_task']}"
+    
         EXE = [
             '#! /usr/bin/env bash',
-            'cd {}'.format(outdir),
-            f"sbatch -p gpu -n {NTASK} --gpus-per-task={NDEVICE} --cpus-per-task={NCPU} --gpu-bind=closest disBatch {PATHS['run_task']}",
+            f'cd {outdir}',
+            command,
             'cd -',
         ]
-
-    if args.constraints:
-        EXE[2] = EXE[2].replace('sbatch', f"sbatch -C {args.constraints}")
 
     epath = PATHS['exe']
     with open(epath, 'w') as f:
         f.write('\n'.join(EXE))
     st = os.stat(epath)
     os.chmod(epath, st.st_mode | 0o111)
+    
     if args.submit:
-        print("Submitting: {}".format(epath))
+        print(f"Submitting: {epath}")
         import subprocess
         subprocess.run(epath)
     else:
-        print("Submit by running: {}".format(epath))
+        print(f"Submit by running: {epath}")
 
 if __name__ == '__main__':
     main()
