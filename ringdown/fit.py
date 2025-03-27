@@ -18,6 +18,7 @@ import lal
 import logging
 from .data import Data, AutoCovariance, PowerSpectrum
 from . import utils
+from .utils import try_parse
 from .target import Target, TargetCollection
 from .result import Result, ResultCollection
 from .model import make_model, get_arviz, MODEL_DIMENSIONS
@@ -180,8 +181,7 @@ class Fit(object):
         return cp.deepcopy(self)
 
     def reset(self, preserve_conditioning=False):
-        """Reset all priors and results, but keep data and target information.
-        """
+        """Reset all priors and results, but keep data and target information."""
         if not preserve_conditioning:
             self.data = self._raw_data
             self.info.pop("condition", None)
@@ -438,117 +438,65 @@ class Fit(object):
         config = utils.load_config(config_input)
 
         # parse model options
-        model_opts = {k: utils.try_parse(v) for k, v in config["model"].items()}
-        if "name" in model_opts:
-            warnings.warn(
-                "model name is deprecated, use explicitmode options instead"
-            )
-            logger.info(
-                "trying to guess mode configuration based on model name"
-            )
-            name = model_opts.pop("name")
-            if "aligned" in name:
-                raise NotImplementedError("aligned model not yet supported")
-            model_opts["marginalized"] = "marginal" in name
+        model_opts = {k: try_parse(v) for k, v in config["model"].items()}
+
+        # parse data options
+        if "data" in config:
+            data_kws = {k: try_parse(v) for k, v in config["data"].items()}
+            if "ifos" in config["data"]:
+                data_kws["ifos"] = utils.get_ifo_list(config, "data")
+        else:
+            data_kws = {}
+
+        # parse IMR options
+        if config.has_section(IMR_CONFIG_SECTION):
+            imr_kws = {
+                k: try_parse(v) for k, v in config[IMR_CONFIG_SECTION].items()
+            }
+        else:
+            imr_kws = {}
 
         if config.has_section("prior"):
-            prior = {k: utils.try_parse(v) for k, v in config["prior"].items()}
+            prior = {k: try_parse(v) for k, v in config["prior"].items()}
             model_opts.update(prior)
 
-        # look for some legacy options and replace them with current arguments
-        # accepted by make_model
-        legacy = {
-            "a_scale_max": ["A_scale", "a_scale", "A_SCALE"],
-            "flat_amplitude_prior": ["flat_a", "flat_A", "FLAT_A"],
-            "g_min": ["gamma_min"],
-            "g_max": ["gamma_max"],
-        }
-        for new, old in legacy.items():
-            for k in old:
-                if k in model_opts:
-                    warnings.warn(f"'{k}' deprecated, replacing with {new}")
-                    model_opts[new] = model_opts.pop(k)
-
-        if "perturb_f" in model_opts:
-            warnings.warn("perturb_f is deprecated, use df_min/max instead")
-            perturb_f = model_opts.pop("perturb_f")
-            for k in ["df_min", "df_max"]:
-                if k in model_opts:
-                    model_opts[k] *= perturb_f
-
-        if "perturb_tau" in model_opts:
-            warnings.warn("perturb_tau is deprecated, use dg_min/max instead")
-            perturb_tau = model_opts.pop("perturb_tau")
-            if "dtau_max" in model_opts:
-                model_opts["dg_min"] = -model_opts.pop("dtau_max") * perturb_tau
-            if "dtau_min" in model_opts:
-                model_opts["dg_max"] = -model_opts.pop("dtau_min") * perturb_tau
-
-        if "order_fs" in model_opts:
-            warnings.warn(
-                "order_fs is deprecated, use `mode_ordering = 'f'` instead"
-            )
-            if bool(model_opts.pop("order_fs")):
-                model_opts["mode_ordering"] = "f"
-
-        if "order_gammas" in model_opts:
-            warnings.warn(
-                "order_gammas is deprecated, use `mode_ordering = 'g'` instead"
-            )
-            if bool(model_opts.pop("order_gammas")):
-                model_opts["mode_ordering"] = "g"
-
         # initialize fit object, potentially from IMR result
-        if config.get(IMR_CONFIG_SECTION, "initialize_fit", fallback=False):
+        if imr_kws.pop("initialize_fit", False):
             logger.info("initializing fit from IMR result")
-            imr = {
-                k: utils.try_parse(v)
-                for k, v in config[IMR_CONFIG_SECTION].items()
-                if k != "initialize_fit"
-            }
-            if "path" not in imr and "imr_result" not in imr:
+
+            # get IMR path
+            if "path" not in imr_kws and "imr_result" not in imr_kws:
                 raise ValueError(
                     "IMR fit initialization requested but no "
                     "path to IMR result found in config"
                 )
-            if "seed" in imr:
-                if "prng" in imr:
+            imr_path = imr_kws.pop("path", imr_kws.pop("imr_result", None))
+
+            # check for random seed, which is needed to subselect IMR samples
+            if "seed" in imr_kws:
+                if "prng" in imr_kws:
                     raise ValueError("two PRNG seed options provided in config")
-                imr["prng"] = imr.pop("seed")
-            elif "prng" not in imr:
+                imr_kws["prng"] = imr_kws.pop("seed")
+            elif "prng" not in imr_kws:
                 raise ValueError(
                     "IMR fit initialization requested but no "
                     "PRNG seed found in IMR section of config"
                 )
-            imr["prng"] = int(imr["prng"])
-            imr_path = imr.pop("path", imr.pop("imr_result", None))
-            if "data" in config:
-                logger.info("loading data from disk (ignoring IMR data)")
-                data_kws = {
-                    k: utils.try_parse(v) for k, v in config["data"].items()
-                }
-                if "ifos" in config["data"]:
-                    data_kws["ifos"] = utils.get_ifo_list(config, "data")
-            else:
-                data_kws = {}
+            imr_kws["prng"] = int(imr_kws["prng"])
+
             logger.info("loading IMR result")
             fit = cls.from_imr_result(
-                imr_path, **imr, **model_opts, data_kws=data_kws
+                imr_path, **imr_kws, **model_opts, data_kws=data_kws
             )
         else:
             logger.info("initializing fit")
             fit = cls(**model_opts)
 
         # load reference imr result if requested
-        if config.has_section(IMR_CONFIG_SECTION) and not fit.has_imr_result:
-            imr = {
-                k: utils.try_parse(v)
-                for k, v in config[IMR_CONFIG_SECTION].items()
-                if k != "initialize_fit"
-            }
-            if "path" not in imr or "imr_result" not in imr:
-                imr_path = imr.pop("path", imr.pop("imr_result", None))
-                fit.add_imr_result(imr_path, **imr)
+        if imr_kws and not fit.has_imr_result:
+            if "path" in imr_kws or "imr_result" in imr_kws:
+                imr_path = imr_kws.pop("path", imr_kws.pop("imr_result", None))
+                fit.add_imr_result(imr_path, **imr_kws)
             else:
                 logger.warning(
                     "no path to IMR result provided; ignoring "
@@ -561,22 +509,14 @@ class Fit(object):
             return fit
 
         # load data
-        if "data" in config and not fit.has_data:
-            ifos = utils.get_ifo_list(config, "data")
-
-            # NOTE: not popping in order to preserve original ConfigParser
-            kws = {
-                k: utils.try_parse(v)
-                for k, v in config["data"].items()
-                if k != "ifos"
-            }
-            fit.load_data(ifos=ifos, **kws)
+        if data_kws and not fit.has_data:
+            fit.load_data(**data_kws)
 
         # simulate data
         if "fake-data" in config:
             ifos = utils.get_ifo_list(config, "fake-data")
             kws = {
-                k: utils.try_parse(v)
+                k: try_parse(v)
                 for k, v in config["fake-data"].items()
                 if k != "ifos"
             }
@@ -584,17 +524,16 @@ class Fit(object):
 
         # add target
         if config.has_section("target"):
-            kws = {k: utils.try_parse(v) for k, v in config["target"].items()}
+            kws = {k: try_parse(v) for k, v in config["target"].items()}
             if not ("ra" in kws and "t0" not in kws):
+                # this is a Fit and not a FitSequence
                 fit.set_target(**kws)
             else:
                 logger.info(f"ignoring invalid target section: {kws}")
 
         # inject signal if requested
         if config.has_section("injection"):
-            inj_kws = {
-                k: utils.try_parse(v) for k, v in config["injection"].items()
-            }
+            inj_kws = {k: try_parse(v) for k, v in config["injection"].items()}
             if "path" in inj_kws:
                 # attempt to read injection parameters from JSON file
                 injpath = os.path.abspath(inj_kws.pop("path"))
@@ -632,22 +571,18 @@ class Fit(object):
 
         # condition data if requested
         if config.has_section("condition") and not no_cond:
-            cond_kws = {
-                k: utils.try_parse(v) for k, v in config["condition"].items()
-            }
+            cond_kws = {k: try_parse(v) for k, v in config["condition"].items()}
             fit.condition_data(**cond_kws)
 
         # load or produce ACFs
         if config.get("acf", "path", fallback=False) or config.get(
             "acf", "from_imr_result", fallback=False
         ):
-            kws = {k: utils.try_parse(v) for k, v in config["acf"].items()}
+            kws = {k: try_parse(v) for k, v in config["acf"].items()}
             fit.load_acfs(**kws)
         elif not fit.acfs:
             acf_kws = {} if "acf" not in config else config["acf"]
-            fit.compute_acfs(
-                **{k: utils.try_parse(v) for k, v in acf_kws.items()}
-            )
+            fit.compute_acfs(**{k: try_parse(v) for k, v in acf_kws.items()})
 
         if no_noise:
             # no-noise injection, so replace data by simulated signal
