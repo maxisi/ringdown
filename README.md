@@ -46,11 +46,6 @@ See the [example gallery](https://ringdown.readthedocs.io/en/latest/gallery.html
 
 In order to run Jax on a CPU with four cores and use double precision, you can do the following at the top of your script:
 ```python
-# disable numpy multithreading to avoid conflicts
-# with jax multiprocessing in numpyro
-import os
-os.environ["OMP_NUM_THREADS"] = "1"
-
 # set jax up to use double precision
 from jax import config
 config.update("jax_enable_x64", True)
