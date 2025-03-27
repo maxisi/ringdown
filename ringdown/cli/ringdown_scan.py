@@ -38,18 +38,33 @@ _HELP = "Set up and run a ringdown analysis from a configuration file."
 
 def get_parser():
     p = argparse.ArgumentParser(description=_HELP)
-    p.add_argument('config', help="path to configuration file.")
-    p.add_argument('-o', '--output', default=DEFOUT,
-                   help=f"output result path (default: `{DEFOUT}`).")
-    p.add_argument('--platform', choices=['cpu', 'gpu'], default='cpu',
-                   help="device platform (default: cpu).")
-    p.add_argument('--device-count', type=int, default=4,
-                   help="number of devices to use.")
-    p.add_argument('--force', action='store_true',
-                   help="overwrites output file if it already exists.")
-    p.add_argument('--individual-progress-bars', action='store_true',
-                   help="show progress bar for each target.")
-    p.add_argument('-v', '--verbose', action='store_true')
+    p.add_argument("config", help="path to configuration file.")
+    p.add_argument(
+        "-o",
+        "--output",
+        default=DEFOUT,
+        help=f"output result path (default: `{DEFOUT}`).",
+    )
+    p.add_argument(
+        "--platform",
+        choices=["cpu", "gpu"],
+        default="cpu",
+        help="device platform (default: cpu).",
+    )
+    p.add_argument(
+        "--device-count", type=int, default=4, help="number of devices to use."
+    )
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrites output file if it already exists.",
+    )
+    p.add_argument(
+        "--individual-progress-bars",
+        action="store_true",
+        help="show progress bar for each target.",
+    )
+    p.add_argument("-v", "--verbose", action="store_true")
     return p
 
 
@@ -63,9 +78,9 @@ def main(args=None):
     cpu_count = os.cpu_count()
 
     # check for numpy threading options
-    if 'OMP_NUM_THREADS' not in os.environ:
+    if "OMP_NUM_THREADS" not in os.environ:
         logging.info("Setting OMP_NUM_THREADS to 1.")
-        os.environ['OMP_NUM_THREADS'] = "1"
+        os.environ["OMP_NUM_THREADS"] = "1"
 
     print(f"Loading: {os.path.abspath(args.config)}")
 
@@ -74,25 +89,28 @@ def main(args=None):
 
     config = rd.utils.load_config(args.config)
 
-    if config.has_section('run'):
-        run_kws = {k: literal_eval(v) for k, v in config['run'].items()}
+    if config.has_section("run"):
+        run_kws = {k: literal_eval(v) for k, v in config["run"].items()}
     else:
         run_kws = {}
-    run_kws['individual_progress_bars'] = args.individual_progress_bars \
-        or args.verbose
+    run_kws["individual_progress_bars"] = (
+        args.individual_progress_bars or args.verbose
+    )
 
-    jax_config.update("jax_enable_x64", not run_kws.pop('float32', False))
+    jax_config.update("jax_enable_x64", not run_kws.pop("float32", False))
 
     out = os.path.abspath(args.output or DEFOUT)
-    out = config.get(PIPE_SECTION, 'outpath', fallback=out)
+    out = config.get(PIPE_SECTION, "outpath", fallback=out)
 
     numpyro.set_platform(args.platform)
     if args.device_count is not None:
-        if args.platform == 'cpu' and args.device_count > cpu_count:
-            logging.warning(f"requested device count ({args.device_count}) "
-                            "greater than the number of available CPUs. "
-                            "Setting it to the maximum number of CPUs "
-                            f"({cpu_count}).")
+        if args.platform == "cpu" and args.device_count > cpu_count:
+            logging.warning(
+                f"requested device count ({args.device_count}) "
+                "greater than the number of available CPUs. "
+                "Setting it to the maximum number of CPUs "
+                f"({cpu_count})."
+            )
             args.device_count = cpu_count
         else:
             numpyro.set_host_device_count(args.device_count)
@@ -109,15 +127,18 @@ def main(args=None):
         for t0, target in fit.targets:
             path = fit.format_output_path(out, t0)
             if os.path.exists(path):
-                logging.warning("output file already exists "
-                                f"(skipping target): {path}")
+                logging.warning(
+                    f"output file already exists (skipping target): {path}"
+                )
             else:
                 outdir = os.path.dirname(path)
                 os.makedirs(outdir, exist_ok=True)
                 new_targets.append(target)
         if not new_targets:
-            logging.warning("all output files already exist: exiting "
-                            "(use --force to overwrite).")
+            logging.warning(
+                "all output files already exist: exiting "
+                "(use --force to overwrite)."
+            )
             return
         fit.set_target_collection(new_targets)
 
@@ -125,5 +146,6 @@ def main(args=None):
 
     print(f"Saved ringdown fits: {out}")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

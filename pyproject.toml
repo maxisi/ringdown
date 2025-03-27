@@ -41,3 +41,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.version]
 source = "vcs"
+
+[tool.ruff]
+line-length = 80
+
+[tool.ruff.lint]
+select = ["E", "W"]
