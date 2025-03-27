@@ -1,7 +1,6 @@
-"""Module defining the core :class:`Result` class.
-"""
+"""Module defining the core :class:`Result` class."""
 
-__all__ = ['Result', 'ResultCollection']
+__all__ = ["Result", "ResultCollection"]
 
 import os
 import numpy as np
@@ -26,10 +25,20 @@ from scipy.stats import gaussian_kde
 
 logger = logging.getLogger(__name__)
 
-_DATAFRAME_PARAMETERS = ['m', 'chi', 'f', 'g',
-                         'a', 'phi', 'theta', 'ellip', 'df', 'dg']
+_DATAFRAME_PARAMETERS = [
+    "m",
+    "chi",
+    "f",
+    "g",
+    "a",
+    "phi",
+    "theta",
+    "ellip",
+    "df",
+    "dg",
+]
 
-DEFAULT_COLLECTION_KEY = 'run'
+DEFAULT_COLLECTION_KEY = "run"
 
 
 class Result(az.InferenceData):
@@ -56,8 +65,10 @@ class Result(az.InferenceData):
             # https://python.arviz.org/en/stable/_modules/arviz/data/inference_data.html#
             # az.InferenceData(fit.result.attrs, **{k: getattr(fit.result, k)
             # for k in fit.result._groups})
-            super().__init__(args[0].attrs, **{k: getattr(args[0], k)
-                                               for k in args[0]._groups})
+            super().__init__(
+                args[0].attrs,
+                **{k: getattr(args[0], k) for k in args[0]._groups},
+            )
         else:
             super().__init__(*args, **kwargs)
         self._whitened_templates = None
@@ -85,7 +96,7 @@ class Result(az.InferenceData):
         """Reference IMR result."""
         if self._imr_result is None:
             logger.info("Looking for IMR result in config.")
-            if 'imr' in self.config:
+            if "imr" in self.config:
                 logger.info("IMR section found in config")
                 self._imr_result = IMRResult.from_config(self.config)
                 logger.info("IMR result loaded.")
@@ -107,27 +118,26 @@ class Result(az.InferenceData):
         """Default parameters for DataFrames."""
         df_parameters = {}
         for m in _DATAFRAME_PARAMETERS:
-            if m in getattr(self, 'posterior', {}):
+            if m in getattr(self, "posterior", {}):
                 df_parameters[m] = qnms.ParameterLabel(m)
-            elif m.upper() in getattr(self, 'posterior', {}):
+            elif m.upper() in getattr(self, "posterior", {}):
                 df_parameters[m.upper()] = qnms.ParameterLabel(m)
         return df_parameters
 
     @property
     def strain_scale(self) -> float:
-        """Scale factor for strain data.
-        """
-        s = self.get('constant_data', {}).get('scale', 1.0)
+        """Scale factor for strain data."""
+        s = self.get("constant_data", {}).get("scale", 1.0)
         return float(s)
 
     @property
     def h_det(self):
         """Alias for `posterior.h_det`, in case this is not already present,
         it gets computed from individual modes."""
-        if 'h_det' in self.posterior:
+        if "h_det" in self.posterior:
             return self.posterior.h_det
-        elif 'h_det_mode' in self.posterior:
-            self.posterior['h_det'] = self.posterior.h_det_mode.sum('mode')
+        elif "h_det_mode" in self.posterior:
+            self.posterior["h_det"] = self.posterior.h_det_mode.sum("mode")
             return self.posterior.h_det
         else:
             return None
@@ -136,43 +146,42 @@ class Result(az.InferenceData):
     def h_det_mode(self):
         """Alias for `posterior.h_det_mode`, in case this is not already
         present,  it gets computed from the sum of all modes."""
-        if 'h_det_mode' in self.posterior:
+        if "h_det_mode" in self.posterior:
             return self.posterior.h_det_mode
         else:
             return None
 
     def rescale_strain(self, scale=None) -> None:
-        """Autoscale the strain data in the result.
-        """
+        """Autoscale the strain data in the result."""
         scale = scale or self.strain_scale
         logger.info(f"rescaling strain by {scale}")
-        if 'h_det' in self.posterior:
-            self.posterior['h_det'] = scale * self.posterior['h_det']
-        if 'h_det_mode' in self.posterior:
-            self.posterior['h_det_mode'] = \
-                scale * self.posterior['h_det_mode']
-        if 'a' in self.posterior:
-            self.posterior['a'] = scale * self.posterior['a']
-        if 'a_scale' in self.posterior:
-            self.posterior['a_scale'] = scale * self.posterior['a_scale']
-        if 'observed_data' in self and 'strain' in self.observed_data:
-            self.observed_data['strain'] = \
-                scale * self.observed_data['strain']
-        if 'constant_data' in self:
-            if 'scale' in self.constant_data:
-                self.constant_data['scale'] = \
-                    self.constant_data['scale'] / scale
-            if 'injection' in self.constant_data:
-                self.constant_data['injection'] = \
-                    scale * self.constant_data['injection']
-            if 'cholesky_factor' in self.constant_data:
-                self.constant_data['cholesky_factor'] = \
-                    scale * self.constant_data['cholesky_factor']
+        if "h_det" in self.posterior:
+            self.posterior["h_det"] = scale * self.posterior["h_det"]
+        if "h_det_mode" in self.posterior:
+            self.posterior["h_det_mode"] = scale * self.posterior["h_det_mode"]
+        if "a" in self.posterior:
+            self.posterior["a"] = scale * self.posterior["a"]
+        if "a_scale" in self.posterior:
+            self.posterior["a_scale"] = scale * self.posterior["a_scale"]
+        if "observed_data" in self and "strain" in self.observed_data:
+            self.observed_data["strain"] = scale * self.observed_data["strain"]
+        if "constant_data" in self:
+            if "scale" in self.constant_data:
+                self.constant_data["scale"] = (
+                    self.constant_data["scale"] / scale
+                )
+            if "injection" in self.constant_data:
+                self.constant_data["injection"] = (
+                    scale * self.constant_data["injection"]
+                )
+            if "cholesky_factor" in self.constant_data:
+                self.constant_data["cholesky_factor"] = (
+                    scale * self.constant_data["cholesky_factor"]
+                )
 
     @property
     def default_label_format(self) -> dict:
-        """Default formatting options for DataFrames.
-        """
+        """Default formatting options for DataFrames."""
         kws = dict(
             label_prograde=any([not m.is_prograde for m in self.modes]),
         )
@@ -180,20 +189,21 @@ class Result(az.InferenceData):
         return kws
 
     def update_default_label_format(self, **kws) -> None:
-        """Update the default formatting options for DataFrames.
-        """
+        """Update the default formatting options for DataFrames."""
         self._default_label_format.update(kws)
 
     @classmethod
-    def from_netcdf(cls, *args, config=None, **kwargs) -> 'Result':
+    def from_netcdf(cls, *args, config=None, **kwargs) -> "Result":
         data = super().from_netcdf(*args, **kwargs)
         return cls(data, config=config)
+
     from_netcdf.__doc__ = az.InferenceData.from_netcdf.__doc__
 
     @classmethod
     def from_zarr(cls, *args, **kwargs):
         data = super().from_zarr(*args, **kwargs)
         return cls(data)
+
     from_zarr.__doc__ = az.InferenceData.from_zarr.__doc__
 
     @property
@@ -202,12 +212,13 @@ class Result(az.InferenceData):
         of the configuration file.
         """
         if self._config_dict is None:
-            if 'config' in self.attrs:
-                config_string = self.attrs['config']
+            if "config" in self.attrs:
+                config_string = self.attrs["config"]
                 raw_config_dict = json.loads(config_string)
-                self._config_dict = {kk: {k: utils.try_parse(v)
-                                          for k, v in vv.items()}
-                                     for kk, vv in raw_config_dict.items()}
+                self._config_dict = {
+                    kk: {k: utils.try_parse(v) for k, v in vv.items()}
+                    for kk, vv in raw_config_dict.items()
+                }
             else:
                 self._config_dict = {}
         return self._config_dict
@@ -232,22 +243,21 @@ class Result(az.InferenceData):
     def target(self) -> Target | None:
         """Target used in the analysis."""
         if self._target is None:
-            if 'target' in self.config:
-                self._target = Target.construct(**self.config['target'])
+            if "target" in self.config:
+                self._target = Target.construct(**self.config["target"])
         return self._target
 
     @property
     def t0(self) -> float | None:
         """Reference time for the analysis."""
-        return getattr(self.target, 't0', None)
+        return getattr(self.target, "t0", None)
 
     @property
     def epoch(self):
-        """Epoch for detector times; corresponds to `fit.start_times`
-        """
-        if 'epoch' in self.constant_data:
+        """Epoch for detector times; corresponds to `fit.start_times`"""
+        if "epoch" in self.constant_data:
             return self.constant_data.epoch
-        elif 'target' in self.config:
+        elif "target" in self.config:
             ifos = self.posterior.ifo.values.astype(str)
             epochs = list(self.target.get_detector_times_dict(ifos).values())
             shape = self.constant_data.fp.shape
@@ -259,7 +269,7 @@ class Result(az.InferenceData):
     def sample_times(self):
         """Sample times for the analysis; corresponds to
         `fit.analysis_data[i].time`."""
-        shape = (self.posterior.sizes['ifo'], 1)
+        shape = (self.posterior.sizes["ifo"], 1)
         return self.constant_data.time + np.array(self.epoch).reshape(shape)
 
     @property
@@ -275,14 +285,14 @@ class Result(az.InferenceData):
     @property
     def n_analyze(self) -> int:
         """Number of samples in the analysis."""
-        return self.constant_data.sizes['time_index']
+        return self.constant_data.sizes["time_index"]
 
     @property
     def a_scale_max(self) -> float:
         """Maximum amplitude scale assumed in the analysis."""
-        amax = self.config.get('model', {}).get('a_scale_max')
+        amax = self.config.get("model", {}).get("a_scale_max")
         if amax is None:
-            logger.warning('No maximum amplitude scale found in config')
+            logger.warning("No maximum amplitude scale found in config")
             amax = self.posterior.a_scale.max().values
         return float(amax)
 
@@ -290,13 +300,16 @@ class Result(az.InferenceData):
         """Get a Fit object from the result."""
         if self.config:
             from .fit import Fit
+
             return Fit.from_config(self._config_object, result=self, **kwargs)
 
-    def draw_sample(self,
-                    idx: int | tuple[int, int] | dict = None,
-                    map: bool = False,
-                    prng: np.random.Generator = None,
-                    seed: int = None) -> tuple[int, dict]:
+    def draw_sample(
+        self,
+        idx: int | tuple[int, int] | dict = None,
+        map: bool = False,
+        prng: np.random.Generator = None,
+        seed: int = None,
+    ) -> tuple[int, dict]:
         """Draw a sample from the posterior.
 
         Arguments
@@ -335,17 +348,22 @@ class Result(az.InferenceData):
                 sample = self.posterior.isel(chain=idx[0], draw=idx[1])
         elif map:
             # select maximum probability sample
-            if 'lp' in self.sample_stats:
+            if "lp" in self.sample_stats:
                 logp = self.sample_stats.lp
             else:
-                logp = sum([v for k, v in self.log_likelihood.items()
-                            if k.startswith('logl_')])
-            i = np.argmax(logp.stack(sample=('chain', 'draw')).values)
+                logp = sum(
+                    [
+                        v
+                        for k, v in self.log_likelihood.items()
+                        if k.startswith("logl_")
+                    ]
+                )
+            i = np.argmax(logp.stack(sample=("chain", "draw")).values)
             sample = samples.isel(sample=i)
         else:
             # pick random sample
             prng = prng or np.random.default_rng(seed)
-            i = prng.integers(len(samples['sample']))
+            i = prng.integers(len(samples["sample"]))
             sample = samples.isel(sample=i)
         pars = sample.data_vars
         return i, pars
@@ -359,15 +377,15 @@ class Result(az.InferenceData):
     def modes(self) -> list | None:
         """Modes used in analysis."""
         if self._modes is None:
-            self._modes = indexing.ModeIndexList(self.posterior.mode.values
-                                                 if 'mode' in self.posterior
-                                                 else [])
+            self._modes = indexing.ModeIndexList(
+                self.posterior.mode.values if "mode" in self.posterior else []
+            )
         return self._modes
 
     @property
     def cholesky_factors(self) -> np.ndarray:
         """Cholesky L factors used in analysis."""
-        if 'L' in self.constant_data:
+        if "L" in self.constant_data:
             return self.constant_data.L
         else:
             return self.constant_data.cholesky_factor
@@ -400,8 +418,12 @@ class Result(az.InferenceData):
             # whiten the reconstructions using the Cholesky factors, L, with
             # shape (ifo, time, time). the resulting object will have shape
             # (ifo, time, sample)
-            wds = np.array([sl.solve_triangular(L, d, lower=True)
-                            for L, d in zip(chols, datas)])
+            wds = np.array(
+                [
+                    sl.solve_triangular(L, d, lower=True)
+                    for L, d in zip(chols, datas)
+                ]
+            )
         return wds
 
     @property
@@ -439,13 +461,16 @@ class Result(az.InferenceData):
             # get reconstructions from posterior, shaped as
             # (chain, draw, ifo, time)
             # and stack into (ifo, time, sample)
-            hs = self.h_det.stack(samples=('chain', 'draw'))
+            hs = self.h_det.stack(samples=("chain", "draw"))
             self._whitened_templates = self.whiten(hs)
         return self._whitened_templates
 
-    def compute_posterior_snrs(self, optimal: bool = True,
-                               network: bool = False,
-                               cumulative: bool = False) -> np.ndarray:
+    def compute_posterior_snrs(
+        self,
+        optimal: bool = True,
+        network: bool = False,
+        cumulative: bool = False,
+    ) -> np.ndarray:
         """Efficiently computes signal-to-noise ratios from posterior samples,
         reproducing the computation internally carried out by the sampler.
 
@@ -496,9 +521,9 @@ class Result(az.InferenceData):
             # take inner product between whitened template and data,
             # and normalize
             if cumulative:
-                snrs = np.cumsum(wds[..., None]*whs, axis=1) / opt_ifo_snrs
+                snrs = np.cumsum(wds[..., None] * whs, axis=1) / opt_ifo_snrs
             else:
-                snrs = np.sum(wds[..., None]*whs, axis=1) / opt_ifo_snrs
+                snrs = np.sum(wds[..., None] * whs, axis=1) / opt_ifo_snrs
         if network:
             # take norm across detectors
             return np.linalg.norm(snrs, axis=0)
@@ -518,7 +543,7 @@ class Result(az.InferenceData):
         # get whitened residuals from posterior: (chain, draw, ifo, time)
         whr = self.posterior.whitened_residual
         # compute likelihood timeseries
-        return -0.5*np.sum(np.cumsum(whr*whr, axis=3), axis=2)
+        return -0.5 * np.sum(np.cumsum(whr * whr, axis=3), axis=2)
 
     @property
     def observed_strain(self):
@@ -537,7 +562,7 @@ class Result(az.InferenceData):
         See https://arxiv.org/abs/1507.04544 for definitions and discussion.  A
         larger WAIC indicates that the model has better predictive accuarcy on
         the fitted data set."""
-        if WHITENED_LOGLIKE_KEY not in self.get('log_likelihood', {}):
+        if WHITENED_LOGLIKE_KEY not in self.get("log_likelihood", {}):
             self._generate_whitened_residuals()
         return az.waic(self, var_name=WHITENED_LOGLIKE_KEY)
 
@@ -553,57 +578,61 @@ class Result(az.InferenceData):
         evaluated on hypothetical data from a replication of the observation
         averaged over the posterior) of the model; larger LOO values indicate
         higher predictive accuracy (i.e. explanatory power) for the model."""
-        if WHITENED_LOGLIKE_KEY not in self.get('log_likelihood', {}):
+        if WHITENED_LOGLIKE_KEY not in self.get("log_likelihood", {}):
             self._generate_whitened_residuals()
         return az.loo(self, var_name=WHITENED_LOGLIKE_KEY)
 
     def _generate_whitened_residuals(self) -> None:
-        """Adduct the whitened residuals to the result.
-        """
+        """Adduct the whitened residuals to the result."""
         residuals = {}
         residuals_stacked = {}
         ifo_list = list(self.ifos.values.astype(str))
         for ifo in ifo_list:
-            r = self.observed_strain[ifo_list.index(ifo)] -\
-                self.h_det.sel(ifo=ifo)
-            residuals[ifo] = r.transpose('chain', 'draw', 'time_index')
-            residuals_stacked[ifo] = residuals[ifo].stack(sample=['chain',
-                                                                  'draw'])
+            r = self.observed_strain[ifo_list.index(ifo)] - self.h_det.sel(
+                ifo=ifo
+            )
+            residuals[ifo] = r.transpose("chain", "draw", "time_index")
+            residuals_stacked[ifo] = residuals[ifo].stack(
+                sample=["chain", "draw"]
+            )
         residuals_whitened = self.whiten(residuals_stacked)
         d = self.posterior.sizes
         residuals_whitened = {
-            i: v.reshape((d['time_index'], d['chain'], d['draw']))
+            i: v.reshape((d["time_index"], d["chain"], d["draw"]))
             for i, v in residuals_whitened.items()
         }
         resid = np.stack([residuals_whitened[i] for i in ifo_list], axis=-1)
-        keys = ('time_index', 'chain', 'draw', 'ifo')
-        self.posterior['whitened_residual'] = (keys, resid)
-        keys = ('chain', 'draw', 'ifo', 'time_index')
-        self.posterior['whitened_residual'] = \
+        keys = ("time_index", "chain", "draw", "ifo")
+        self.posterior["whitened_residual"] = (keys, resid)
+        keys = ("chain", "draw", "ifo", "time_index")
+        self.posterior["whitened_residual"] = (
             self.posterior.whitened_residual.transpose(*keys)
-        lnlike = -self.posterior.whitened_residual**2/2
-        if hasattr(self, 'log_likelihood'):
+        )
+        lnlike = -(self.posterior.whitened_residual**2) / 2
+        if hasattr(self, "log_likelihood"):
             self.log_likelihood[WHITENED_LOGLIKE_KEY] = lnlike
         else:
             # We assume that log-likelihood isn't created yet.
-            self.add_groups(dict(
-                log_likelihood=dict_to_dataset(
-                    {WHITENED_LOGLIKE_KEY: lnlike},
-                    coords=self.posterior.coords,
-                    dims={WHITENED_LOGLIKE_KEY: list(keys)}
-                )))
+            self.add_groups(
+                dict(
+                    log_likelihood=dict_to_dataset(
+                        {WHITENED_LOGLIKE_KEY: lnlike},
+                        coords=self.posterior.coords,
+                        dims={WHITENED_LOGLIKE_KEY: list(keys)},
+                    )
+                )
+            )
 
     @property
     def whitened_residuals(self) -> np.ndarray:
         """Whitened residuals from the analysis."""
-        if 'whitened_residual' not in self.posterior:
+        if "whitened_residual" not in self.posterior:
             self._generate_whitened_residuals()
         return self.posterior.whitened_residual
 
     @property
     def ess(self) -> float:
-        """Minimum effective sample size for all parameters in the result.
-        """
+        """Minimum effective sample size for all parameters in the result."""
         # check effective number of samples and rerun if necessary
         ess = az.ess(self)
         mess = ess.min()
@@ -612,10 +641,9 @@ class Result(az.InferenceData):
 
     @property
     def stacked_samples(self):
-        """Stacked samples for all parameters in the result.
-        """
-        if 'chain' in self.posterior.dims and 'draw' in self.posterior.dims:
-            return self.posterior.stack(sample=('chain', 'draw'))
+        """Stacked samples for all parameters in the result."""
+        if "chain" in self.posterior.dims and "draw" in self.posterior.dims:
+            return self.posterior.stack(sample=("chain", "draw"))
         else:
             logger.info("No chain or draw dimensions found in posterior.")
             return self.posterior
@@ -634,21 +662,29 @@ class Result(az.InferenceData):
 
     def get_parameter_key_map(self, modes: bool = True, **kws) -> dict:
         """Get a dictionary of parameter labels for the result."""
-        kws['latex'] = True
+        kws["latex"] = True
         if modes:
             x = {}
             for m in self.modes:
-                x.update({p.get_label(mode=m, latex=False): p.get_label(mode=m,
-                                                                        **kws)
-                          for p in self._df_parameters.values()})
+                x.update(
+                    {
+                        p.get_label(mode=m, latex=False): p.get_label(
+                            mode=m, **kws
+                        )
+                        for p in self._df_parameters.values()
+                    }
+                )
         else:
             x = {k: p.get_label(**kws) for k, p in self._df_parameters.items()}
         return x
 
-    def get_parameter_dataframe(self, nsamp: int | None = None,
-                                prng: int | np.random.Generator = None,
-                                ignore_index=False,
-                                **kws) -> pd.DataFrame:
+    def get_parameter_dataframe(
+        self,
+        nsamp: int | None = None,
+        prng: int | np.random.Generator = None,
+        ignore_index=False,
+        **kws,
+    ) -> pd.DataFrame:
         """Get a DataFrame of parameter samples drawn from the posterior.
 
         The columns correspond to parameters and the index to the sample,
@@ -678,14 +714,14 @@ class Result(az.InferenceData):
         samples = self.stacked_samples
         if nsamp is not None:
             prng = prng or np.random.default_rng(prng)
-            idxs = prng.choice(samples.sizes['sample'], nsamp, replace=False)
+            idxs = prng.choice(samples.sizes["sample"], nsamp, replace=False)
             samples = samples.isel(sample=idxs)
         else:
             idxs = None
         df = pd.DataFrame(index=idxs if not ignore_index else None)
         for p, par in self._df_parameters.items():
             x = samples[p]
-            if 'mode' in x.dims:
+            if "mode" in x.dims:
                 for mode in x.mode.values:
                     key_df = par.get_label(mode=mode, **fmt)
                     df[key_df] = x.sel(mode=mode).values
@@ -694,11 +730,13 @@ class Result(az.InferenceData):
                 df[key_df] = x.values
         return df
 
-    def get_mode_parameter_dataframe(self, nsamp: int | None = None,
-                                     ignore_index: bool = False,
-                                     prng: int | np.random.Generator |
-                                     None = None,
-                                     **kws) -> pd.DataFrame:
+    def get_mode_parameter_dataframe(
+        self,
+        nsamp: int | None = None,
+        ignore_index: bool = False,
+        prng: int | np.random.Generator | None = None,
+        **kws,
+    ) -> pd.DataFrame:
         """Get a DataFrame of parameter samples drawn from the posterior, with
         columns for different modes.
 
@@ -731,7 +769,7 @@ class Result(az.InferenceData):
         samples = self.stacked_samples
         if nsamp is not None:
             prng = prng or np.random.default_rng(prng)
-            idxs = prng.choice(samples.sizes['sample'], nsamp, replace=False)
+            idxs = prng.choice(samples.sizes["sample"], nsamp, replace=False)
             samples = samples.isel(sample=idxs)
         else:
             idxs = None
@@ -739,19 +777,17 @@ class Result(az.InferenceData):
         for mode, m in zip(self.modes, self.posterior.mode.values):
             df = pd.DataFrame(index=idxs)
             for p, par in self._df_parameters.items():
-                if p in samples and 'mode' in samples[p].dims:
+                if p in samples and "mode" in samples[p].dims:
                     x = samples[p]
                     key_df = par.get_label(mode=None, **fmt)
                     df[key_df] = x.sel(mode=m).values
-            df['mode'] = mode.get_label(**fmt)
+            df["mode"] = mode.get_label(**fmt)
             dfs.append(df)
         return pd.concat(dfs, ignore_index=ignore_index)
 
-    def get_single_mode_dataframe(self,
-                                  mode: str | tuple | indexing.ModeIndex |
-                                  bytes,
-                                  *args,
-                                  **kws) -> pd.DataFrame:
+    def get_single_mode_dataframe(
+        self, mode: str | tuple | indexing.ModeIndex | bytes, *args, **kws
+    ) -> pd.DataFrame:
         """Get a DataFrame of parameter samples drawn from the posterior for a
         specific mode.
 
@@ -767,11 +803,14 @@ class Result(az.InferenceData):
             of :class:`qnms.ParameterLabel`.
         """
         df = self.get_mode_parameter_dataframe(*args, **kws)
-        return df[df['mode'] == indexing.get_mode_label(mode, **kws)]
+        return df[df["mode"] == indexing.get_mode_label(mode, **kws)]
 
-    def get_strain_quantile(self, q: float, ifo: str = None,
-                            mode: str | tuple | indexing.ModeIndex |
-                            bytes = None) -> dict[data.Data] | data.Data:
+    def get_strain_quantile(
+        self,
+        q: float,
+        ifo: str = None,
+        mode: str | tuple | indexing.ModeIndex | bytes = None,
+    ) -> dict[data.Data] | data.Data:
         """Get the quantile of the strain reconstruction.
 
         Arguments
@@ -790,18 +829,17 @@ class Result(az.InferenceData):
             detector names, or a single data object if ``ifo`` is not provided
         """
         if mode is None:
-            key = 'h_det'
+            key = "h_det"
             # make sure h_det exists
             self.h_det
         else:
             mode = indexing.get_mode_coordinate(mode)
             if mode not in self.posterior.mode:
                 raise ValueError("Mode requested not in result")
-            key = 'h_det_mode'
-        sel = {k: v for k, v in dict(mode=mode).items()
-               if v is not None}
+            key = "h_det_mode"
+        sel = {k: v for k, v in dict(mode=mode).items() if v is not None}
         x = self.posterior[key].sel(**sel)
-        hq = x.quantile(q, dim=('chain', 'draw'))
+        hq = x.quantile(q, dim=("chain", "draw"))
         hdict = {}
         for i in hq.ifo.values.astype(str):
             time = self.sample_times.sel(ifo=i).values
@@ -809,15 +847,15 @@ class Result(az.InferenceData):
         h = hdict if ifo is None else hdict[ifo]
         return h
 
-    def draw_strain_sample(self,
-                           idx: int | None = None,
-                           map: bool = False,
-                           ifo: str | None = None,
-                           mode: str | tuple | indexing.ModeIndex | bytes |
-                           None = None,
-                           prng: int | np.random.Generator | None = None,
-                           seed: int | None = None) \
-            -> dict[data.Data] | data.Data:
+    def draw_strain_sample(
+        self,
+        idx: int | None = None,
+        map: bool = False,
+        ifo: str | None = None,
+        mode: str | tuple | indexing.ModeIndex | bytes | None = None,
+        prng: int | np.random.Generator | None = None,
+        seed: int | None = None,
+    ) -> dict[data.Data] | data.Data:
         """Get a sample of the strain reconstruction.
 
         Arguments
@@ -834,32 +872,32 @@ class Result(az.InferenceData):
             detector names, or a single data object if ``ifo`` is not provided
         """
         if mode is None:
-            key = 'h_det'
+            key = "h_det"
             # make sure h_det exists
             self.h_det
         else:
             mode = indexing.get_mode_coordinate(mode)
             if mode not in self.posterior.mode:
                 raise ValueError("Mode requested not in result")
-            key = 'h_det_mode'
+            key = "h_det_mode"
         idx, x = self.draw_sample(idx=idx, map=map, prng=prng, seed=seed)
-        sel = {k: v for k, v in dict(mode=mode).items()
-               if v is not None}
+        sel = {k: v for k, v in dict(mode=mode).items() if v is not None}
         h = x[key].sel(**sel)
         info = {k: v.values for k, v in x.items()}
-        info['idx'] = idx
+        info["idx"] = idx
         hdict = {}
         for i in h.ifo.values.astype(str):
             time = self.sample_times.sel(ifo=i).values
-            hdict[i] = data.Data(h.sel(ifo=i).values, ifo=i, index=time,
-                                 attrs=info)
+            hdict[i] = data.Data(
+                h.sel(ifo=i).values, ifo=i, index=time, attrs=info
+            )
         hdata = hdict if ifo is None else hdict[ifo]
         return hdata
 
     @property
     def injected_strain(self) -> dict[data.Data] | None:
         """Injections used in the analysis."""
-        if 'injection' in self.constant_data:
+        if "injection" in self.constant_data:
             h = self.constant_data.injection
             hdict = {}
             for i in h.ifo.values.astype(str):
@@ -869,9 +907,11 @@ class Result(az.InferenceData):
         else:
             return None
 
-    def resample_to_uniform_amplitude(self, nsamp: int | None = None,
-                                      prng: int | np.random.Generator
-                                      | None = None) -> 'Result':
+    def resample_to_uniform_amplitude(
+        self,
+        nsamp: int | None = None,
+        prng: int | np.random.Generator | None = None,
+    ) -> "Result":
         """Reweight the posterior to a uniform amplitude prior.
 
         The “primal” posterior has a density :math:`p(a, a_{\\rm scale}) =
@@ -907,9 +947,14 @@ class Result(az.InferenceData):
         # get amplitudes and scales
         a = samples.a
         a_scale = samples.a_scale
-        n = len([k for k in samples.keys() if k.endswith('_unit')])
+        n = len([k for k in samples.keys() if k.endswith("_unit")])
         # compute weights
-        w = 1 / (a**(n-1) * np.exp(-0.5*(a/a_scale)**2) / a_scale**n).values
+        w = (
+            1
+            / (
+                a ** (n - 1) * np.exp(-0.5 * (a / a_scale) ** 2) / a_scale**n
+            ).values
+        )
         w = np.prod(w, axis=0)
         # zero out weights for samples with amplitudes above the maximum
         a_max = self.a_scale_max / self.strain_scale
@@ -917,22 +962,25 @@ class Result(az.InferenceData):
         w /= np.sum(w)
         # draw samples
         if nsamp is None:
-            nsamp = samples.sizes['sample']
+            nsamp = samples.sizes["sample"]
         if isinstance(prng, int):
             prng = np.random.default_rng(prng)
         elif prng is None:
             prng = np.random.default_rng()
-        idxs = prng.choice(samples.sizes['sample'], nsamp, p=w, replace=False)
+        idxs = prng.choice(samples.sizes["sample"], nsamp, p=w, replace=False)
         # create updated result
         new_result = self.copy()
         new_result.posterior = samples.isel(sample=idxs)
         return new_result
 
-    def imr_consistency(self, coords: str = 'mchi',
-                        ndraw_rd: int | None = None,
-                        ndraw_imr: int | None = 1000,
-                        prng: int | np.random.Generator | None = None,
-                        kde_kws: dict | None = None) -> np.ndarray:
+    def imr_consistency(
+        self,
+        coords: str = "mchi",
+        ndraw_rd: int | None = None,
+        ndraw_imr: int | None = 1000,
+        prng: int | np.random.Generator | None = None,
+        kde_kws: dict | None = None,
+    ) -> np.ndarray:
         """Computes credible levels (CLs) at which each IMR sample is found
         relative to the ringdown posterior, returning a distribution of CLs.
 
@@ -959,26 +1007,28 @@ class Result(az.InferenceData):
             distribution of CLs at which each IMR sample is found relative to
             the ringdown posterior.
         """
-        if coords.lower() != 'mchi':
+        if coords.lower() != "mchi":
             raise NotImplementedError("Only mchi coordinates are supported.")
         if not self.has_imr_result:
             raise ValueError("No IMR result loaded.")
-        if 'm' not in self.posterior or 'chi' not in self.posterior:
+        if "m" not in self.posterior or "chi" not in self.posterior:
             raise ValueError("No mass or chi parameters found in posterior.")
 
         # get random subset of M-chi samples from ringdown analysis
         samples = self.stacked_samples
         prng = prng or np.random.default_rng(prng)
-        n = min(ndraw_rd or len(samples['sample']), len(samples['sample']))
-        idxs = prng.choice(samples.sizes['sample'], n, replace=False)
+        n = min(ndraw_rd or len(samples["sample"]), len(samples["sample"]))
+        idxs = prng.choice(samples.sizes["sample"], n, replace=False)
         samples = samples.isel(sample=idxs)
-        xy_rd = samples[['m', 'chi']].to_array().values
+        xy_rd = samples[["m", "chi"]].to_array().values
 
         # get random subset of M-chi samples from IMR analysis
         n = min(ndraw_imr or len(self.imr_result), len(self.imr_result))
         idxs = prng.choice(len(self.imr_result), n, replace=False)
-        xy_imr = [self.imr_result.final_mass[idxs],
-                  self.imr_result.final_spin[idxs]]
+        xy_imr = [
+            self.imr_result.final_mass[idxs],
+            self.imr_result.final_spin[idxs],
+        ]
 
         # compute support of RD distribution for each RD and IMR sample
         kde = gaussian_kde(xy_rd, **(kde_kws or {}))
@@ -994,13 +1044,16 @@ class Result(az.InferenceData):
         # return distribution of CLs
         return np.array(qs)
 
-    def imr_consistency_summary(self, coords: str = 'mchi',
-                                imr_weight: str = 'rd',
-                                ndraw_rd: int | None = None,
-                                ndraw_imr: int | None = 1000,
-                                imr_cl: float = 0.9,
-                                prng: int | np.random.Generator | None = None,
-                                kde_kws: dict | None = None) -> float:
+    def imr_consistency_summary(
+        self,
+        coords: str = "mchi",
+        imr_weight: str = "rd",
+        ndraw_rd: int | None = None,
+        ndraw_imr: int | None = 1000,
+        imr_cl: float = 0.9,
+        prng: int | np.random.Generator | None = None,
+        kde_kws: dict | None = None,
+    ) -> float:
         """Compute ringdown credible level that fully encompasses certain IMR
         credible level specified, or that encompasses a certain fraction of
         IMR samples.
@@ -1036,14 +1089,14 @@ class Result(az.InferenceData):
             credible of the RD posterior that fully encompasses the IMR
             credible level specified by `imr_cl`.
         """
-        if coords.lower() != 'mchi':
+        if coords.lower() != "mchi":
             raise NotImplementedError("Only mchi coordinates are supported.")
         if not self.has_imr_result:
             raise ValueError("No IMR result loaded.")
-        if 'm' not in self.posterior or 'chi' not in self.posterior:
+        if "m" not in self.posterior or "chi" not in self.posterior:
             raise ValueError("No mass or chi parameters found in posterior.")
 
-        if imr_weight not in ('imr', 'rd'):
+        if imr_weight not in ("imr", "rd"):
             raise ValueError("kind must be 'imr' or 'rd'.")
 
         prng = prng or np.random.default_rng(prng)
@@ -1051,29 +1104,32 @@ class Result(az.InferenceData):
         # select a random subset of IMR samples
         n = min(ndraw_imr or len(self.imr_result), len(self.imr_result))
         idxs = prng.choice(len(self.imr_result), n, replace=False)
-        imr_samples = np.array([self.imr_result.final_mass[idxs],
-                                self.imr_result.final_spin[idxs]])
+        imr_samples = np.array(
+            [self.imr_result.final_mass[idxs], self.imr_result.final_spin[idxs]]
+        )
 
-        if imr_weight == 'imr':
+        if imr_weight == "imr":
             # further subselect IMR samples to thosw within the IMR credible
             # level specified by `imr_cl`
             kde_imr = utils.Bounded_2d_kde(imr_samples.T, **(kde_kws or {}))
-            imr_idxs = np.argsort(kde_imr(imr_samples.T))[::-1][:int(imr_cl*n)]
+            imr_idxs = np.argsort(kde_imr(imr_samples.T))[::-1][
+                : int(imr_cl * n)
+            ]
             imr_samples = imr_samples[:, imr_idxs]
 
         # select a random subset of RD samples and KDE them
         samples = self.stacked_samples
-        n = min(ndraw_rd or len(samples['sample']), len(samples['sample']))
-        idxs = prng.choice(samples.sizes['sample'], n, replace=False)
+        n = min(ndraw_rd or len(samples["sample"]), len(samples["sample"]))
+        idxs = prng.choice(samples.sizes["sample"], n, replace=False)
         samples = samples.isel(sample=idxs)
-        xy_rd = samples[['m', 'chi']].to_array().values
+        xy_rd = samples[["m", "chi"]].to_array().values
         kde_rd = utils.Bounded_2d_kde(xy_rd.T, **(kde_kws or {}))
 
         # evaluate RD KDE on IMR samples
         p_imr = kde_rd(imr_samples.T)
 
         # set the thrshold CL based on the RD posterior
-        if imr_weight == 'imr':
+        if imr_weight == "imr":
             # find the IMR sample inside the `imr_cl` IMR region that
             # has the lowest amount of RD posterior probability and record
             # that value as a threshold
@@ -1082,14 +1138,14 @@ class Result(az.InferenceData):
             # rank all IMR samples based on the RD posterior and take
             # the `1-imr_cl`-th quantile, thus identifying the value of the
             # RD posterior that encompasses `imr_cl` of the IMR samples
-            rd_kde_thresh = np.quantile(p_imr, 1-imr_cl)
+            rd_kde_thresh = np.quantile(p_imr, 1 - imr_cl)
 
         # compute the fraction of RD samples above the IMR threshold
         p_rd = kde_rd(xy_rd.T)
         q = np.sum(p_rd > rd_kde_thresh) / n
         return q
 
-    def amplitude_significance(self, kind='quantile') -> pd.Series:
+    def amplitude_significance(self, kind="quantile") -> pd.Series:
         """Compute a measure of support for non-vanishing mode amplitudes.
 
         If `kind` is 'quantile', the output is the quantile of the amplitude
@@ -1109,14 +1165,14 @@ class Result(az.InferenceData):
         p : pd.Series
             p-value of the amplitude of the signal.
         """
-        amps = self.stacked_samples['a']
+        amps = self.stacked_samples["a"]
         qs = {}
         for a in amps:
             label = indexing.get_mode_label(a.mode.values)
             q = stats.quantile_at_value(a)
-            if kind == 'quantile':
+            if kind == "quantile":
                 qs[label] = q
-            elif kind == 'zscore':
+            elif kind == "zscore":
                 qs[label] = stats.z_score(q)
             else:
                 raise ValueError("kind must be 'quantile' or 'zscore'.")
@@ -1125,31 +1181,42 @@ class Result(az.InferenceData):
     # ------------------------------------------------------------------------
     # PLOTS
 
-    def plot_trace(self, var_names: list[str] = ['a'], compact: bool = True,
-                   *args, **kwargs):
+    def plot_trace(
+        self,
+        var_names: list[str] = ["a"],
+        compact: bool = True,
+        *args,
+        **kwargs,
+    ):
         """Alias for :func:`arviz.plot_trace`."""
-        return az.plot_trace(self, compact=compact, var_names=var_names,
-                             *args, **kwargs)
+        return az.plot_trace(
+            self, compact=compact, var_names=var_names, *args, **kwargs
+        )
 
-    def plot_mass_spin(self, ndraw: int = 500, imr: bool = True,
-                       joint_kws: dict | None = None,
-                       marginal_kws: dict | None = None,
-                       imr_kws: dict | None = None,
-                       df_kws: dict | None = None,
-                       prng: int | np.random.Generator | None = None,
-                       palette=None,
-                       dropna: bool = False,
-                       height: float = 6, ratio: float = 5,
-                       space: float = .2,
-                       xlim: tuple | None = None,
-                       ylim: tuple | None = (0, 1),
-                       marginal_ticks: bool = False,
-                       x_min: float | None = None,
-                       x_max: float | None = None,
-                       y_min: float | None = 0,
-                       y_max: float | None = 1,
-                       engine: str = 'auto',
-                       **kws) -> None:
+    def plot_mass_spin(
+        self,
+        ndraw: int = 500,
+        imr: bool = True,
+        joint_kws: dict | None = None,
+        marginal_kws: dict | None = None,
+        imr_kws: dict | None = None,
+        df_kws: dict | None = None,
+        prng: int | np.random.Generator | None = None,
+        palette=None,
+        dropna: bool = False,
+        height: float = 6,
+        ratio: float = 5,
+        space: float = 0.2,
+        xlim: tuple | None = None,
+        ylim: tuple | None = (0, 1),
+        marginal_ticks: bool = False,
+        x_min: float | None = None,
+        x_max: float | None = None,
+        y_min: float | None = 0,
+        y_max: float | None = 1,
+        engine: str = "auto",
+        **kws,
+    ) -> None:
         """Plot the mass-spin distribution for the collection.
         Based on seaborn's jointplot but with the ability to use a truncated
         KDE (1D and 2D), controlled by the `x_min`, `x_max`, `y_min`, and
@@ -1216,52 +1283,70 @@ class Result(az.InferenceData):
         df_kws = {} if df_kws is None else df_kws.copy()
 
         # get data
-        df_rd = self.get_parameter_dataframe(ndraw=ndraw, prng=prng,
-                                             **df_kws)
+        df_rd = self.get_parameter_dataframe(ndraw=ndraw, prng=prng, **df_kws)
 
-        if 'm' not in df_rd.columns or 'chi' not in df_rd.columns:
+        if "m" not in df_rd.columns or "chi" not in df_rd.columns:
             raise ValueError("Mass and spin columns not found in results.")
 
-        if engine == 'auto':
+        if engine == "auto":
             if any(k is not None for k in [x_min, x_max, y_min, y_max]):
-                engine = 'bounded'
+                engine = "bounded"
             else:
-                engine = 'seaborn'
-        elif engine not in ['seaborn', 'bounded']:
-            raise ValueError("Invalid engine, choose from: "
-                             "'auto', 'seaborn', 'bounded'.")
+                engine = "seaborn"
+        elif engine not in ["seaborn", "bounded"]:
+            raise ValueError(
+                "Invalid engine, choose from: 'auto', 'seaborn', 'bounded'."
+            )
 
-        if engine == 'seaborn':
+        if engine == "seaborn":
             # simply call the seaborn jointplot method
-            if 'levels' in kws:
+            if "levels" in kws:
                 # NOTE: our bounded kdeplot and sns.kdeplot have different
                 # definitions of levels!
-                kws['levels'] = [1-c for c in kws['levels']]
-            grid = sns.jointplot(data=df_rd, x='m', y='chi', palette=palette,
-                                 dropna=dropna, height=height, ratio=ratio,
-                                 space=space, xlim=xlim, ylim=ylim,
-                                 marginal_ticks=marginal_ticks,
-                                 joint_kws=joint_kws,
-                                 marginal_kws=marginal_kws,
-                                 **kws)
+                kws["levels"] = [1 - c for c in kws["levels"]]
+            grid = sns.jointplot(
+                data=df_rd,
+                x="m",
+                y="chi",
+                palette=palette,
+                dropna=dropna,
+                height=height,
+                ratio=ratio,
+                space=space,
+                xlim=xlim,
+                ylim=ylim,
+                marginal_ticks=marginal_ticks,
+                joint_kws=joint_kws,
+                marginal_kws=marginal_kws,
+                **kws,
+            )
         else:
             color = "C0"
 
             # parse arguments
-            kws.update({'x_min': x_min, 'x_max': x_max, 'y_min': y_min,
-                        'y_max': y_max})
+            kws.update(
+                {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max}
+            )
             joint_kws = {} if joint_kws is None else joint_kws.copy()
             joint_kws.update(kws)
             marginal_kws = {} if marginal_kws is None else marginal_kws.copy()
-            for k in ['x_min', 'x_max', 'y_min', 'y_max']:
+            for k in ["x_min", "x_max", "y_min", "y_max"]:
                 if k in kws and k not in marginal_kws:
                     marginal_kws[k] = kws[k]
 
             # Initialize the JointGrid object (based on sns.jointplot)
             grid = sns.JointGrid(
-                data=df_rd, x='m', y='chi', palette=palette,
-                dropna=dropna, height=height, ratio=ratio, space=space,
-                xlim=xlim, ylim=ylim, marginal_ticks=marginal_ticks,
+                data=df_rd,
+                x="m",
+                y="chi",
+                palette=palette,
+                dropna=dropna,
+                height=height,
+                ratio=ratio,
+                space=space,
+                xlim=xlim,
+                ylim=ylim,
+                marginal_ticks=marginal_ticks,
             )
 
             # if grid.hue is not None:
@@ -1280,29 +1365,41 @@ class Result(az.InferenceData):
         if imr and self.has_imr_result:
             n_imr = len(self.imr_result)
             if ndraw > n_imr:
-                logger.warning(f"Using fewer IMR samples ({n_imr}) than "
-                               f"requested ({ndraw}).")
+                logger.warning(
+                    f"Using fewer IMR samples ({n_imr}) than "
+                    f"requested ({ndraw})."
+                )
                 ndraw = n_imr
-            df_imr = pd.DataFrame({
-                'm': self.imr_result.final_mass,
-                'chi': self.imr_result.final_spin,
-            }).sample(ndraw, replace=False, random_state=prng)
+            df_imr = pd.DataFrame(
+                {
+                    "m": self.imr_result.final_mass,
+                    "chi": self.imr_result.final_spin,
+                }
+            ).sample(ndraw, replace=False, random_state=prng)
 
-            levels = imr_kws.pop('levels', None)
+            levels = imr_kws.pop("levels", None)
             if levels is None:
-                if 'levels' in kws:
+                if "levels" in kws:
                     # NOTE: our bounded kdeplot and sns.kdeplot have different
                     # definitions of levels!
-                    levels = [1-c for c in kws['levels']]
+                    levels = [1 - c for c in kws["levels"]]
                 else:
                     # default to 90% CL
-                    levels = [0.1,]
-            imr_kwargs = dict(fill=False, color='k', linestyle='--')
+                    levels = [
+                        0.1,
+                    ]
+            imr_kwargs = dict(fill=False, color="k", linestyle="--")
             imr_kwargs.update(imr_kws)
-            sns.kdeplot(data=df_imr, x='m', y='chi', levels=levels,
-                        ax=grid.ax_joint, **imr_kwargs)
+            sns.kdeplot(
+                data=df_imr,
+                x="m",
+                y="chi",
+                levels=levels,
+                ax=grid.ax_joint,
+                **imr_kwargs,
+            )
 
-            imr_q = imr_kws.pop('quantile', 0.90)
+            imr_q = imr_kws.pop("quantile", 0.90)
             if imr_q is not None and imr_q > 0:
                 hi, lo = (1 - imr_q) / 2, 1 - (1 - imr_q) / 2
                 cis = df_imr.quantile([hi, 0.5, lo])
@@ -1310,21 +1407,21 @@ class Result(az.InferenceData):
                 hi, lo = None, None
 
             # plot IMR median
-            lkws = dict(color='k', linestyle=':')
-            for k in ['color', 'linestyle', 'linewidth']:
+            lkws = dict(color="k", linestyle=":")
+            for k in ["color", "linestyle", "linewidth"]:
                 if k in imr_kws:
                     lkws[k] = imr_kws[k]
-            grid.ax_joint.axvline(cis['m'][0.5], **lkws)
-            grid.ax_joint.axhline(cis['chi'][0.5], **lkws)
+            grid.ax_joint.axvline(cis["m"][0.5], **lkws)
+            grid.ax_joint.axhline(cis["chi"][0.5], **lkws)
 
-            grid.ax_marg_x.axvline(cis['m'][0.5], **lkws)
-            grid.ax_marg_y.axhline(cis['chi'][0.5], **lkws)
+            grid.ax_marg_x.axvline(cis["m"][0.5], **lkws)
+            grid.ax_marg_y.axhline(cis["chi"][0.5], **lkws)
 
             # plor IMR CLs
             if hi is not None:
-                bkws = dict(alpha=0.1, color=lkws.get('color', 'k'))
-                grid.ax_marg_x.axvspan(cis['m'][lo], cis['m'][hi], **bkws)
-                grid.ax_marg_y.axhspan(cis['chi'][lo], cis['chi'][hi], **bkws)
+                bkws = dict(alpha=0.1, color=lkws.get("color", "k"))
+                grid.ax_marg_x.axvspan(cis["m"][lo], cis["m"][hi], **bkws)
+                grid.ax_marg_y.axhspan(cis["chi"][lo], cis["chi"][hi], **bkws)
 
         # Make the main axes active in the matplotlib state machine
         plt.sca(grid.ax_joint)
@@ -1334,10 +1431,13 @@ class Result(az.InferenceData):
 class ResultCollection(utils.MultiIndexCollection):
     """Collection of results from ringdown fits."""
 
-    def __init__(self, results: list | None = None,
-                 index: list | None = None,
-                 reference_mass: float | None = None,
-                 reference_time: float | None = None) -> None:
+    def __init__(
+        self,
+        results: list | None = None,
+        index: list | None = None,
+        reference_mass: float | None = None,
+        reference_time: float | None = None,
+    ) -> None:
         _results = []
         for r in results:
             if isinstance(r, Result):
@@ -1352,7 +1452,7 @@ class ResultCollection(utils.MultiIndexCollection):
     def __repr__(self):
         return f"ResultCollection({self.index})"
 
-    def thin(self, n: int, start_loc: int = 0) -> 'ResultCollection':
+    def thin(self, n: int, start_loc: int = 0) -> "ResultCollection":
         """Thin the collection by taking every `n`th result.
 
         Arguments
@@ -1369,9 +1469,12 @@ class ResultCollection(utils.MultiIndexCollection):
         """
         results = self.results[start_loc::n]
         index = self.index[start_loc::n]
-        return ResultCollection(results=results, index=index,
-                                reference_mass=self.reference_mass,
-                                reference_time=self.reference_time)
+        return ResultCollection(
+            results=results,
+            index=index,
+            reference_mass=self.reference_mass,
+            reference_time=self.reference_time,
+        )
 
     @property
     def has_imr_result(self) -> bool:
@@ -1401,33 +1504,33 @@ class ResultCollection(utils.MultiIndexCollection):
 
     @property
     def results(self) -> list[Result]:
-        """List of results in the collection.
-        """
+        """List of results in the collection."""
         return self.data
 
     @property
     def targets(self) -> TargetCollection:
-        """Targets associated with the results in the collection.
-        """
+        """Targets associated with the results in the collection."""
         if self._targets is None:
             self._targets = TargetCollection([r.target for r in self.results])
         elif len(self._targets) != len(self.results):
-            logger.warning("Number of targets does not match results."
-                           "Recomputing targets")
+            logger.warning(
+                "Number of targets does not match results.Recomputing targets"
+            )
             self._targets = TargetCollection([r.target for r in self.results])
         return self._targets
 
     @property
     def reference_mass(self) -> float | None:
-        """Reference mass in solar masses used for time-step labeling.
-        """
+        """Reference mass in solar masses used for time-step labeling."""
         if self.targets.reference_mass is None:
             if self._reference_mass is None:
-                logger.info("No reference mass specified; trying to infer "
-                            "from result configurations.")
+                logger.info(
+                    "No reference mass specified; trying to infer "
+                    "from result configurations."
+                )
                 m0 = None
                 for r in self.results:
-                    m0 = r.config.get('pipe', {}).get(self.targets._mref_key)
+                    m0 = r.config.get("pipe", {}).get(self.targets._mref_key)
                     break
                 self._reference_mass = m0
             self.targets.set_reference_mass(self._reference_mass)
@@ -1435,15 +1538,16 @@ class ResultCollection(utils.MultiIndexCollection):
 
     @property
     def reference_time(self) -> float | None:
-        """Reference time used for time-step labeling.
-        """
+        """Reference time used for time-step labeling."""
         if self.targets.reference_time is None:
             if self._reference_time is None:
-                logger.info("No reference time specified; trying to infer "
-                            "from result configurations.")
+                logger.info(
+                    "No reference time specified; trying to infer "
+                    "from result configurations."
+                )
                 t0 = None
                 for r in self.results:
-                    t0 = r.config.get('pipe', {}).get(self.targets._tref_key)
+                    t0 = r.config.get("pipe", {}).get(self.targets._tref_key)
                     break
                 self._reference_time = t0
             self.targets.set_reference_time(self._reference_time)
@@ -1462,9 +1566,12 @@ class ResultCollection(utils.MultiIndexCollection):
         for result in self.results:
             result.update_default_label_format(**kws)
 
-    def get_t0s(self, reference_mass: float | bool | None = None,
-                reference_time: float | None = None,
-                decimals: int | None = None) -> np.ndarray:
+    def get_t0s(
+        self,
+        reference_mass: float | bool | None = None,
+        reference_time: float | None = None,
+        decimals: int | None = None,
+    ) -> np.ndarray:
         """Get analysis start times for the collection.
 
         Arguments
@@ -1505,21 +1612,27 @@ class ResultCollection(utils.MultiIndexCollection):
             t0s = np.round(t0s, decimals)
         return np.array(t0s)
 
-    def reindex_by_t0(self,
-                      reference_mass: bool | float | None = None,
-                      reference_time: float | None = None,
-                      decimals: int | None = None) -> None:
-        """Reindex the collection by the analysis start time.
-        """
+    def reindex_by_t0(
+        self,
+        reference_mass: bool | float | None = None,
+        reference_time: float | None = None,
+        decimals: int | None = None,
+    ) -> None:
+        """Reindex the collection by the analysis start time."""
         t0s = self.get_t0s(reference_mass, reference_time, decimals)
         if np.any(t0s is None):
             raise ValueError("Cannot reindex by t0 if any t0 values are None.")
         self.reindex(t0s)
 
     @classmethod
-    def from_netcdf(cls, path_input: str | list, index: list = None,
-                    config: str | list | None = None,
-                    progress: bool = True, **kws):
+    def from_netcdf(
+        cls,
+        path_input: str | list,
+        index: list = None,
+        config: str | list | None = None,
+        progress: bool = True,
+        **kws,
+    ):
         """Load a collection of results from NetCDF files.
 
         Arguments
@@ -1549,28 +1662,31 @@ class ResultCollection(utils.MultiIndexCollection):
             paths = sorted(glob(path_input))
             logger.info(f"loading {len(paths)} results from {path_input}")
             for path in paths:
-                pattern = parse(path_input.replace('*', '{}'), path).fixed
+                pattern = parse(path_input.replace("*", "{}"), path).fixed
                 idx = tuple([utils.try_parse(k) for k in pattern])
                 index.append(idx)
                 if isinstance(config, str):
-                    cpath = config.replace('*', '{}').format(*pattern)
+                    cpath = config.replace("*", "{}").format(*pattern)
                     if os.path.exists(cpath):
                         cpaths.append(cpath)
         else:
             paths = path_input
         if config is not None:
             if len(cpaths) != len(paths):
-                raise ValueError("Number of configuration files does not "
-                                 "match number of result files.")
+                raise ValueError(
+                    "Number of configuration files does not "
+                    "match number of result files."
+                )
         else:
-            cpaths = [None]*len(paths)
+            cpaths = [None] * len(paths)
         results = []
         tqdm = utils.get_tqdm(progress)
-        for path, cpath in tqdm(zip(paths, cpaths), total=len(paths),
-                                desc='results'):
+        for path, cpath in tqdm(
+            zip(paths, cpaths), total=len(paths), desc="results"
+        ):
             results.append(Result.from_netcdf(path, config=cpath))
-        info = kws.get('info', {})
-        info['provenance'] = paths
+        info = kws.get("info", {})
+        info["provenance"] = paths
         return cls(results, index, **kws)
 
     def to_netcdf(self, paths: str | None = None, **kws) -> None:
@@ -1589,7 +1705,7 @@ class ResultCollection(utils.MultiIndexCollection):
         """
         index = self.index
         if isinstance(paths, str):
-            paths = [paths.replace('*', '{}').format(idx) for idx in index]
+            paths = [paths.replace("*", "{}").format(idx) for idx in index]
         elif len(paths) != len(index):
             raise ValueError("Number of paths does not match results.")
         for path, result in zip(paths, self.results):
@@ -1598,14 +1714,17 @@ class ResultCollection(utils.MultiIndexCollection):
                 os.makedirs(dirname)
             result.to_netcdf(path, **kws)
 
-    def get_parameter_dataframe(self, ndraw: int | None = None,
-                                index_label: str = None,
-                                split_index: bool = False,
-                                t0: bool = False,
-                                reference_mass: bool | float | None = None,
-                                draw_kws: dict | None = None,
-                                progress: bool = False,
-                                **kws) -> pd.DataFrame:
+    def get_parameter_dataframe(
+        self,
+        ndraw: int | None = None,
+        index_label: str = None,
+        split_index: bool = False,
+        t0: bool = False,
+        reference_mass: bool | float | None = None,
+        draw_kws: dict | None = None,
+        progress: bool = False,
+        **kws,
+    ) -> pd.DataFrame:
         """Get a combined DataFrame of parameter samples for all results in
         the collection, with a new index column identifying provenance of each
         sample.
@@ -1643,36 +1762,38 @@ class ResultCollection(utils.MultiIndexCollection):
         # figure out wheter to print a progress bar
         tqdm = utils.get_tqdm(progress)
         n = len(self)
-        dkws = {'random_state': kws.get('prng', None)}
+        dkws = {"random_state": kws.get("prng", None)}
         dkws.update(draw_kws or {})
-        for i, (key, result) in tqdm(enumerate(self.items()), total=n,
-                                     desc='results'):
+        for i, (key, result) in tqdm(
+            enumerate(self.items()), total=n, desc="results"
+        ):
             df = result.get_parameter_dataframe(**kws)
             if key_size == 1:
                 df[index_label] = key[0]
             elif split_index:
                 for j, k in enumerate(key):
-                    df[f'{index_label}_{j}'] = k
+                    df[f"{index_label}_{j}"] = k
             else:
                 df[index_label] = [key] * len(df)
             if t0:
-                df['t0m' if reference_mass else 't0'] = t0s[i]
+                df["t0m" if reference_mass else "t0"] = t0s[i]
             if ndraw is not None:
-
                 dfs.append(df.sample(ndraw, **dkws))
             else:
                 dfs.append(df)
         # return combined DataFrame
         return pd.concat(dfs, ignore_index=True)
 
-    def get_mode_parameter_dataframe(self, ndraw: int | None = None,
-                                     index_label: str = None,
-                                     split_index: bool = False,
-                                     t0: bool = False,
-                                     reference_mass: bool | float |
-                                     None = None,
-                                     draw_kws: dict | None = None,
-                                     **kws) -> pd.DataFrame:
+    def get_mode_parameter_dataframe(
+        self,
+        ndraw: int | None = None,
+        index_label: str = None,
+        split_index: bool = False,
+        t0: bool = False,
+        reference_mass: bool | float | None = None,
+        draw_kws: dict | None = None,
+        **kws,
+    ) -> pd.DataFrame:
         """Get a combined parameter DataFrame of mode parameter samples for all
         results in the collection, with a new index column identifying
         provenance of each sample. One column per parameter, with a
@@ -1703,7 +1824,7 @@ class ResultCollection(utils.MultiIndexCollection):
         dfs = []
         key_size = self._key_size
         index_label = index_label or self.collection_key
-        dkws = {'random_state': kws.get('prng', None)}
+        dkws = {"random_state": kws.get("prng", None)}
         dkws.update(draw_kws or {})
         if t0:
             t0s = self.get_t0s(reference_mass)
@@ -1713,30 +1834,31 @@ class ResultCollection(utils.MultiIndexCollection):
                 df[index_label] = key[0]
             elif split_index:
                 for j, k in enumerate(key):
-                    df[f'{index_label}_{j}'] = k
+                    df[f"{index_label}_{j}"] = k
             else:
                 df[index_label] = [key] * len(df)
             if t0:
-                df['t0m' if reference_mass else 't0'] = t0s[i]
+                df["t0m" if reference_mass else "t0"] = t0s[i]
             if ndraw is not None:
                 dfs.append(df.sample(ndraw, **dkws))
             else:
                 dfs.append(df)
         return pd.concat(dfs, ignore_index=True)
 
-    def imr_consistency(self, *args, progress=False,
-                        **kwargs) -> pd.DataFrame:
+    def imr_consistency(self, *args, progress=False, **kwargs) -> pd.DataFrame:
         """Compute the IMR consistency for the collection.
         See :meth:`Result.imr_consistency` for details.
         """
         tqdm = utils.get_tqdm(progress)
-        q = {k: r.imr_consistency(*args, **kwargs)
-             for k, r in tqdm(self, desc='results')}
+        q = {
+            k: r.imr_consistency(*args, **kwargs)
+            for k, r in tqdm(self, desc="results")
+        }
         return pd.DataFrame(q)
 
-    def imr_consistency_summary(self, *args, progress: bool = False,
-                                simplify_index: bool = True,
-                                **kws) -> pd.Series:
+    def imr_consistency_summary(
+        self, *args, progress: bool = False, simplify_index: bool = True, **kws
+    ) -> pd.Series:
         """Compute the IMR consistency summary for each element in the
         collection.
 
@@ -1758,16 +1880,19 @@ class ResultCollection(utils.MultiIndexCollection):
             summary of IMR consistency for each result in the collection
         """
         tqdm = utils.get_tqdm(progress)
-        q = [r.imr_consistency_summary(*args, **kws)
-             for r in tqdm(self.results, desc='results')]
+        q = [
+            r.imr_consistency_summary(*args, **kws)
+            for r in tqdm(self.results, desc="results")
+        ]
         if simplify_index:
             index = self.simplified_index
         else:
             index = self.index
         return pd.Series(q, index=index)
 
-    def amplitude_significance(self, simplified_index: bool = True,
-                               **kws) -> pd.DataFrame:
+    def amplitude_significance(
+        self, simplified_index: bool = True, **kws
+    ) -> pd.DataFrame:
         """Compute the significance for non-vanishing mode amplitudes for each
         result in the collection.
 
@@ -1788,8 +1913,12 @@ class ResultCollection(utils.MultiIndexCollection):
             index = self.simplified_index
         else:
             index = self.index
-        return pd.DataFrame({k: r.amplitude_significance(**kws)
-                             for k, r in zip(index, self.data)}).T
+        return pd.DataFrame(
+            {
+                k: r.amplitude_significance(**kws)
+                for k, r in zip(index, self.data)
+            }
+        ).T
 
     @property
     def simplified_index(self) -> list:
@@ -1817,16 +1946,20 @@ class ResultCollection(utils.MultiIndexCollection):
         Returns an array of shape (n_collection, n_ifo, n_samples) if
         network is False, and (n_collection, n_samples) if network is True.
         """
-        return np.stack([r.imr_result.compute_ringdown_snrs(**kws)
-                         for r in self.data])
+        return np.stack(
+            [r.imr_result.compute_ringdown_snrs(**kws) for r in self.data]
+        )
 
-    def compute_imr_snrs_by_t0(self, optimal: bool = True,
-                               network: bool = False,
-                               cumulative: bool = False,
-                               approximate: bool = True,
-                               progress: bool = False, **kws) -> np.ndarray:
-        """
-        """
+    def compute_imr_snrs_by_t0(
+        self,
+        optimal: bool = True,
+        network: bool = False,
+        cumulative: bool = False,
+        approximate: bool = True,
+        progress: bool = False,
+        **kws,
+    ) -> np.ndarray:
+        """ """
         snrs = []
         t0s = self.get_t0s()
         tqdm = utils.get_tqdm(progress)
@@ -1834,10 +1967,11 @@ class ResultCollection(utils.MultiIndexCollection):
             # get earliest fit as reference
             reference_result = self.results[np.argmin(self.get_t0s())]
             wfs = reference_result.imr_result.get_waveforms(
-                ringdown_slice=True, progress=False, **kws)
+                ringdown_slice=True, progress=False, **kws
+            )
             times = reference_result.sample_times
             data = reference_result.observed_strain
-            for _, r in tqdm(sorted(zip(t0s, self.results)), desc='results'):
+            for _, r in tqdm(sorted(zip(t0s, self.results)), desc="results"):
                 # get indices for start_times in times
                 delta_times = (times - r.epoch).values
                 i0s = np.argmin(np.abs(delta_times), axis=1)
@@ -1849,46 +1983,55 @@ class ResultCollection(utils.MultiIndexCollection):
                 if optimal:
                     d = None
                 else:
-                    d = [dd[i0:i0+n] for i0, dd in zip(i0s, data)]
-                snr = wfs_sliced.compute_snr(chol, data=d, network=network,
-                                             cumulative=cumulative)
+                    d = [dd[i0 : i0 + n] for i0, dd in zip(i0s, data)]
+                snr = wfs_sliced.compute_snr(
+                    chol, data=d, network=network, cumulative=cumulative
+                )
                 snrs.append(snr)
         else:
             # directly compute SNRs by recreating a fit for each result
             # (this takes longer than the above, but is more representative
             # of the actual rigdown analysis)
-            for _, r in tqdm(sorted(zip(t0s, self.results)), desc='results'):
-                snr = r.imr_result.compute_ringdown_snrs(progress=False,
-                                                         network=network,
-                                                         cumulative=cumulative,
-                                                         optimal=optimal,
-                                                         **kws)
+            for _, r in tqdm(sorted(zip(t0s, self.results)), desc="results"):
+                snr = r.imr_result.compute_ringdown_snrs(
+                    progress=False,
+                    network=network,
+                    cumulative=cumulative,
+                    optimal=optimal,
+                    **kws,
+                )
                 snrs.append(snr)
         return np.stack(snrs)
 
     # -----------------------------------------------------------------------
     # PLOTS
 
-    def plot_mass_spin(self, ndraw: int = 500, imr: bool = True,
-                       joint_kws: dict | None = None,
-                       marginal_kws: dict | None = None,
-                       imr_kws: dict | None = None,
-                       df_kws: dict | None = None,
-                       prng: int | np.random.Generator | None = None,
-                       index_label: str = None,
-                       hue: str = None,
-                       palette=None, hue_norm=None,
-                       dropna: bool = False,
-                       height: float = 6, ratio: float = 5,
-                       space: float = .2,
-                       xlim: tuple | None = None,
-                       ylim: tuple | None = (0, 1),
-                       marginal_ticks: bool = False,
-                       x_min: float | None = None,
-                       x_max: float | None = None,
-                       y_min: float | None = 0,
-                       y_max: float | None = 1,
-                       **kws) -> None:
+    def plot_mass_spin(
+        self,
+        ndraw: int = 500,
+        imr: bool = True,
+        joint_kws: dict | None = None,
+        marginal_kws: dict | None = None,
+        imr_kws: dict | None = None,
+        df_kws: dict | None = None,
+        prng: int | np.random.Generator | None = None,
+        index_label: str = None,
+        hue: str = None,
+        palette=None,
+        hue_norm=None,
+        dropna: bool = False,
+        height: float = 6,
+        ratio: float = 5,
+        space: float = 0.2,
+        xlim: tuple | None = None,
+        ylim: tuple | None = (0, 1),
+        marginal_ticks: bool = False,
+        x_min: float | None = None,
+        x_max: float | None = None,
+        y_min: float | None = 0,
+        y_max: float | None = 1,
+        **kws,
+    ) -> None:
         """Plot the mass-spin distribution for the collection.
         Based on seaborn's jointplot but with the ability to use a truncated
         KDE (1D and 2D), controlled by the `x_min`, `x_max`, `y_min`, and
@@ -1958,12 +2101,13 @@ class ResultCollection(utils.MultiIndexCollection):
         import seaborn as sns
 
         # parse arguments
-        kws.update({'x_min': x_min, 'x_max': x_max, 'y_min': y_min,
-                    'y_max': y_max})
+        kws.update(
+            {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max}
+        )
         joint_kws = {} if joint_kws is None else joint_kws.copy()
         joint_kws.update(kws)
         marginal_kws = {} if marginal_kws is None else marginal_kws.copy()
-        for k in ['x_min', 'x_max', 'y_min', 'y_max']:
+        for k in ["x_min", "x_max", "y_min", "y_max"]:
             if k in kws and k not in marginal_kws:
                 marginal_kws[k] = kws[k]
         imr_kws = {} if imr_kws is None else imr_kws.copy()
@@ -1973,19 +2117,28 @@ class ResultCollection(utils.MultiIndexCollection):
         index_label = index_label or hue or self.collection_key
 
         # get data
-        df_rd = self.get_parameter_dataframe(ndraw=ndraw, prng=prng,
-                                             index_label=index_label,
-                                             **df_kws)
+        df_rd = self.get_parameter_dataframe(
+            ndraw=ndraw, prng=prng, index_label=index_label, **df_kws
+        )
 
-        if 'm' not in df_rd.columns or 'chi' not in df_rd.columns:
+        if "m" not in df_rd.columns or "chi" not in df_rd.columns:
             raise ValueError("Mass and spin columns not found in results.")
 
         # Initialize the JointGrid object (based on sns.jointplot)
         grid = sns.JointGrid(
-            data=df_rd, x='m', y='chi', hue=index_label,
-            palette=palette, hue_norm=hue_norm,
-            dropna=dropna, height=height, ratio=ratio, space=space,
-            xlim=xlim, ylim=ylim, marginal_ticks=marginal_ticks,
+            data=df_rd,
+            x="m",
+            y="chi",
+            hue=index_label,
+            palette=palette,
+            hue_norm=hue_norm,
+            dropna=dropna,
+            height=height,
+            ratio=ratio,
+            space=space,
+            xlim=xlim,
+            ylim=ylim,
+            marginal_ticks=marginal_ticks,
         )
 
         if grid.hue is not None:
@@ -2004,29 +2157,41 @@ class ResultCollection(utils.MultiIndexCollection):
         if imr and self.has_imr_result:
             n_imr = len(self.imr_result)
             if ndraw > n_imr:
-                logger.warning(f"Using fewer IMR samples ({n_imr}) than "
-                               f"requested ({ndraw}).")
+                logger.warning(
+                    f"Using fewer IMR samples ({n_imr}) than "
+                    f"requested ({ndraw})."
+                )
                 ndraw = n_imr
-            df_imr = pd.DataFrame({
-                'm': self.imr_result.final_mass,
-                'chi': self.imr_result.final_spin,
-            }).sample(ndraw, replace=False, random_state=prng)
+            df_imr = pd.DataFrame(
+                {
+                    "m": self.imr_result.final_mass,
+                    "chi": self.imr_result.final_spin,
+                }
+            ).sample(ndraw, replace=False, random_state=prng)
 
-            levels = imr_kws.pop('levels', None)
+            levels = imr_kws.pop("levels", None)
             if levels is None:
-                if 'levels' in kws:
+                if "levels" in kws:
                     # NOTE: our bounded kdeplot and sns.kdeplot have different
                     # definitions of levels!
-                    levels = [1-c for c in kws['levels']]
+                    levels = [1 - c for c in kws["levels"]]
                 else:
                     # default to 90% CL
-                    levels = [0.1,]
-            imr_kwargs = dict(fill=False, color='k', linestyle='--')
+                    levels = [
+                        0.1,
+                    ]
+            imr_kwargs = dict(fill=False, color="k", linestyle="--")
             imr_kwargs.update(imr_kws)
-            sns.kdeplot(data=df_imr, x='m', y='chi', levels=levels,
-                        ax=grid.ax_joint, **imr_kwargs)
+            sns.kdeplot(
+                data=df_imr,
+                x="m",
+                y="chi",
+                levels=levels,
+                ax=grid.ax_joint,
+                **imr_kwargs,
+            )
 
-            imr_q = imr_kws.pop('quantile', 0.90)
+            imr_q = imr_kws.pop("quantile", 0.90)
             if imr_q is not None and imr_q > 0:
                 hi, lo = (1 - imr_q) / 2, 1 - (1 - imr_q) / 2
                 cis = df_imr.quantile([hi, 0.5, lo])
@@ -2034,21 +2199,21 @@ class ResultCollection(utils.MultiIndexCollection):
                 hi, lo = None, None
 
             # plot IMR median
-            lkws = dict(color='k', linestyle=':')
-            for k in ['color', 'linestyle', 'linewidth']:
+            lkws = dict(color="k", linestyle=":")
+            for k in ["color", "linestyle", "linewidth"]:
                 if k in imr_kws:
                     lkws[k] = imr_kws[k]
-            grid.ax_joint.axvline(cis['m'][0.5], **lkws)
-            grid.ax_joint.axhline(cis['chi'][0.5], **lkws)
+            grid.ax_joint.axvline(cis["m"][0.5], **lkws)
+            grid.ax_joint.axhline(cis["chi"][0.5], **lkws)
 
-            grid.ax_marg_x.axvline(cis['m'][0.5], **lkws)
-            grid.ax_marg_y.axhline(cis['chi'][0.5], **lkws)
+            grid.ax_marg_x.axvline(cis["m"][0.5], **lkws)
+            grid.ax_marg_y.axhline(cis["chi"][0.5], **lkws)
 
             # plor IMR CLs
             if hi is not None:
-                bkws = dict(alpha=0.1, color=lkws.get('color', 'k'))
-                grid.ax_marg_x.axvspan(cis['m'][lo], cis['m'][hi], **bkws)
-                grid.ax_marg_y.axhspan(cis['chi'][lo], cis['chi'][hi], **bkws)
+                bkws = dict(alpha=0.1, color=lkws.get("color", "k"))
+                grid.ax_marg_x.axvspan(cis["m"][lo], cis["m"][hi], **bkws)
+                grid.ax_marg_y.axhspan(cis["chi"][lo], cis["chi"][hi], **bkws)
 
         # Make the main axes active in the matplotlib state machine
         plt.sca(grid.ax_joint)

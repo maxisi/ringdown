@@ -1,9 +1,10 @@
-__all__ = ['Coalescence', 'Parameters']
+__all__ = ["Coalescence", "Parameters"]
 
 import numpy as np
 import lal
 from .core import Signal, _ishift
 from ..utils import docstring_parameter
+
 try:
     from scipy.signal.windows import tukey
 except ImportError:
@@ -24,7 +25,7 @@ def m1m2_from_mtotq(mtot, q):
 
 
 def m1m2_from_mcq(mc, q):
-    m1 = mc*(1 + q)**(1/5)/q**(3/5)
+    m1 = mc * (1 + q) ** (1 / 5) / q ** (3 / 5)
     m2 = m1 * q
     return m1, m2
 
@@ -36,50 +37,51 @@ class Parameters:
     Spin information is encoded in Cartesian components (`LALSimulation`
     convention).
     """
-#
-#    Attributes
-#    ----------
-#    mass_1 : float
-#        heaviest component mass in solar masses
-#    mass_2 : float
-#        lightest component mass in solar masses
-#    spin_1x : float
-#        x-component of first spin
-#    spin_1y : float
-#        y-component of first spin
-#    spin_1z : float
-#        z-component of first spin
-#    spin_2x : float
-#        x-component of second spin
-#    spin_2y : float
-#        y-component of second spin
-#    spin_2z : float
-#        z-component of second spin
-#    luminosity_distance : float
-#        source luminosity distance in Mpc
-#    iota : float
-#        source inclination in rad
-#    phase : float
-#        refrence phase
-#    long_asc_nodes : float
-#        longitude of ascending nodes (def., 0, following
-#        `LALSuite` convention)
-#    eccentricity : float
-#        system eccentricity (def. 0)
-#    mean_per_ano : float
-#        mean annomaly of periastron (def., 0)
-#    f_low : float
-#        waveform starting frequency
-#    f_ref : float
-#        reference frequency
-#    psi : float
-#        source polarization angle in rad
-#    ra : float
-#        source right ascension in rad
-#    dec : float
-#        source declination in rad
-#    trigger_time : float
-#        trigger time at geocenter
+
+    #
+    #    Attributes
+    #    ----------
+    #    mass_1 : float
+    #        heaviest component mass in solar masses
+    #    mass_2 : float
+    #        lightest component mass in solar masses
+    #    spin_1x : float
+    #        x-component of first spin
+    #    spin_1y : float
+    #        y-component of first spin
+    #    spin_1z : float
+    #        z-component of first spin
+    #    spin_2x : float
+    #        x-component of second spin
+    #    spin_2y : float
+    #        y-component of second spin
+    #    spin_2z : float
+    #        z-component of second spin
+    #    luminosity_distance : float
+    #        source luminosity distance in Mpc
+    #    iota : float
+    #        source inclination in rad
+    #    phase : float
+    #        refrence phase
+    #    long_asc_nodes : float
+    #        longitude of ascending nodes (def., 0, following
+    #        `LALSuite` convention)
+    #    eccentricity : float
+    #        system eccentricity (def. 0)
+    #    mean_per_ano : float
+    #        mean annomaly of periastron (def., 0)
+    #    f_low : float
+    #        waveform starting frequency
+    #    f_ref : float
+    #        reference frequency
+    #    psi : float
+    #        source polarization angle in rad
+    #    ra : float
+    #        source right ascension in rad
+    #    dec : float
+    #        source declination in rad
+    #    trigger_time : float
+    #        trigger time at geocenter
 
     # masses
     mass_1: float
@@ -137,34 +139,41 @@ class Parameters:
     def values(self, *args, **kwargs):
         return self.to_dict().values(*args, **kwargs)
 
-    _EXTRINSIC_KEYS = ['ra', 'dec', 'trigger_time']
+    _EXTRINSIC_KEYS = ["ra", "dec", "trigger_time"]
 
-    _SPIN_KEYS_LALINF = ['theta_jn', 'phi_jl', 'tilt_1', 'tilt_2', 'phi_12',
-                         'a_1', 'a_2']
+    _SPIN_KEYS_LALINF = [
+        "theta_jn",
+        "phi_jl",
+        "tilt_1",
+        "tilt_2",
+        "phi_12",
+        "a_1",
+        "a_2",
+    ]
 
-    _SPIN_COMP_KEYS = ['spin_{}{}'.format(i, x) for i in [1, 2] for x in 'xyz']
-    _SPIN_KEYS_LALSIM = ['iota'] + _SPIN_COMP_KEYS
+    _SPIN_COMP_KEYS = ["spin_{}{}".format(i, x) for i in [1, 2] for x in "xyz"]
+    _SPIN_KEYS_LALSIM = ["iota"] + _SPIN_COMP_KEYS
 
     _ALIASES = {
-        'trigger_time': Signal._T0_ALIASES,
-        'mass_1': ['m1'],
-        'mass_2': ['m2'],
-        'total_mass': ['mtot', 'm', 'mtotal', 'mtot_msun', 'mtotal_msun'],
-        'chirp_mass': ['mc', 'mchirp'],
-        'mass_ratio': ['q'],
-        'luminosity_distance': ['dist', 'dl', 'distance', 'dist_mpc'],
-        'iota': ['inclination', 'inc'],
-        'f_ref': ['fref', 'reference_frequency'],
-        'f_low': ['flow', 'fmin', 'f_min'],
-        'tilt_1': ['theta1'],
-        'tilt_2': ['theta2'],
+        "trigger_time": Signal._T0_ALIASES,
+        "mass_1": ["m1"],
+        "mass_2": ["m2"],
+        "total_mass": ["mtot", "m", "mtotal", "mtot_msun", "mtotal_msun"],
+        "chirp_mass": ["mc", "mchirp"],
+        "mass_ratio": ["q"],
+        "luminosity_distance": ["dist", "dl", "distance", "dist_mpc"],
+        "iota": ["inclination", "inc"],
+        "f_ref": ["fref", "reference_frequency"],
+        "f_low": ["flow", "fmin", "f_min"],
+        "tilt_1": ["theta1"],
+        "tilt_2": ["theta2"],
     }
-    _ALIASES_STR = ''
+    _ALIASES_STR = ""
     for _k, _v in _ALIASES.items():
         _ALIASES_STR += f"* `{_k}`: ``{_v}\n``"
 
     for _k in _SPIN_KEYS_LALINF:
-        _ALIASES[_k] = [_k.replace('_', '')]
+        _ALIASES[_k] = [_k.replace("_", "")]
     del _k, _v
 
     @property
@@ -206,47 +215,56 @@ class Parameters:
         pars : Parameters
             coalescence parameters container object
         """.format(cls._ALIASES_STR)
-        kws['f_ref'] = kws.get('f_ref', kws.get('f_low'))
+        kws["f_ref"] = kws.get("f_ref", kws.get("f_low"))
         for par, aliases in cls._ALIASES.items():
             for k in aliases:
                 if k in kws:
                     kws[par] = kws.pop(k)
                     break
         # compose component masses
-        if 'mass_1' not in kws or 'mass_2' not in kws:
-            if 'total_mass' in kws and 'mass_ratio' in kws:
-                kws['mass_1'], kws['mass_2'] = \
-                    m1m2_from_mtotq(kws['total_mass'], kws['mass_ratio'])
-            elif 'chirp_mass' in kws and 'mass_ratio' in kws:
-                kws['mass_1'], kws['mass_2'] = m1m2_from_mcq(kws['chirp_mass'],
-                                                             kws['mass_ratio'])
+        if "mass_1" not in kws or "mass_2" not in kws:
+            if "total_mass" in kws and "mass_ratio" in kws:
+                kws["mass_1"], kws["mass_2"] = m1m2_from_mtotq(
+                    kws["total_mass"], kws["mass_ratio"]
+                )
+            elif "chirp_mass" in kws and "mass_ratio" in kws:
+                kws["mass_1"], kws["mass_2"] = m1m2_from_mcq(
+                    kws["chirp_mass"], kws["mass_ratio"]
+                )
         # compose spins
-        lsim_given = [k in kws for k in cls._SPIN_KEYS_LALSIM if k != 'iota']
+        lsim_given = [k in kws for k in cls._SPIN_KEYS_LALSIM if k != "iota"]
         linf_given = [
-            k in kws for k in cls._SPIN_KEYS_LALINF if k != 'theta_jn']
+            k in kws for k in cls._SPIN_KEYS_LALINF if k != "theta_jn"
+        ]
         if not all(lsim_given) and any(linf_given):
             try:
-                a = [kws[k] for k in cls._SPIN_KEYS_LALINF] + \
-                    [kws['mass_1']*lal.MSUN_SI, kws['mass_2']*lal.MSUN_SI,
-                        kws['f_ref'], kws['phase']]
+                a = [kws[k] for k in cls._SPIN_KEYS_LALINF] + [
+                    kws["mass_1"] * lal.MSUN_SI,
+                    kws["mass_2"] * lal.MSUN_SI,
+                    kws["f_ref"],
+                    kws["phase"],
+                ]
             except KeyError as e:
                 raise ValueError(f"unable to parse spins, missing: {e}")
             b = ls.SimInspiralTransformPrecessingNewInitialConditions(*a)
             kws.update(dict(zip(cls._SPIN_KEYS_LALSIM, b)))
 
-        return cls(**{k: v for k, v in kws.items()
-                      if k in inspect.signature(cls).parameters})
+        return cls(
+            **{
+                k: v
+                for k, v in kws.items()
+                if k in inspect.signature(cls).parameters
+            }
+        )
 
     @property
     def total_mass(self):
-        """Total mass in solar masses, :math:`M = m_1 + m_2`.
-        """
+        """Total mass in solar masses, :math:`M = m_1 + m_2`."""
         return self.mass_1 + self.mass_2
 
     @property
     def mass_ratio(self):
-        """Mass ratio :math:`q = m_2/m_1` for :math:`m_1 \\geq m_2`.
-        """
+        """Mass ratio :math:`q = m_2/m_1` for :math:`m_1 \\geq m_2`."""
         return self.mass_2 / self.mass_1
 
     @property
@@ -254,59 +272,53 @@ class Parameters:
         """Chirp mass :math:`\\mathcal{M}_c = \\left(m_1 m_2\\right)^{3/5}/
         \\left(m_1 + m_2\\right)^{1/5}`.
         """
-        return (self.mass_1 * self.mass_2)**(3/5) / \
-               (self.mass_1 + self.mass_2)**(1/5)
+        return (self.mass_1 * self.mass_2) ** (3 / 5) / (
+            self.mass_1 + self.mass_2
+        ) ** (1 / 5)
 
     @property
     def spin_1(self):
-        """3D dimensionless spin for first component.
-        """
+        """3D dimensionless spin for first component."""
         return np.array([self.spin_1x, self.spin_1y, self.spin_1z])
 
     @property
     def spin_2(self):
-        """3D dimensionless spin for second component.
-        """
+        """3D dimensionless spin for second component."""
         return np.array([self.spin_2x, self.spin_2y, self.spin_2z])
 
     @property
     def spin_1_mag(self):
-        """Dimensionless spin magnitude for first component.
-        """
+        """Dimensionless spin magnitude for first component."""
         return np.linalg.norm(self.spin_1)
 
     @property
     def spin_2_mag(self):
-        """Dimensionless spin magnitude for second component.
-        """
+        """Dimensionless spin magnitude for second component."""
         return np.linalg.norm(self.spin_2)
 
     @property
     def cos_iota(self):
-        """Cosine of the Newtonian inclination at reference frequency.
-        """
+        """Cosine of the Newtonian inclination at reference frequency."""
         return np.cos(self.iota)
 
     @property
     def luminosity_distance_si(self):
-        """Luminosity distance in meters.
-        """
+        """Luminosity distance in meters."""
         return self.luminosity_distance * 1e6 * lal.PC_SI
 
     @property
     def mass_1_si(self):
-        """First component mass in kg.
-        """
+        """First component mass in kg."""
         return self.mass_1 * lal.MSUN_SI
 
     @property
     def mass_2_si(self):
-        """Second component mass in kg.
-        """
+        """Second component mass in kg."""
         return self.mass_2 * lal.MSUN_SI
 
-    def compute_remnant_mchi(self, model: str = 'NRSur7dq4Remnant',
-                             solar_masses=True) -> tuple:
+    def compute_remnant_mchi(
+        self, model: str = "NRSur7dq4Remnant", solar_masses=True
+    ) -> tuple:
         """Estimate remnant mass and spin using a remnant model.
 
         Arguments
@@ -322,23 +334,24 @@ class Parameters:
             remnant dimensionless spin magnitude.
         """
         if solar_masses:
-            m1 = self['mass_1'] * lal.MSUN_SI
-            m2 = self['mass_2'] * lal.MSUN_SI
+            m1 = self["mass_1"] * lal.MSUN_SI
+            m2 = self["mass_2"] * lal.MSUN_SI
         else:
-            m1 = self['mass_1']
-            m2 = self['mass_2']
+            m1 = self["mass_1"]
+            m2 = self["mass_2"]
         remnant = ls.nrfits.eval_nrfit(
-            m1, m2,
-            [self['spin_1x'], self['spin_1y'], self['spin_1z']],
-            [self['spin_2x'], self['spin_2y'], self['spin_2z']],
+            m1,
+            m2,
+            [self["spin_1x"], self["spin_1y"], self["spin_1z"]],
+            [self["spin_2x"], self["spin_2y"], self["spin_2z"]],
             model,
             ["FinalMass", "FinalSpin"],
-            f_ref=self['f_ref'],
+            f_ref=self["f_ref"],
         )
-        mf = remnant['FinalMass']
+        mf = remnant["FinalMass"]
         if solar_masses:
             mf /= lal.MSUN_SI
-        chif = np.linalg.norm(remnant['FinalSpin'])
+        chif = np.linalg.norm(remnant["FinalSpin"])
         return mf, chif
 
     @property
@@ -374,17 +387,42 @@ class Parameters:
         args : list
             list of arguments ready for :func:`ls.SimInspiralChooseTDWaveform`
         """
-        args = [self.mass_1_si, self.mass_2_si, *self.spin_1, *self.spin_2,
-                self.luminosity_distance_si, self.iota, self.phase,
-                self.long_asc_nodes, self.eccentricity, self.mean_per_ano,
-                float(delta_t), self.f_low, self.f_ref]
+        args = [
+            self.mass_1_si,
+            self.mass_2_si,
+            *self.spin_1,
+            *self.spin_2,
+            self.luminosity_distance_si,
+            self.iota,
+            self.phase,
+            self.long_asc_nodes,
+            self.eccentricity,
+            self.mean_per_ano,
+            float(delta_t),
+            self.f_low,
+            self.f_ref,
+        ]
         return args
 
-    _CHOOSETDWAVEFORM_ARGS = ['mass_1', 'mass_2', 'spin_1_x', 'spin_1_y',
-                              'spin_1_z', 'spin_2_x', 'spin_2_y', 'spin_2_z',
-                              'luminosity_distance', 'iota', 'phase',
-                              'long_asc_nodes', 'eccentricity', 'mean_per_ano',
-                              'delta_t', 'f_low', 'f_ref']
+    _CHOOSETDWAVEFORM_ARGS = [
+        "mass_1",
+        "mass_2",
+        "spin_1_x",
+        "spin_1_y",
+        "spin_1_z",
+        "spin_2_x",
+        "spin_2_y",
+        "spin_2_z",
+        "luminosity_distance",
+        "iota",
+        "phase",
+        "long_asc_nodes",
+        "eccentricity",
+        "mean_per_ano",
+        "delta_t",
+        "f_low",
+        "f_ref",
+    ]
 
     def get_choosetdmodes_args(self, delta_t):
         """Construct input for :func:`ls.SimInspiralChooseTDModes`.
@@ -450,22 +488,31 @@ class Parameters:
         # Approximant approximant
         # /**< post-Newtonian approximant to use for waveform production */
         #
-        args = [0.0, float(delta_t), self.mass_1_si, self.mass_2_si,
-                *self.spin_1, *self.spin_2, self.f_low, self.f_ref,
-                self.luminosity_distance_si]
+        args = [
+            0.0,
+            float(delta_t),
+            self.mass_1_si,
+            self.mass_2_si,
+            *self.spin_1,
+            *self.spin_2,
+            self.f_low,
+            self.f_ref,
+            self.luminosity_distance_si,
+        ]
         return args
 
 
 class Coalescence(Signal):
-    """An inspiral-merger-ringdown signal from a compact binary coalescence.
-    """
+    """An inspiral-merger-ringdown signal from a compact binary coalescence."""
+
     _DEF_TUKEY_ALPHA = 0.125
 
     # register names of all available LALSimulation approximants
     _MODELS = [
-        ls.GetStringFromApproximant(a) for a in range(ls.NumApproximants) if
-        ls.SimInspiralImplementedFDApproximants(a) or
-        ls.SimInspiralImplementedTDApproximants(a)
+        ls.GetStringFromApproximant(a)
+        for a in range(ls.NumApproximants)
+        if ls.SimInspiralImplementedFDApproximants(a)
+        or ls.SimInspiralImplementedTDApproximants(a)
     ]
 
     def __init__(self, *args, modes=None, **kwargs):
@@ -478,9 +525,18 @@ class Coalescence(Signal):
 
     @classmethod
     @docstring_parameter(_DEF_TUKEY_ALPHA)
-    def from_parameters(cls, time, model=None, approximant=None, ell_max=None,
-                        single_mode=None, window=_DEF_TUKEY_ALPHA,
-                        manual_epoch=False, subsample_placement=False, **kws):
+    def from_parameters(
+        cls,
+        time,
+        model=None,
+        approximant=None,
+        ell_max=None,
+        single_mode=None,
+        window=_DEF_TUKEY_ALPHA,
+        manual_epoch=False,
+        subsample_placement=False,
+        **kws,
+    ):
         """Construct coalescence waveform from compact-binary parameters.
 
         Additional keyword arguments are passed to :class:`Parameters` to
@@ -551,9 +607,10 @@ class Coalescence(Signal):
         if approximant is None:
             raise ValueError("'model' or 'approximant' must be specified")
 
-        all_kws = {k: v for k, v in locals().items() if k not in [
-            'cls', 'time']}
-        all_kws.update(all_kws.pop('kws'))
+        all_kws = {
+            k: v for k, v in locals().items() if k not in ["cls", "time"]
+        }
+        all_kws.update(all_kws.pop("kws"))
 
         dt = time[1] - time[0]
         approx = ls.SimInspiralGetApproximantFromString(approximant)
@@ -561,25 +618,25 @@ class Coalescence(Signal):
 
         param_dict = lal.CreateDict()
         # NR handling based on https://arxiv.org/abs/1703.01076
-        if approximant == 'NR_hdf5':
-            nr_path = kws['nr_path']
+        if approximant == "NR_hdf5":
+            nr_path = kws["nr_path"]
             # get masses
-            mtot_msun = pars['total_mass']
-            with h5py.File(nr_path, 'r') as f:
-                m1 = f.attrs['mass1']
-                m2 = f.attrs['mass2']
-                pars['mass_1'] = m1 * mtot_msun/(m1 + m2)
-                pars['mass_2'] = m2 * mtot_msun/(m1 + m2)
+            mtot_msun = pars["total_mass"]
+            with h5py.File(nr_path, "r") as f:
+                m1 = f.attrs["mass1"]
+                m2 = f.attrs["mass2"]
+                pars["mass_1"] = m1 * mtot_msun / (m1 + m2)
+                pars["mass_2"] = m2 * mtot_msun / (m1 + m2)
             # compute spin components in lalsim frame
-            s = ls.SimInspiralNRWaveformGetSpinsFromHDF5File(pars['f_ref'],
-                                                             mtot_msun,
-                                                             nr_path)
+            s = ls.SimInspiralNRWaveformGetSpinsFromHDF5File(
+                pars["f_ref"], mtot_msun, nr_path
+            )
             for k, v in zip(pars._SPIN_COMP_KEYS, s):
                 pars[k] = v
             # add pointer to NR file to dictionary
             ls.SimInspiralWaveformParamsInsertNumRelData(param_dict, nr_path)
             # TODO: is this right??
-            pars['long_asc_nodes'] = np.pi / 2
+            pars["long_asc_nodes"] = np.pi / 2
 
         if single_mode is not None and ell_max is not None:
             raise ValueError("Specify only one of single_mode or ell_max")
@@ -587,7 +644,7 @@ class Coalescence(Signal):
         if ell_max is not None:
             # if ell_max, load all modes with ell <= ell_max
             ma = ls.SimInspiralCreateModeArray()
-            for ell in range(2, ell_max+1):
+            for ell in range(2, ell_max + 1):
                 ls.SimInspiralModeArrayActivateAllModesAtL(ma, ell)
             ls.SimInspiralWaveformParamsInsertModeArray(param_dict, ma)
         elif single_mode is not None:
@@ -605,9 +662,10 @@ class Coalescence(Signal):
             hp, hc = ls.SimInspiralChooseTDWaveform(*args, param_dict, approx)
         except TypeError:
             k = Parameters._CHOOSETDWAVEFORM_ARGS
-            s = ''.join([f'{i}\t{k[i]}\t{type(a)}\t{a}\n'
-                         for i, a in enumerate(args)])
-            s += f'\napprox\t{approx}'
+            s = "".join(
+                [f"{i}\t{k[i]}\t{type(a)}\t{a}\n" for i, a in enumerate(args)]
+            )
+            s += f"\napprox\t{approx}"
             raise TypeError(f"SimInspiral type error for arguments:\n{s}")
 
         # align waveform to trigger time, following LALInferenceTemplate
@@ -618,7 +676,7 @@ class Coalescence(Signal):
         # tEnd = tStart + dt * bufLength
 
         # /* The nearest sample in model buffer to the desired tc. */
-        tcSample = round((pars['trigger_time'] - tStart)/dt)
+        tcSample = round((pars["trigger_time"] - tStart) / dt)
 
         # /* The actual coalescence time that corresponds to the buffer
         #    sample on which the waveform's tC lands. */
@@ -638,14 +696,16 @@ class Coalescence(Signal):
                 ipeak = n - _ishift(hp_d, hc_d)
                 ishift = ipeak - round(ipeak)
                 w = tukey(n, window)
-                shift = np.exp(1j*2*np.pi*np.fft.rfftfreq(n, dt)*ishift*dt)
-                hp_d = np.fft.irfft(np.fft.rfft(w*hp_d)*shift, n=n)
-                hc_d = np.fft.irfft(np.fft.rfft(w*hc_d)*shift, n=n)
+                shift = np.exp(
+                    1j * 2 * np.pi * np.fft.rfftfreq(n, dt) * ishift * dt
+                )
+                hp_d = np.fft.irfft(np.fft.rfft(w * hp_d) * shift, n=n)
+                hc_d = np.fft.irfft(np.fft.rfft(w * hc_d) * shift, n=n)
             waveTcSample = np.argmax(hp_d**2 + hc_d**2)
         else:
             # this is what is done in LALInference
-            hp_epoch = hp.epoch.gpsSeconds + hp.epoch.gpsNanoSeconds*1E-9
-            waveTcSample = round(-hp_epoch/dt)
+            hp_epoch = hp.epoch.gpsSeconds + hp.epoch.gpsNanoSeconds * 1e-9
+            waveTcSample = round(-hp_epoch / dt)
 
         # /* 1 + (number of samples post-tc in waveform) */
         wavePostTc = n - waveTcSample
@@ -662,9 +722,11 @@ class Coalescence(Signal):
 
         bufWaveLength = bufEndIndex - bufStartIndex
         if bufWaveLength < 0:
-            raise ValueError("waveform does not overlap with buffer:"
-                             f"trigger_time = {pars['trigger_time']}; "
-                             f"buffer = {time[0], time[-1]}")
+            raise ValueError(
+                "waveform does not overlap with buffer:"
+                f"trigger_time = {pars['trigger_time']}; "
+                f"buffer = {time[0], time[-1]}"
+            )
 
         if tcSample >= waveTcSample:
             waveStartIndex = 0
@@ -674,15 +736,16 @@ class Coalescence(Signal):
         if window and tcSample >= waveTcSample and not subsample_placement:
             # smoothly turn on waveform
             w = tukey(bufWaveLength, window)
-            w[int(0.5*bufWaveLength):] = 1.
+            w[int(0.5 * bufWaveLength) :] = 1.0
         else:
             # no window
             w = 1
 
         h = np.zeros(bufLength, dtype=complex)
-        h[bufStartIndex:bufEndIndex] = \
-            w*(hp_d[waveStartIndex:waveStartIndex+bufWaveLength] -
-                1j*hc_d[waveStartIndex:waveStartIndex+bufWaveLength])
+        h[bufStartIndex:bufEndIndex] = w * (
+            hp_d[waveStartIndex : waveStartIndex + bufWaveLength]
+            - 1j * hc_d[waveStartIndex : waveStartIndex + bufWaveLength]
+        )
         all_kws.update(pars.to_dict())
         return cls(h, index=time, parameters=all_kws)
 
@@ -734,10 +797,9 @@ class Coalescence(Signal):
             dict_params = lal.CreateDict()
             if ell_max is not None:
                 ma = ls.SimInspiralCreateModeArray()
-                for ell in range(2, ell_max+1):
+                for ell in range(2, ell_max + 1):
                     ls.SimInspiralModeArrayActivateAllModesAtL(ma, ell)
-                    ls.SimInspiralWaveformParamsInsertModeArray(
-                        dict_params, ma)
+                    ls.SimInspiralWaveformParamsInsertModeArray(dict_params, ma)
 
             pars = Parameters.construct(**kws)
             args = pars.get_choosetdmodes_args(self.delta_t)
@@ -745,14 +807,18 @@ class Coalescence(Signal):
             # get the time array corresponding to this waveform, such that the
             # reference time (wrt which epoch is defined) is placed at the
             # requested trigger time
-            t = np.arange(len(hlms.mode.data.data))*self.delta_t + \
-                (float(hlms.mode.epoch) + pars['trigger_time'])
+            t = np.arange(len(hlms.mode.data.data)) * self.delta_t + (
+                float(hlms.mode.epoch) + pars["trigger_time"]
+            )
             # iterate over modes and compute magnitude squared
-            sum_h_squared = Coalescence(np.zeros_like(t), index=t,
-                                        parameters=self.parameters)
+            sum_h_squared = Coalescence(
+                np.zeros_like(t), index=t, parameters=self.parameters
+            )
             while hlms is not None:
-                sum_h_squared += np.real(hlms.mode.data.data)**2 + \
-                    np.imag(hlms.mode.data.data)**2
+                sum_h_squared += (
+                    np.real(hlms.mode.data.data) ** 2
+                    + np.imag(hlms.mode.data.data) ** 2
+                )
                 hlms = hlms.next
             t_peak = sum_h_squared.peak_time
             if ell_max is not None:
