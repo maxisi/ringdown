@@ -677,6 +677,7 @@ class TargetCollection(utils.MultiIndexCollection):
         t0_sect=PIPE_SECTION,
         sky_sect="target",
         imr_result=None,
+        acfs=None
     ):
         """Create a collection of targets from a configuration file.
 
@@ -742,6 +743,7 @@ class TargetCollection(utils.MultiIndexCollection):
                     config.get(IMR_CONFIG_SECTION, "peak_kws", fallback={})
                 )
             )
+            pkws["acfs"] = acfs
             imr_target = imr_result.get_best_peak_target(**pkws).settings
             # set the reference mass and time
             if MREF_KEY in config[t0_sect]:

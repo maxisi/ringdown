@@ -593,7 +593,9 @@ class IMRResult(pd.DataFrame):
         iloc = (peak_times[best_ifo] - tp).abs().idxmin()
         return peak_times.loc[iloc], best_ifo
 
-    def get_best_peak_target(self, duration="auto", **kws) -> target.SkyTarget:
+    def get_best_peak_target(
+        self, duration="auto", acfs=None, **kws
+    ) -> target.SkyTarget:
         """Get the target corresponding to the best-measured peak time.
 
         Arguments
@@ -612,7 +614,7 @@ class IMRResult(pd.DataFrame):
         """
         peak_times, ref_ifo = self.get_best_peak_times(**kws)
         if duration == "auto":
-            duration = self.estimate_ringdown_duration(**kws)
+            duration = self.estimate_ringdown_duration(acfs=acfs, **kws)
         sample = self.loc[peak_times.name]
         skyloc = {k: sample[k] for k in ["ra", "dec", "psi"]}
         t0 = peak_times[ref_ifo]
@@ -1201,8 +1203,7 @@ class IMRResult(pd.DataFrame):
     _REFERENCE_SRATE = 16384
 
     def data_options(self, **options):
-        """Return a dictionary of options to obtain data used in the analysis.
-        """
+        """Return a dictionary of options to obtain data used in the analysis."""
         if not self.config:
             return {}
         config = self.config
@@ -1239,10 +1240,11 @@ class IMRResult(pd.DataFrame):
             # add gwosc specific options
             key_map = {"t0": "trigger-time", "seglen": "duration"}
             for k, v in key_map.items():
-                if v in config:
-                    options[k] = config[v]
-                else:
-                    logger.warning(f"missing {v} in config")
+                if k not in options:
+                    if v in config:
+                        options[k] = config[v]
+                    else:
+                        logger.warning(f"missing {v} in config")
             options["sample_rate"] = self._REFERENCE_SRATE
         logger.info(f"using data options: {options}")
         return options

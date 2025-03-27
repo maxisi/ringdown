@@ -1755,9 +1755,7 @@ class Fit(object):
                 return int(round(self.duration / dt))
             else:
                 logger.warning(
-                    "add data to compute n_analyze (duration = {})".format(
-                        self.duration
-                    )
+                    f"add data to compute n_analyze (T = {self.duration})"
                 )
                 return None
         elif self.data and self.has_target:
@@ -1921,16 +1919,16 @@ class Fit(object):
         imr = fit.imr_result
 
         if load_data:
-            logger.info("loading data based on IMR result")
+            logger.info(f"loading data based on IMR result and {data_kws}")
             data_opts = imr.data_options(**(data_kws or {}))
             fit.load_data(**data_opts)
 
         if set_target:
-            if duration == "auto":
-                duration = imr.estimate_ringdown_duration(cache=True, prng=prng)
             peak_kws = peak_kws or {}
             peak_kws["prng"] = peak_kws.get("prng", prng)
-            t = imr.get_best_peak_target(**peak_kws, duration=duration)
+            # get target without duration so that we only compute
+            # duration after getting ACFs below
+            t = imr.get_best_peak_target(**peak_kws, duration=False)
             if advance_target_by_mass:
                 m = reference_mass or imr.remnant_mass_scale_reference
                 dt = advance_target_by_mass * m * T_MSUN
@@ -1956,6 +1954,18 @@ class Fit(object):
                 logger.warning(
                     "ACFs derived from IMR result but data not conditioned!"
                 )
+
+        if set_target and duration == "auto":
+            acfs = fit.acfs or imr.get_acfs(**(acf_kws or {}))
+            if not acfs:
+                logger.info("auto-computing ACFs for IMR duration estimate")
+                fit.compute_acfs(**(acf_kws or {}))
+                acfs = fit.acfs
+            duration = imr.estimate_ringdown_duration(
+                cache=True, prng=prng, acfs=acfs
+            )
+            fit.target.duration = duration
+            fit.set_target(target=fit.target)
 
         if update_model:
             prior_kws = prior_kws or {}
@@ -2220,7 +2230,7 @@ class FitSequence(Fit):
 
         logger.info("getting target collection")
         targets = TargetCollection.from_config(
-            config, imr_result=fits.imr_result
+            config, imr_result=fits.imr_result, acfs=fits.acfs
         )
         fits.set_target_collection(targets)
 
