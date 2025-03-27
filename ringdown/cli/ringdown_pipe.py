@@ -78,10 +78,10 @@ def main(args=None):
     # determine run directory
     outdir = args.outdir or config.get(PIPE_SECTION, 'outdir', fallback=None)
     if not outdir:
-        outdir = 'ringdown_pipe_{:.0f}'.format(time.time())
-        logging.warning("No run dir provided, defaulting to {}".format(outdir))
+        outdir = f'ringdown_pipe_{time.time():.0f}'
+        logging.warning(f"No run dir provided, defaulting to {outdir}")
     outdir = os.path.abspath(outdir)
-    logging.info("Running in {}".format(outdir))
+    logging.info(f"Running in {outdir}")
 
     rerun = False
     if os.path.exists(outdir):
@@ -109,11 +109,11 @@ def main(args=None):
         config.write(f)
 
     with open(PATHS['command'], 'w') as f:
-        f.write("{}\n\n".format(' '.join(sys.argv)))
+        f.write(f"{' '.join(sys.argv)}\n\n")
         for k, v in vars(args).items():
-            f.write("# {}: {}\n".format(k, v))
-        f.write("\n# {}".format(os.path.realpath(__file__)))
-        f.write("\n# ringdown v {}".format(__version__))
+            f.write(f"# {k}: {v}\n")
+        f.write(f"\n# {os.path.realpath(__file__)}")
+        f.write(f"\n# ringdown v {__version__}")
 
     # Identify target analysis times. There will be three possibilities:
     #     1- listing the times explicitly
@@ -176,7 +176,7 @@ def main(args=None):
             with open(PATHS['run_task'], 'a') as f:
                 f.write(TASK.format(rundir=rundir, result=rpath, config=cpath))
 
-    logging.info("Done processing {} runs.".format(len(t0s)))
+    logging.info(f"Done processing {len(t0s)} runs.")
 
 
     ##############################################################################
@@ -205,7 +205,7 @@ def main(args=None):
     if args.platform == 'cpu':
         EXE = [
             '#! /usr/bin/env bash',
-            'cd {}'.format(outdir),
+            f'cd {outdir}',
             f"{command} -p cca -n {NTASK} -c {NDEVICE} disBatch {PATHS['run_task']}",
             'cd -',
         ]
@@ -220,7 +220,7 @@ def main(args=None):
     
         EXE = [
             '#! /usr/bin/env bash',
-            'cd {}'.format(outdir),
+            f'cd {outdir}',
             command,
             'cd -',
         ]
@@ -232,11 +232,11 @@ def main(args=None):
     os.chmod(epath, st.st_mode | 0o111)
     
     if args.submit:
-        print("Submitting: {}".format(epath))
+        print(f"Submitting: {epath}")
         import subprocess
         subprocess.run(epath)
     else:
-        print("Submit by running: {}".format(epath))
+        print(f"Submit by running: {epath}")
 
 if __name__ == '__main__':
     main()

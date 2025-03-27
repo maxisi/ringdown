@@ -65,7 +65,7 @@ def main(args=None, defout=DEFOUT):
         logging.info("Setting OMP_NUM_THREADS to 1.")
         os.environ['OMP_NUM_THREADS'] = "1"
 
-    print("Loading: {}".format(os.path.abspath(args.config)))
+    print(f"Loading: {os.path.abspath(args.config)}")
 
     config = rd.utils.load_config(args.config)
 
@@ -94,9 +94,9 @@ def main(args=None, defout=DEFOUT):
 
     if os.path.exists(out):
         if args.force:
-            logging.warning("overwriting output file: {}".format(out))
+            logging.warning(f"overwriting output file: {out}")
         else:
-            raise FileExistsError("output file already exists: {}".format(out))
+            raise FileExistsError(f"output file already exists: {out}")
 
     ##########################################################################
     # RUN FIT
@@ -116,7 +116,7 @@ def main(args=None, defout=DEFOUT):
     else:
         result.to_json(out)
 
-    print("Saved ringdown fit: {}".format(out))
+    print(f"Saved ringdown fit: {out}")
 
 if __name__ == '__main__':
     main()

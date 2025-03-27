@@ -40,7 +40,7 @@ def get_parser():
     p = argparse.ArgumentParser(description=_HELP)
     p.add_argument('config', help="path to configuration file.")
     p.add_argument('-o', '--output', default=DEFOUT,
-                   help="output result path (default: `{}`).".format(DEFOUT))
+                   help=f"output result path (default: `{DEFOUT}`).")
     p.add_argument('--platform', choices=['cpu', 'gpu'], default='cpu',
                    help="device platform (default: cpu).")
     p.add_argument('--device-count', type=int, default=4,
@@ -67,7 +67,7 @@ def main(args=None):
         logging.info("Setting OMP_NUM_THREADS to 1.")
         os.environ['OMP_NUM_THREADS'] = "1"
 
-    print("Loading: {}".format(os.path.abspath(args.config)))
+    print(f"Loading: {os.path.abspath(args.config)}")
 
     if not os.path.exists(args.config):
         raise FileNotFoundError(f"config file not found: {args.config}")
@@ -123,7 +123,7 @@ def main(args=None):
 
     fit.run(**run_kws, output_path=out)
 
-    print("Saved ringdown fits: {}".format(out))
+    print(f"Saved ringdown fits: {out}")
 
 if __name__ == '__main__':
     main()
