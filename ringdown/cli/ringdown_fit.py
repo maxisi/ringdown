@@ -60,11 +60,6 @@ def main(args=None, defout=DEFOUT):
 
     cpu_count = os.cpu_count()
 
-    # check for numpy threading options
-    if 'OMP_NUM_THREADS' not in os.environ:
-        logging.info("Setting OMP_NUM_THREADS to 1.")
-        os.environ['OMP_NUM_THREADS'] = "1"
-
     print(f"Loading: {os.path.abspath(args.config)}")
 
     config = rd.utils.load_config(args.config)

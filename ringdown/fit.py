@@ -1091,9 +1091,9 @@ class Fit(object):
         # log some runtime information
         jax_device_count = jax.device_count()
         platform = jax.lib.xla_bridge.get_backend().platform.upper()
-        omp_num_threads = int(os.environ.get("OMP_NUM_THREADS", 1))
+        os.environ['OMP_NUM_THREADS'] = os.environ.get("OMP_NUM_THREADS", "1")
         logger.info(f"running on {jax_device_count} {platform} using "
-                    f"{omp_num_threads} OMP threads")
+                    f"{os.environ['OMP_NUM_THREADS']} OMP threads")
 
         logger.info('run settings: {}'.format(run_kws))
         logger.info('kernel settings: {}'.format(kernel_kws))
@@ -2030,9 +2030,9 @@ class FitSequence(Fit):
         # log some runtime information
         jax_device_count = jax.device_count()
         platform = jax.lib.xla_bridge.get_backend().platform.upper()
-        omp_num_threads = int(os.environ.get("OMP_NUM_THREADS", 1))
+        os.environ['OMP_NUM_THREADS'] = os.environ.get("OMP_NUM_THREADS", "1")
         logger.info(f"running on {jax_device_count} {platform} using "
-                    f"{omp_num_threads} OMP threads")
+                    f"{os.environ['OMP_NUM_THREADS']} OMP threads")
 
         logger.info('run settings: {}'.format(run_kws))
         logger.info('kernel settings: {}'.format(kernel_kws))
