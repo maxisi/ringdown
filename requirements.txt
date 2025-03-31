@@ -3,7 +3,7 @@ lalsuite==7.24
 h5py~=3.12
 arviz~=0.20
 pandas~=2.2
-qnm==0.4.3
+qnm==0.4.4
 seaborn~=0.13
 jupyterlab
 tqdm
