@@ -1,7 +1,7 @@
 __all__ = ["Coalescence", "Parameters"]
 
 import numpy as np
-import lal
+
 from .core import Signal, _ishift
 from ..utils import docstring_parameter
 
@@ -9,13 +9,17 @@ try:
     from scipy.signal.windows import tukey
 except ImportError:
     from scipy.signal import tukey
-import lalsimulation as ls
 from dataclasses import dataclass, asdict, fields
 import inspect
 import h5py
 import logging
 
 logger = logging.getLogger(__name__)
+
+MSUN_SI = 1.988409870698050677689968230400e30
+PC_SI = 3.08567758149136720000e16
+GMSUN_SI = 1.32712440000000000000e20
+C_SI = 2.99792458000000000000e08
 
 
 def m1m2_from_mtotq(mtot, q):
@@ -215,6 +219,9 @@ class Parameters:
         pars : Parameters
             coalescence parameters container object
         """.format(cls._ALIASES_STR)
+        # lazy import of LAL (optional dependency)
+        import lalsimulation as ls
+
         kws["f_ref"] = kws.get("f_ref", kws.get("f_low"))
         for par, aliases in cls._ALIASES.items():
             for k in aliases:
@@ -239,8 +246,8 @@ class Parameters:
         if not all(lsim_given) and any(linf_given):
             try:
                 a = [kws[k] for k in cls._SPIN_KEYS_LALINF] + [
-                    kws["mass_1"] * lal.MSUN_SI,
-                    kws["mass_2"] * lal.MSUN_SI,
+                    kws["mass_1"] * MSUN_SI,
+                    kws["mass_2"] * MSUN_SI,
                     kws["f_ref"],
                     kws["phase"],
                 ]
@@ -304,17 +311,17 @@ class Parameters:
     @property
     def luminosity_distance_si(self):
         """Luminosity distance in meters."""
-        return self.luminosity_distance * 1e6 * lal.PC_SI
+        return self.luminosity_distance * 1e6 * PC_SI
 
     @property
     def mass_1_si(self):
         """First component mass in kg."""
-        return self.mass_1 * lal.MSUN_SI
+        return self.mass_1 * MSUN_SI
 
     @property
     def mass_2_si(self):
         """Second component mass in kg."""
-        return self.mass_2 * lal.MSUN_SI
+        return self.mass_2 * MSUN_SI
 
     def compute_remnant_mchi(
         self, model: str = "NRSur7dq4Remnant", solar_masses=True
@@ -334,8 +341,8 @@ class Parameters:
             remnant dimensionless spin magnitude.
         """
         if solar_masses:
-            m1 = self["mass_1"] * lal.MSUN_SI
-            m2 = self["mass_2"] * lal.MSUN_SI
+            m1 = self["mass_1"] * MSUN_SI
+            m2 = self["mass_2"] * MSUN_SI
         else:
             m1 = self["mass_1"]
             m2 = self["mass_2"]
@@ -350,7 +357,7 @@ class Parameters:
         )
         mf = remnant["FinalMass"]
         if solar_masses:
-            mf /= lal.MSUN_SI
+            mf /= MSUN_SI
         chif = np.linalg.norm(remnant["FinalSpin"])
         return mf, chif
 
@@ -368,11 +375,11 @@ class Parameters:
 
     @property
     def final_mass_seconds(self):
-        return self.final_mass * lal.GMSUN_SI / lal.C_SI**3
+        return self.final_mass * GMSUN_SI / C_SI**3
 
     @property
     def final_mass_si(self):
-        return self.final_mass * lal.MSUN_SI
+        return self.final_mass * MSUN_SI
 
     def get_choosetdwaveform_args(self, delta_t):
         """Construct input for :func:`ls.SimInspiralChooseTDWaveform`.
@@ -602,6 +609,10 @@ class Coalescence(Signal):
         h : Coalescence
             compact binary coalescence signal.
         """
+        # lazy import of LAL (optional dependency)
+        import lal
+        import lalsimulation as ls
+
         approximant = model or approximant
 
         if approximant is None:
