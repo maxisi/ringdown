@@ -1,11 +1,5 @@
-from abc import ABC, abstractmethod
-import jax
 import jax.numpy as jnp
 import numpy as np
-import requests
-from gwpy.timeseries import TimeSeries
-from scipy.interpolate import interp1d
-
 from astropy.time import Time
 
 DEG_TO_RAD = np.pi / 180
