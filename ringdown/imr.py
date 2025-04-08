@@ -20,7 +20,6 @@ from .utils import (
 )
 from .config import IMR_CONFIG_SECTION, WHITENED_LOGLIKE_KEY
 import multiprocessing as mp
-from lalsimulation import nrfits
 import logging
 import inspect
 
@@ -60,6 +59,8 @@ def get_remnant(
     f_ref,
     model,
 ):
+    # lazy import LAL (optional dependency)
+    from lalsimulation import nrfits
     r = nrfits.eval_nrfit(
         mass_1,
         mass_2,
