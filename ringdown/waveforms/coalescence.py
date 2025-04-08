@@ -21,6 +21,17 @@ PC_SI = 3.08567758149136720000e16
 GMSUN_SI = 1.32712440000000000000e20
 C_SI = 2.99792458000000000000e08
 
+try:
+    import lalsimulation as ls
+    MODELS = [
+        ls.GetStringFromApproximant(a)
+        for a in range(ls.NumApproximants)
+        if ls.SimInspiralImplementedFDApproximants(a)
+        or ls.SimInspiralImplementedTDApproximants(a)
+    ]
+except ImportError:
+    MODELS = []
+
 
 def m1m2_from_mtotq(mtot, q):
     m1 = mtot / (1 + q)
@@ -507,18 +518,6 @@ class Parameters:
             self.luminosity_distance_si,
         ]
         return args
-
-
-try:
-    import lalsimulation as ls
-    MODELS = [
-        ls.GetStringFromApproximant(a)
-        for a in range(ls.NumApproximants)
-        if ls.SimInspiralImplementedFDApproximants(a)
-        or ls.SimInspiralImplementedTDApproximants(a)
-    ]
-except ImportError:
-    MODELS = []
 
 
 class Coalescence(Signal):
