@@ -509,18 +509,25 @@ class Parameters:
         return args
 
 
-class Coalescence(Signal):
-    """An inspiral-merger-ringdown signal from a compact binary coalescence."""
-
-    _DEF_TUKEY_ALPHA = 0.125
-
-    # register names of all available LALSimulation approximants
-    _MODELS = [
+try:
+    import lalsimulation as ls
+    MODELS = [
         ls.GetStringFromApproximant(a)
         for a in range(ls.NumApproximants)
         if ls.SimInspiralImplementedFDApproximants(a)
         or ls.SimInspiralImplementedTDApproximants(a)
     ]
+except ImportError:
+    MODELS = []
+
+
+class Coalescence(Signal):
+    """An inspiral-merger-ringdown signal from a compact binary coalescence."""
+
+    _DEF_TUKEY_ALPHA = 0.125
+    _MODELS = MODELS
+
+    # register names of all available LALSimulation approximants
 
     def __init__(self, *args, modes=None, **kwargs):
         super(Coalescence, self).__init__(*args, **kwargs)

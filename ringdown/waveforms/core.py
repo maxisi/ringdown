@@ -1,7 +1,6 @@
 __all__ = ["Signal", "get_detector_signals", "get_delay"]
 
 import numpy as np
-import lal
 from ..data import Data, TimeSeries
 from inspect import getfullargspec
 import logging
