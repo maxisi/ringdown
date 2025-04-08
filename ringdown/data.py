@@ -7,7 +7,6 @@ __all__ = ['Series', 'TimeSeries', 'FrequencySeries', 'Data',
 
 import numpy as np
 import scipy.signal as sig
-import lal
 import scipy.linalg as sl
 from scipy.interpolate import interp1d
 import scipy.signal as ss
@@ -510,15 +509,15 @@ class Data(TimeSeries):
     def _constructor(self):
         return Data
 
-    @property
-    def detector(self) -> lal.Detector:
-        """:mod:`lal` object containing detector information.
-        """
-        if self.ifo:
-            d = lal.cached_detector_by_prefix[self.ifo]
-        else:
-            d = None
-        return d
+    # @property
+    # def detector(self) -> lal.Detector:
+    #     """:mod:`lal` object containing detector information.
+    #     """
+    #     if self.ifo:
+    #         d = lal.cached_detector_by_prefix[self.ifo]
+    #     else:
+    #         d = None
+    #     return d
 
     def condition(self, t0: float | None = None,
                   ds: int | None = None,
