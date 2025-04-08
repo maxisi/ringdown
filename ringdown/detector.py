@@ -607,6 +607,8 @@ IFO_ARMS = dict(
     ),
 )
 
+KNOWN_IFOS = set(IFO_PARAMETERS.keys()).union(set(IFO_ARMS.keys()))
+
 # POLARIZATION TENSORS
 
 
