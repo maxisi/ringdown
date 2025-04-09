@@ -19,7 +19,7 @@ classifiers = [
 requires-python = ">=3.11, <3.13"
 dependencies = [
     "numpy==1.26.4",
-    "lalsuite==7.25.1",
+    "astropy==7.0",
     "h5py~=3.11",
     "arviz~=0.19",
     "pandas~=2.2",
@@ -38,6 +38,12 @@ ringdown_scan = "ringdown.cli.ringdown_scan:main"
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[project.optional-dependencies]
+extra = [
+    "lalsuite==7.25.1",
+    "gwpy==3.0.10",
+]
 
 [tool.uv]
 dev-dependencies = [

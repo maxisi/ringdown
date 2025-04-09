@@ -3,13 +3,14 @@
 __all__ = ["Target", "SkyTarget", "DetectorTarget", "TargetCollection"]
 
 import numpy as np
-import lal
+from astropy.time import Time
 import logging
 from dataclasses import dataclass, asdict
 from abc import ABC, abstractmethod
 from .utils import utils
 from .utils.utils import try_parse
 from .config import T_MSUN, IMR_CONFIG_SECTION, PIPE_SECTION
+from . import detector
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +135,7 @@ class Target(ABC):
 class SkyTarget(Target):
     """Sky location target for a ringdown analysis."""
 
-    geocenter_time: float | lal.LIGOTimeGPS | None = None
+    geocenter_time: float | Time | None = None
     ra: float | None = None
     dec: float | None = None
     psi: float | None = None
@@ -143,7 +144,7 @@ class SkyTarget(Target):
     def __post_init__(self):
         # validate input: floats or None
         for k, v in self.as_dict().items():
-            if v is not None and not isinstance(v, lal.LIGOTimeGPS):
+            if v is not None and not isinstance(v, Time):
                 setattr(self, k, float(v))
         # make sure options are not contradictory
         if self.is_set:
@@ -177,12 +178,11 @@ class SkyTarget(Target):
         times : float
             time for specified detector.
         """
-        if ifo in lal.cached_detector_by_prefix:
-            det = lal.cached_detector_by_prefix[ifo]
-        else:
+        if ifo not in detector.KNOWN_IFOS:
             raise ValueError(f"unrecognized detector {ifo}")
-        tgps = lal.LIGOTimeGPS(self.geocenter_time)
-        dt = lal.TimeDelayFromEarthCenter(det.location, self.ra, self.dec, tgps)
+        dt_func = detector.get_geocenter_delay_function(ifo)
+        gmst = detector.gmst_from_gps(self.geocenter_time)
+        dt = dt_func(self.ra, self.dec, gmst)
         t0 = self.geocenter_time + dt
         return float(t0)
 
@@ -199,16 +199,16 @@ class SkyTarget(Target):
         antenna_patterns : dict
             dictionary of antenna patterns.
         """
-        if ifo in lal.cached_detector_by_prefix:
-            det = lal.cached_detector_by_prefix[ifo]
-        else:
+        if ifo not in detector.KNOWN_IFOS:
             raise ValueError(f"unrecognized detector {ifo}")
-        tgps = lal.LIGOTimeGPS(self.geocenter_time)
-        gmst = lal.GreenwichMeanSiderealTime(tgps)
-        fpfc = lal.ComputeDetAMResponse(
-            det.response, self.ra, self.dec, self.psi, gmst
-        )
-        return tuple(fpfc)
+        # get plus and cross functions
+        fp_func = detector.get_antenna_pattern_function(ifo, 'p')
+        fc_func = detector.get_antenna_pattern_function(ifo, 'c')
+        # evaluate at requested parameters
+        gmst = detector.gmst_from_gps(self.geocenter_time)
+        fp = float(fp_func(self.ra, self.dec, self.psi, gmst))
+        fc = float(fc_func(self.ra, self.dec, self.psi, gmst))
+        return fp, fc
 
     @classmethod
     def construct(
@@ -247,13 +247,12 @@ class SkyTarget(Target):
         if reference_ifo is None:
             tgeo = t0
         else:
-            det = lal.cached_detector_by_prefix[reference_ifo]
-            tgps = lal.LIGOTimeGPS(t0)
-            dt = lal.TimeDelayFromEarthCenter(det.location, ra, dec, tgps)
+            dt_func = detector.get_geocenter_delay_function(reference_ifo)
+            dt = float(dt_func(ra, dec, detector.gmst_from_gps(t0)))
             tgeo = t0 - dt
         if kws:
             logger.info(f"unused keyword arguments: {kws}")
-        return cls(lal.LIGOTimeGPS(tgeo), ra, dec, psi, duration)
+        return cls(np.float64(tgeo), ra, dec, psi, duration)
 
     @property
     def settings(self) -> dict:

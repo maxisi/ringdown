@@ -19,13 +19,13 @@ from .utils import (
     get_dict_from_pattern,
 )
 from .config import IMR_CONFIG_SECTION, WHITENED_LOGLIKE_KEY
-import lal
 import multiprocessing as mp
-from lalsimulation import nrfits
 import logging
 import inspect
 
 logger = logging.getLogger(__name__)
+
+MSUN_SI = 1.988409870698050677689968230400e30
 
 MASS_ALIASES = [
     "final_mass",
@@ -59,6 +59,8 @@ def get_remnant(
     f_ref,
     model,
 ):
+    # lazy import LAL (optional dependency)
+    from lalsimulation import nrfits
     r = nrfits.eval_nrfit(
         mass_1,
         mass_2,
@@ -391,8 +393,8 @@ class IMRResult(pd.DataFrame):
 
         if nproc is None:
             r = np.vectorize(get_remnant)(
-                self["mass_1"] * lal.MSUN_SI,
-                self["mass_2"] * lal.MSUN_SI,
+                self["mass_1"] * MSUN_SI,
+                self["mass_2"] * MSUN_SI,
                 self["spin_1x"],
                 self["spin_1y"],
                 self["spin_1z"],
@@ -407,8 +409,8 @@ class IMRResult(pd.DataFrame):
                 r = p.starmap(
                     get_remnant,
                     zip(
-                        self["mass_1"] * lal.MSUN_SI,
-                        self["mass_2"] * lal.MSUN_SI,
+                        self["mass_1"] * MSUN_SI,
+                        self["mass_2"] * MSUN_SI,
                         self["spin_1x"],
                         self["spin_1y"],
                         self["spin_1z"],
@@ -421,7 +423,7 @@ class IMRResult(pd.DataFrame):
                 )
 
         r = np.array(r).reshape(len(self), 2)
-        self["final_mass"] = r[:, 0] / lal.MSUN_SI
+        self["final_mass"] = r[:, 0] / MSUN_SI
         self["final_spin"] = r[:, 1]
         return self[keys]
 
