@@ -796,6 +796,8 @@ class Coalescence(Signal):
         t_peak : float
             peak time of the invariant strain
         """
+        # lazy import LAL (optional dependency)
+        import lal
 
         #     LALDict *LALpars,
         # /**< LAL dictionary containing accessory parameters */
