@@ -14,7 +14,6 @@ import jax
 import numpyro
 import jaxlib.xla_extension
 import xarray as xr
-import lal
 import logging
 from .data import Data, AutoCovariance, PowerSpectrum
 from . import utils
@@ -1666,7 +1665,7 @@ class Fit(object):
         """
         # turn float into LIGOTimeGPS object to ensure we get the right
         # number of digits when converting to string
-        t0 = lal.LIGOTimeGPS(t0) if isinstance(t0, float) else t0
+        # t0 = lal.LIGOTimeGPS(t0) if isinstance(t0, float) else t0
 
         # record all arguments for provenance
         settings = {k: v for k, v in locals().items() if k != "self"}

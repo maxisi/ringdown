@@ -1,10 +1,10 @@
 __all__ = ["Signal", "get_detector_signals", "get_delay"]
 
 import numpy as np
-import lal
 from ..data import Data, TimeSeries
 from inspect import getfullargspec
 import logging
+from .. import detector
 
 logger = logging.getLogger(__name__)
 
@@ -259,16 +259,16 @@ class Signal(TimeSeries):
             if ifo is None:
                 raise ValueError("must provide IFO name or antenna patterns")
             # compute antenna patterns for detector
-            tgps = lal.LIGOTimeGPS(t0 or self.t0)
-            gmst = lal.GreenwichMeanSiderealTime(tgps)
-            det = lal.cached_detector_by_prefix[ifo]
-            antenna_patterns = lal.ComputeDetAMResponse(
-                det.response, ra, dec, psi, gmst
-            )
+            tgps =float(t0 or self.t0)
+            gmst = detector.gmst_from_gps(tgps)
+            fp_func = detector.get_antenna_pattern_function(ifo, 'p')
+            fc_func = detector.get_antenna_pattern_function(ifo, 'c')
+            fp = float(fp_func(ra, dec, psi, gmst))
+            fc = float(fc_func(ra, dec, psi, gmst))
+            antenna_patterns = (fp, fc)
         else:
             # use provided antenna patterns
             tgps = None
-            det = None
         Fp, Fc = antenna_patterns
         h = Fp * self._hp + Fc * self._hc
 
@@ -490,7 +490,7 @@ def get_detector_signals(
 
 def get_delay(
     ifo: str,
-    t0: float | lal.LIGOTimeGPS,
+    t0: float,
     ra: float,
     dec: float,
     reference: str = Signal._FROM_GEO_KEY,
@@ -518,17 +518,17 @@ def get_delay(
     dt : float
         time-of-flight delay.
     """
-    if not isinstance(t0, lal.LIGOTimeGPS):
-        t0 = lal.LIGOTimeGPS(t0)
-    d = lal.cached_detector_by_prefix[ifo]
+    gmst = detector.gmst_from_gps(float(t0))
+    dt_func = detector.get_geocenter_delay_function(ifo)
+    dt = float(dt_func(ra, dec, gmst))
     if reference.lower() == Signal._FROM_GEO_KEY:
-        dt = lal.TimeDelayFromEarthCenter(d.location, ra, dec, t0)
+        return dt
     elif isinstance(reference, str):
-        dref = lal.cached_detector_by_prefix[reference]
-        dt = lal.ArrivalTimeDiff(d.location, dref.location, ra, dec, t0)
+        dt_func_ref = detector.get_geocenter_delay_function(reference)
+        dt_ref = float(dt_func_ref(ra, dec, gmst))
+        return dt - dt_ref
     else:
         raise ValueError("unrecognized reference: {}".format(reference))
-    return dt
 
 
 get_delay.__doc__ = get_delay.__doc__.format(from_geo=Signal._FROM_GEO_KEY)
