@@ -351,13 +351,16 @@ class Parameters:
         chif : float
             remnant dimensionless spin magnitude.
         """
+        # lazy import LAL (optional dependency)
+        from lalsimulation import nrfits
+
         if solar_masses:
             m1 = self["mass_1"] * MSUN_SI
             m2 = self["mass_2"] * MSUN_SI
         else:
             m1 = self["mass_1"]
             m2 = self["mass_2"]
-        remnant = ls.nrfits.eval_nrfit(
+        remnant = nrfits.eval_nrfit(
             m1,
             m2,
             [self["spin_1x"], self["spin_1y"], self["spin_1z"]],
