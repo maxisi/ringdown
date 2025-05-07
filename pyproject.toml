@@ -25,9 +25,10 @@ dependencies = [
     "pandas~=2.2",
     "qnm==0.4.4",
     "seaborn~=0.13",
-    "numpyro~=0.15",
-    "jax~=0.4",
-    "parse>=1.20"
+    "numpyro==0.18",
+    "jax>=0.4.25",
+    "parse>=1.20",
+    "jaxlib==0.4.38; sys_platform == 'darwin' and platform_machine == 'x86_64'",
 ]
 
 [project.scripts]
