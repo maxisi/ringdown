@@ -29,7 +29,7 @@ dependencies = [
     "jax~=0.4",
     "parse>=1.20",
     "jaxlib==0.4.38; sys_platform == 'darwin' and platform_machine == 'x86_64'",
-    "jaxlib>=0.4; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+    "jaxlib>=0.5; sys_platform != 'darwin' or platform_machine != 'x86_64'",
 ]
 
 [project.scripts]
