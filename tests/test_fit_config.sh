@@ -7,4 +7,4 @@ wget -nc https://www.gw-openscience.org/eventapi/html/O1_O2-Preliminary/GW150914
 
 cd ..
 
-ringdown_fit etc/ringdown_fit_config_example.ini
+ringdown_fit --verbose etc/ringdown_fit_config_example.ini

@@ -1,3 +1,58 @@
+[project]
+name = "ringdown"
+dynamic = ["version"]
+description = "Bayesian analysis of black hole ringdowns in gravitational-wave data."
+readme = { file = "README.md", content-type = "text/markdown" }
+authors = [
+    { name = "Maximiliano Isi", email = "max.isi@ligo.org" },
+    { name = "Will M. Farr", email = "will.farr@stonybrook.edu" }
+]
+license = {file = "LICENSE"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Astronomy"
+]
+requires-python = ">=3.11, <3.13"
+dependencies = [
+    "numpy==2.2.5",
+    "lalsuite==7.25.1",
+    "h5py~=3.11",
+    "arviz~=0.19",
+    "pandas~=2.2",
+    "qnm==0.4.4",
+    "seaborn~=0.13",
+    "numpyro==0.18",
+    "jax>=0.4.25",
+    "parse>=1.20",
+    "jaxlib==0.4.38; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+]
+
+[project.scripts]
+ringdown_fit = "ringdown.cli.ringdown_fit:main"
+ringdown_pipe = "ringdown.cli.ringdown_pipe:main"
+ringdown_scan = "ringdown.cli.ringdown_scan:main"
+
 [build-system]
-requires = ["setuptools>=40.6.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "ringdown",
+]
+
+[tool.uv.sources]
+ringdown = { workspace = true }
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.ruff]
+line-length = 80
+
+[tool.ruff.lint]
+select = ["E", "W"]

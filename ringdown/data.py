@@ -19,6 +19,8 @@ import inspect
 from . import utils
 from typing import Callable
 
+logger = logging.getLogger(__name__)
+
 
 class Series(pd.Series):
     """ A wrapper of :class:`pandas.Series` with some additional functionality.
@@ -71,7 +73,7 @@ class Series(pd.Series):
 
         if kind == 'gwosc':
             if path is not None and os.path.exists(path):
-                logging.info("loading GWOSC file from disk")
+                logger.info("loading GWOSC file from disk")
                 # read GWOSC HDF5 file from disk
                 with h5py.File(path, 'r') as f:
                     t0 = f['meta/GPSstart'][()]
@@ -114,8 +116,8 @@ class Series(pd.Series):
             squeeze = read_kws.pop('squeeze', False)
             cls_kws = {k: v for k, v in kws.items() if k not in read_vars}
             if kind == 'csv' and 'float_precision' not in read_kws:
-                logging.warning("specify `float_precision='round_trip'` or "
-                                "risk strange errors due to precision loss")
+                logger.warning("specify `float_precision='round_trip'` or "
+                               "risk strange errors due to precision loss")
             if kind == 'csv':
                 read_kws['header'] = kws.get('header', None)
             # squeeze if needed (since squeeze argument no longer accepted)
@@ -172,15 +174,15 @@ class Series(pd.Series):
            t0 is not None and seglen is not None:
             start = t0 - seglen/2
             end = t0 + seglen/2
-            logging.info(f"fetching {seglen} s long segment centered on {t0}"
-                         f" [{start}, {end}]")
+            logger.info(f"fetching {seglen} s long segment centered on {t0}"
+                        f" [{start}, {end}]")
         elif start is None or end is None:
             raise ValueError("must provide start and end times,"
                              " or t0 and seglen")
 
         # download data
         if channel.lower() == 'gwosc':
-            logging.info("fetching open data from GWOSC")
+            logger.info("fetching open data from GWOSC")
             ifo = kws.get('ifo', None)
             if ifo is None:
                 raise ValueError("must provide ifo to fetch from GWOSC")
@@ -189,7 +191,7 @@ class Series(pd.Series):
             # GWpy puts units on its times, we remove them
             return cls(d.value, index=np.array(d.times), **attrs)
         else:
-            logging.info("fetching remote or local data using GWpy")
+            logger.info("fetching remote or local data using GWpy")
             attrs = {a: kws.pop(a, None) for a in getattr(cls, '_meta', [])}
             d = TimeSeries.get(channel, start, end, frametype=frametype, **kws)
             # GWpy puts units on its times, we remove them
@@ -418,7 +420,8 @@ class FrequencySeries(Series):
                              delta_f: float | None = None,
                              f_min: float | None = None,
                              f_max: float | None = None,
-                             log: bool = False, **kws):
+                             log: bool = False, force: bool = False,
+                             **kws):
         """Interpolate the :class:`FrequencySeries` to new index. Inherits
         from :func:`Series.interpolate_to_index`.
 
@@ -450,6 +453,11 @@ class FrequencySeries(Series):
         f_min_orig = self.freq.min()
         f_max_orig = self.freq.max()
         if freq is None:
+            n_dfs = np.unique(np.diff(self.index)).size
+            if n_dfs == 1 and f_min is None and f_max is None and not force:
+                logger.info("frequency grid already uniformly spaced: "
+                            "skipping interpolation (override with 'force')")
+                return self
             # construct frequency index with uniform spacing
             f_min = f_min_orig if f_min is None else f_min
             f_max = f_max_orig if f_max is None else f_max
@@ -458,12 +466,12 @@ class FrequencySeries(Series):
             freq = np.arange(n)*delta_f + f_min
 
         if min(freq) < f_min_orig or max(freq) > f_max_orig:
-            logging.warning("extrapolating frequencies "
-                            f"[{f_min_orig}, {f_max_orig}] -> "
-                            f"[{min(freq)}, {max(freq)}]")
+            logger.warning("extrapolating frequencies "
+                           f"[{f_min_orig}, {f_max_orig}] -> "
+                           f"[{min(freq)}, {max(freq)}]")
 
         if log:
-            logging.info("log-log interpolation is experimental")
+            logger.info("log-log interpolation is experimental")
             # construct loglog representation of self
             y = np.log(self)
             y.index = np.log(self.index)
@@ -570,11 +578,11 @@ class Data(TimeSeries):
 
         decimate_kws = decimate_kws or {}
 
+        ds = int(ds or 1)
         if t0 is not None:
             if t0 < raw_time[0] or t0 > raw_time[-1]:
                 raise ValueError(f"t0 must be within the time series: {t0} "
                                  f"not in [{raw_time[0]}, {raw_time[-1]}]")
-            ds = int(ds or 1)
             i = np.argmin(abs(raw_time - t0))
             raw_time = np.roll(raw_time, -(i % ds))
             raw_data = np.roll(raw_data, -(i % ds))
@@ -590,9 +598,9 @@ class Data(TimeSeries):
                               output='ba')
 
         if f_max == fny:
-            logging.warning("f_max is at Nyquist frequency but filter will "
-                            "be applied anyway; to prevent this, set f_max to"
-                            " None (default)")
+            logger.warning("f_max is at Nyquist frequency but filter will "
+                           "be applied anyway; to prevent this, set f_max to"
+                           " None (default)")
 
         if f_min or f_max:
             cond_data = sig.filtfilt(b, a, raw_data)
@@ -629,7 +637,15 @@ class Data(TimeSeries):
         if remove_mean:
             cond_data -= np.mean(cond_data)
 
-        return Data(cond_data, index=cond_time, ifo=self.ifo)
+        d = Data(cond_data, index=cond_time, ifo=self.ifo)
+
+        # check for a corner case wherein the time series can end up out of
+        # order to rolling and _not_ trimming
+        dts = np.diff(d.time)
+        if min(dts) != max(dts):
+            logger.info("time series out of order")
+            d.sort_index(inplace=True, ascending=True)
+        return d
 
     def get_acf(self, **kws):
         """Estimate ACF from data, see :meth:`AutoCovariance.from_data`.
@@ -667,7 +683,8 @@ class PowerSpectrum(FrequencySeries):
     _meta = ['ifo', 'attrs']
 
     def __init__(self, *args, delta_f=None, ifo=None, attrs=None,
-                 fill_power_of_two=True, **kwargs):
+                 fill_power_of_two=True, enforce_uniform_spacing=True,
+                 **kwargs):
         """Initialize power spectral density.
 
         Arguments
@@ -700,7 +717,7 @@ class PowerSpectrum(FrequencySeries):
         self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
         x = self.index[-1]
         if fill_power_of_two and not self.empty and not utils.isp2(x):
-            logging.info("completing power spectrum to next power of two")
+            logger.info("completing power spectrum to next power of two")
             self.fill_power_of_two()
         self.sort_index(inplace=True, ascending=True)
 
@@ -773,11 +790,11 @@ class PowerSpectrum(FrequencySeries):
             power spectrum with low frequencies completed.
         """
         if f_min >= self.freq[0]:
-            logging.info("no need to complete low PSD frequencies")
+            logger.info("no need to complete low PSD frequencies")
             return self
 
         if fill_value is None:
-            logging.info("completing low frequencies with 10x max PSD")
+            logger.info("completing low frequencies with 10x max PSD")
             fill_value = 10*self.max()
 
         f = np.arange(f_min, self.freq[-1] + self.delta_f, self.delta_f)
@@ -819,16 +836,16 @@ class PowerSpectrum(FrequencySeries):
         # check some deprecated arguments
         patch_level = kws.pop('patch_level', None)
         if patch_level is not None:
-            logging.warning("patch_level argument is deprecated;"
-                            " use fill_value instead")
+            logger.warning("patch_level argument is deprecated;"
+                           " use fill_value instead")
             fill_value = patch_level
         flow = kws.pop('flow', None)
         if flow is not None:
-            logging.warning("flow argument is deprecated; use f_min instead")
+            logger.warning("flow argument is deprecated; use f_min instead")
             f_min = flow
         fhigh = kws.pop('fhigh', None)
         if fhigh is not None:
-            logging.warning("fhigh argument is deprecated; use f_max instead")
+            logger.warning("fhigh argument is deprecated; use f_max instead")
             f_max = fhigh
         # get sampling rate if not provided
         fs = kws.pop('fs', kws.pop('f_samp', 1/getattr(data, 'delta_t', 1)))
@@ -933,12 +950,12 @@ class PowerSpectrum(FrequencySeries):
         # determine highest frequency
         f = psd.freq
         if f_min < min(f):
-            logging.warning("f_min below PSD range; no patching appplied; "
-                            "use `interpolate_to_index` or "
-                            "`complete_low_frequencies` to extend PSD")
+            logger.warning("f_min below PSD range; no patching appplied; "
+                           "use `interpolate_to_index` or "
+                           "`complete_low_frequencies` to extend PSD")
         if f_max is not None and f_max > max(f):
-            logging.warning("f_max above PSD range; no patching appplied; "
-                            "use `interpolate_to_index` to extend PSD")
+            logger.warning("f_max above PSD range; no patching appplied; "
+                           "use `interpolate_to_index` to extend PSD")
         f_min = max(f_min or min(f), min(f))
         f_max = min(f_max or max(f), max(f))
         # create tuple (patch_level_low, patch_level_high)
@@ -1380,7 +1397,7 @@ class StrainStack(np.ndarray):
         ntime = np.shape(cholesky)[1]
         matching_axes = [i for i, n in enumerate(h.shape) if n == ntime]
         if len(matching_axes) == 0:
-            raise ValueError("No matching time axis found:"
+            raise ValueError("No matching time axis found: "
                              f"strain shape {h.shape}, cholesky shape "
                              f"{np.shape(cholesky)}")
         elif len(matching_axes) > 1:
@@ -1394,11 +1411,11 @@ class StrainStack(np.ndarray):
         nifo = len(cholesky)
         matching_axes = [i for i, n in enumerate(h.shape) if n == nifo]
         if len(matching_axes) == 0:
-            raise ValueError("No matching detector axis found:"
+            raise ValueError("No matching detector axis found: "
                              f"strain shape {h.shape}, cholesky shape "
                              f"{np.shape(cholesky)}")
         elif len(matching_axes) > 1:
-            raise ValueError("Multiple matching detector axes found:"
+            raise ValueError("Multiple matching detector axes found: "
                              f"strain shape {h.shape}, cholesky shape "
                              f"{np.shape(cholesky)}")
         return matching_axes[0]
@@ -1582,3 +1599,42 @@ class StrainStack(np.ndarray):
         for i0, ifo_wfs in zip(start_indices, h):
             new_h.append(ifo_wfs[i0:i0+n, ...])
         return StrainStack(np.moveaxis(new_h, 0, ifo_axis))
+
+    def generate_whitened_residuals(self, cholesky: list | np.ndarray | dict,
+                                    data: list | np.ndarray | dict,
+                                    ifo_axis: int = None,
+                                    time_axis: int = None):
+        """Generate whitened residuals between data and strain.
+
+        Arguments
+        ---------
+        cholesky : list, array, or dict
+            Cholesky factor or list of Cholesky factors; if a dict
+            the values are serialized assuming entries correspond to
+            detectors.
+        data : list, array, or dict
+            data array or list of data arrays; if a dict the values are
+            serialized assuming entries correspond to detectors.
+        ifo_axis : int, optional
+            axis indexing detectors in the strain array, default is
+            0.
+        time_axis : int, optional
+            axis indexing time in the strain array, default is 1.
+
+        Returns
+        -------
+        residuals : array
+            whitened residuals.
+        """
+        # check shape of data array (nifo, ntime, ...)
+        if isinstance(data, dict):
+            data = np.array(list(data.values()))
+        data = np.atleast_2d(data)
+        if np.ndim(data) > 2:
+            raise ValueError("Data array must have shape (nifo, ntime)")
+
+        # compute residuals
+        r = StrainStack(data[..., np.newaxis] - self)
+
+        # whiten residuals
+        return r.whiten(cholesky, ifo_axis=ifo_axis, time_axis=time_axis)

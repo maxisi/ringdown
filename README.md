@@ -51,7 +51,7 @@ In order to run Jax on a CPU with four cores and use double precision, you can d
 import os
 os.environ["OMP_NUM_THREADS"] = "1"
 
-# import jax and set it up to use double precision
+# set jax up to use double precision
 from jax import config
 config.update("jax_enable_x64", True)
 
@@ -63,9 +63,9 @@ numpyro.set_platform('cpu')
 
 To run on a GPU with single precision you can instead do:
 ```python
-# import jax and set it up to use double precision
-from jax import config
-config.update("jax_enable_x64", False)
+# set jax to use single precision (this is the default so no need to run the lines below)
+# from jax import config
+# config.update("jax_enable_x64", False)
 
 # import numpyro and set it up to use 4 CPU devices
 import numpyro
