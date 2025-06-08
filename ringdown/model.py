@@ -320,6 +320,8 @@ def get_quad_derived_quantities(
             numpyro.deterministic("h_det", h_det)
 
         return a, h_det
+    else:
+        return a, None
 
 
 def make_model(
