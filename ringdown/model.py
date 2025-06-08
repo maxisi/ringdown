@@ -350,6 +350,7 @@ def make_model(
     predictive: bool = False,
     store_h_det: bool = False,
     store_h_det_mode: bool = False,
+    amplitude_cutoff_scale: float = 5.0,
 ):
     """
     Arguments
@@ -439,6 +440,14 @@ def make_model(
 
     store_h_det_mode : bool
         Whether to store the mode-by-mode detector-frame waveform in the model.
+
+    amplitude_cutoff_scale : float
+        Controls the sharpness of the amplitude cutoff when using
+        `flat_amplitude_prior`. The cutoff is implemented using a tanh function
+        that smoothly transitions from 1 to 0 as the amplitude approaches
+        `a_scale_max`. Larger values make the cutoff sharper, while smaller
+        values make the transition more gradual. Default is 5.0, which ensures
+        the prior is flat up to 0.5 * a_scale_max.
 
     Returns
     -------
@@ -944,17 +953,18 @@ def make_model(
                 # (2 quadratures)
                 n_quad_n_modes = dms.shape[2]
                 n_quad = n_quad_n_modes / n_modes
+
+                # Add smooth cutoff using tanh
+                # this is primarily so that the prior is proper and the
+                # sampler doesn't diverge when prior=True
+                cutoff = jnp.tanh(amplitude_cutoff_scale*(1.0 - a/a_scale_max))
+
                 numpyro.factor(
                     "flat_a_prior",
                     (1 - n_quad) * jnp.sum(jnp.log(a))
-                    + 0.5 * jnp.sum(jnp.square(quads)),
+                    + 0.5 * jnp.sum(jnp.square(quads))
+                    + jnp.sum(jnp.log(cutoff))
                 )
-
-                if prior:
-                    raise ValueError(
-                        "you did not want to impose a flat "
-                        "amplitude prior without a likelihood"
-                    )
 
             if not prior:
                 for i, strain in enumerate(strains):
