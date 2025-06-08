@@ -864,12 +864,12 @@ class Fit(object):
         if "a_scale_max" in ms:
             ms["a_scale_max"] = ms["a_scale_max"] / self.strain_scale
 
-        logger.info("making model")
+        logger.info(f"making model: {ms}")
         model = make_model(self.modes.value, prior=prior, **ms)
 
-        logger.info("running {} mode fit".format(self.modes))
-        logger.info("prior run: {}".format(prior))
-        logger.info("model settings: {}".format(self._model_settings))
+        logger.info(f"running {self.modes} mode fit")
+        logger.info(f"prior run: {prior}")
+        logger.info(f"model settings: {self._model_settings}")
 
         return model
 
