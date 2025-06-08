@@ -186,10 +186,10 @@ def rd_design_matrix(
         dm = jnp.concatenate(
             [
                 # Yp * Fp * cos + Yc * Fc * sin
-                Yp_mat * dm[:, :, :nmode] + Yc_mat * dm[:, :, 3 * nmode :],
+                Yp_mat * dm[:, :, :nmode] + Yc_mat * dm[:, :, 3 * nmode:],
                 # Yp * Fp * sin - Yc * Fc * cos
-                Yp_mat * dm[:, :, nmode : 2 * nmode]
-                - Yc_mat * dm[:, :, 2 * nmode : 3 * nmode],
+                Yp_mat * dm[:, :, nmode: 2 * nmode]
+                - Yc_mat * dm[:, :, 2 * nmode: 3 * nmode],
             ],
             axis=2,
         )
@@ -272,9 +272,9 @@ def get_quad_derived_quantities(
         # ellip = 0 and theta = 0,pi/2 for the single polarization model
     else:
         apx_unit = quads[:nmodes]
-        apy_unit = quads[nmodes : 2 * nmodes]
-        acx_unit = quads[2 * nmodes : 3 * nmodes]
-        acy_unit = quads[3 * nmodes :]
+        apy_unit = quads[nmodes: 2 * nmodes]
+        acx_unit = quads[2 * nmodes: 3 * nmodes]
+        acy_unit = quads[3 * nmodes:]
 
         numpyro.deterministic("apx", apx_unit * a_scale)
         numpyro.deterministic("apy", apy_unit * a_scale)
@@ -583,7 +583,8 @@ def make_model(
                 # which, happily, is provided by the composed transformation
                 f_latent = numpyro.sample(
                     "f_latent",
-                    dist.ImproperUniform(dist.constraints.real, (), (n_modes,)),
+                    dist.ImproperUniform(
+                        dist.constraints.real, (), (n_modes,)),
                 )
                 f_transform = dist.transforms.ComposeTransform(
                     [
@@ -594,7 +595,8 @@ def make_model(
                 )
                 f = numpyro.deterministic("f", f_transform(f_latent))
                 numpyro.factor(
-                    "f_transform", f_transform.log_abs_det_jacobian(f_latent, f)
+                    "f_transform", f_transform.log_abs_det_jacobian(
+                        f_latent, f)
                 )
 
                 g = numpyro.sample(
@@ -607,7 +609,8 @@ def make_model(
 
                 g_latent = numpyro.sample(
                     "g_latent",
-                    dist.ImproperUniform(dist.constraints.real, (), (n_modes,)),
+                    dist.ImproperUniform(
+                        dist.constraints.real, (), (n_modes,)),
                 )
                 g_transform = dist.transforms.ComposeTransform(
                     [
@@ -618,7 +621,8 @@ def make_model(
                 )
                 g = numpyro.deterministic("g", g_transform(g_latent))
                 numpyro.factor(
-                    "g_transform", g_transform.log_abs_det_jacobian(g_latent, g)
+                    "g_transform", g_transform.log_abs_det_jacobian(
+                        g_latent, g)
                 )
             else:
                 f = numpyro.sample("f", dist.Uniform(f_min, f_max))
@@ -988,6 +992,8 @@ MODEL_VARIABLES_BY_MODE = [
     "theta",
     "df",
     "dg",
+    "df_unit",
+    "dg_unit",
 ]
 MODEL_DIMENSIONS = {k: ["mode"] for k in MODEL_VARIABLES_BY_MODE}
 MODEL_DIMENSIONS["h_det"] = ["ifo", "time_index"]
