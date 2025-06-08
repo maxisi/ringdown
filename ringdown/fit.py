@@ -196,7 +196,7 @@ class Fit(object):
             scale = max([np.std(d) for d in self.data.values()])
         else:
             scale = 1.0
-        return scale
+        return scale or 1.0
 
     def set_strain_scale(self, scale):
         if scale is None:
@@ -277,7 +277,7 @@ class Fit(object):
         data = {}
         i0s = self.start_indices
         for i, d in self.data.items():
-            data[i] = d.iloc[i0s[i] : i0s[i] + self.n_analyze]
+            data[i] = d.iloc[i0s[i]: i0s[i] + self.n_analyze]
         return data
 
     @property
@@ -289,7 +289,7 @@ class Fit(object):
         data = {}
         i0s = self.start_indices
         for i, d in self.conditioned_injections.items():
-            data[i] = d.iloc[i0s[i] : i0s[i] + self.n_analyze]
+            data[i] = d.iloc[i0s[i]: i0s[i] + self.n_analyze]
         return data
 
     @property
@@ -475,7 +475,8 @@ class Fit(object):
             # check for random seed, which is needed to subselect IMR samples
             if "seed" in imr_kws:
                 if "prng" in imr_kws:
-                    raise ValueError("two PRNG seed options provided in config")
+                    raise ValueError(
+                        "two PRNG seed options provided in config")
                 imr_kws["prng"] = imr_kws.pop("seed")
             elif "prng" not in imr_kws:
                 raise ValueError(
@@ -571,7 +572,8 @@ class Fit(object):
 
         # condition data if requested
         if config.has_section("condition") and not no_cond:
-            cond_kws = {k: try_parse(v) for k, v in config["condition"].items()}
+            cond_kws = {k: try_parse(v)
+                        for k, v in config["condition"].items()}
             fit.condition_data(**cond_kws)
 
         # load or produce ACFs
@@ -662,7 +664,8 @@ class Fit(object):
             return config
         # data, injection, conditioning and acf options
         for sec, opts in self.info.items():
-            config[sec] = {k: utils.form_opt(v, key=k) for k, v in opts.items()}
+            config[sec] = {k: utils.form_opt(v, key=k)
+                           for k, v in opts.items()}
         config["target"] = {k: str(v) for k, v in self.info["target"].items()}
         # write file to disk if requested
         if path is not None:
@@ -1761,7 +1764,7 @@ class Fit(object):
         elif self.data and self.has_target:
             # set n_analyze to fit shortest data set
             i0s = self.start_indices
-            return min([len(d.iloc[i0s[i] :]) for i, d in self.data.items()])
+            return min([len(d.iloc[i0s[i]:]) for i, d in self.data.items()])
         else:
             return self._n_analyze
 
