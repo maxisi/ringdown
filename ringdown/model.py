@@ -7,6 +7,7 @@ __all__ = ["make_model", "get_arviz", "rd_design_matrix"]
 import numpy as np
 import jax.numpy as jnp
 import jax.scipy as jsp
+import jax
 
 import numpyro
 import numpyro.distributions as dist
@@ -20,6 +21,50 @@ from arviz.data.base import dict_to_dataset
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def smooth_truncation_logprob(a, a_max, delta, clamp_value=20.0):
+    """Compute a numerically stable log-potential for amplitude truncation.
+
+    This function implements a smooth transition in log-probability space that
+    approaches 0 for amplitudes well below a_max and -∞ for amplitudes well
+    above a_max. The transition occurs over a width delta, centered at a_max.
+
+    The function uses a softplus-based implementation of log((1+tanh z)/2) for
+    numerical stability, where z = (a_max - a)/delta. The clamp_value parameter
+    ensures numerical stability by bounding the intermediate calculations.
+
+    Arguments
+    ---------
+    a : array_like
+        The amplitude values to evaluate.
+    a_max : float
+        The maximum amplitude at which the transition occurs.
+    delta : float
+        The width of the smooth transition region.
+    clamp_value : float, optional
+        The maximum absolute value for intermediate calculations to ensure
+        numerical stability. Default is 20.0, which provides a good balance
+        between numerical stability and function behavior.
+
+    Returns
+    -------
+    log_prob : array_like
+        The log-probability values, approaching 0 for a << a_max and -∞ for
+        a >> a_max, with a smooth transition in between.
+    """
+    # 1) compute z
+    z = (a_max - a) / delta
+
+    # 2) replace NaNs / ±Inf with finite
+    z = jnp.nan_to_num(z, nan=-clamp_value, posinf=clamp_value,
+                       neginf=-clamp_value)
+
+    # 3) clamp to avoid extreme values
+    z = jnp.clip(z, -clamp_value, clamp_value)
+
+    # 4) stable log((1+tanh z)/2) = -softplus(-2 z)
+    return -jax.nn.softplus(-2.0 * z)
 
 
 def rd_design_matrix(
@@ -350,7 +395,7 @@ def make_model(
     predictive: bool = False,
     store_h_det: bool = False,
     store_h_det_mode: bool = False,
-    amplitude_cutoff_scale: float = 5.0,
+    amplitude_cutoff_fraction: float = 0.1,
 ):
     """
     Arguments
@@ -441,13 +486,14 @@ def make_model(
     store_h_det_mode : bool
         Whether to store the mode-by-mode detector-frame waveform in the model.
 
-    amplitude_cutoff_scale : float
-        Controls the sharpness of the amplitude cutoff when using
-        `flat_amplitude_prior`. The cutoff is implemented using a tanh function
-        that smoothly transitions from 1 to 0 as the amplitude approaches
-        `a_scale_max`. Larger values make the cutoff sharper, while smaller
-        values make the transition more gradual. Default is 5.0, which ensures
-        the prior is flat up to 0.5 * a_scale_max.
+    amplitude_cutoff_fraction : float
+        Controls the smoothness of the amplitude cutoff when using
+        `flat_amplitude_prior`. The cutoff is implemented using a smooth window
+        that transitions from 1 to 0 over [a_scale_max * (1 -
+        amplitude_cutoff_fraction), a_scale_max]. Larger values make the
+        transition region wider, while smaller values make it narrower. Default
+        is 0.5, which means the transition occurs over the upper half of the
+        amplitude range.
 
     Returns
     -------
@@ -954,17 +1000,24 @@ def make_model(
                 n_quad_n_modes = dms.shape[2]
                 n_quad = n_quad_n_modes / n_modes
 
-                # Add smooth cutoff using tanh
-                # this is primarily so that the prior is proper and the
-                # sampler doesn't diverge when prior=True
-                cutoff = jnp.tanh(amplitude_cutoff_scale*(1.0 - a/a_scale_max))
-
                 numpyro.factor(
                     "flat_a_prior",
                     (1 - n_quad) * jnp.sum(jnp.log(a))
                     + 0.5 * jnp.sum(jnp.square(quads))
-                    + jnp.sum(jnp.log(cutoff))
                 )
+
+                if prior:
+                    # Soft log-potential:
+                    # ~0 for a << a_scale_max, → -∞ for a ≫ a_scale_max
+                    cutoff_lp = smooth_truncation_logprob(
+                        a,
+                        a_scale_max,
+                        a_scale_max * amplitude_cutoff_fraction,
+                    )
+                    numpyro.factor(
+                        "cutoff_lp",
+                        jnp.sum(cutoff_lp)
+                    )
 
             if not prior:
                 for i, strain in enumerate(strains):
