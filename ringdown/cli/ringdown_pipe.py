@@ -63,13 +63,6 @@ def get_parser():
         help="Maximum number of tasks request through SLURM.",
     )
     p.add_argument(
-        "--device-count",
-        type=int,
-        default=None,
-        help="Number of GPUs/CPUs to use for each task "
-        "(default: 1 for GPUs and 4 for CPUs)",
-    )
-    p.add_argument(
         "--platform",
         choices=["cpu", "gpu"],
         default="cpu",
@@ -164,17 +157,19 @@ def main(args=None):
 
     # determine how many devices to use, will default to 1 for GPUs and
     # 4 for CPUs
-    if args.device_count is not None:
-        NDEVICE = args.device_count
+    if "RINGDOWN_DEVICE_COUNT" in os.environ:
+        NDEVICE = int(os.environ["RINGDOWN_DEVICE_COUNT"])
     elif args.platform == "gpu":
         NDEVICE = 1
     else:
         NDEVICE = 4
 
+    # Set the environment variable so child processes inherit it
+    os.environ["RINGDOWN_DEVICE_COUNT"] = str(NDEVICE)
+
     task_opts = [
         "-o {result}",
         f"--platform {args.platform}",
-        f"--device-count {NDEVICE}",
         "--verbose",
     ]
 

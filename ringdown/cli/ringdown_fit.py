@@ -52,7 +52,11 @@ def get_parser():
         help="device platform (default: cpu).",
     )
     p.add_argument(
-        "--device-count", type=int, default=4, help="number of devices to use."
+        "--device-count", 
+        type=int, 
+        default=None, 
+        help="number of devices to use (default: determined from "
+             "RINGDOWN_DEVICE_COUNT environment variable, or 1 for GPU, 4 for CPU)."
     )
     p.add_argument(
         "--force",
@@ -94,6 +98,17 @@ def main(args=None, defout=DEFOUT):
     out = args.output or defout
 
     numpyro.set_platform(args.platform)
+    
+    # Set default device count from environment variable or platform-specific
+    # fallback if not provided
+    if args.device_count is None:
+        if "RINGDOWN_DEVICE_COUNT" in os.environ:
+            args.device_count = int(os.environ["RINGDOWN_DEVICE_COUNT"])
+        elif args.platform == "gpu":
+            args.device_count = 1
+        else:
+            args.device_count = 4
+    
     if args.device_count is not None:
         if args.platform == "cpu" and args.device_count > cpu_count:
             logging.warning(
