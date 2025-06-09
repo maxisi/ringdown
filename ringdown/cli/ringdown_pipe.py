@@ -68,12 +68,6 @@ def get_parser():
         default="cpu",
         help="Platform to run on (default 'cpu').",
     )
-    p.add_argument(
-        "--omp-num-threads",
-        type=int,
-        default=1,
-        help="Number of threads for numpy.",
-    )
     p.add_argument("-C", "--constraints", help="SLURM constraints.")
     p.add_argument("-t", "--time", help="SLURM time directive.")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -166,7 +160,7 @@ def main(args=None):
 
     # Set the environment variable so child processes inherit it
     os.environ["RINGDOWN_DEVICE_COUNT"] = str(NDEVICE)
-
+    
     task_opts = [
         "-o {result}",
         f"--platform {args.platform}",
