@@ -864,7 +864,8 @@ class PowerSpectrum(FrequencySeries):
     @classmethod
     def from_lalsimulation(cls, func: str | Callable,
                            freq: np.ndarray | None = None,
-                           f_min: float = 0, f_max: float | None = None,
+                           f_min: float = 0,
+                           f_max: float | None = None,
                            delta_f: float | None = None,
                            fill_value: float | None = None, **kws):
         """Obtain :class:`PowerSpectrum` from LALSimulation function.
@@ -892,26 +893,50 @@ class PowerSpectrum(FrequencySeries):
         psd : PowerSpectrum
             power spectrum frequency series.
         """
+        # get PSD function
         if isinstance(func, str):
             import lalsimulation as lalsim
             if not hasattr(lalsim, func):
                 raise ValueError(f"unrecognized PSD name: {func}")
             func = getattr(lalsim, func)
+
+        # get frequency array and reference frequency for patching
         if freq is None:
             if f_max is None:
                 raise ValueError("must provide f_max if not freq")
             if delta_f is None:
                 raise ValueError("must provide delta_f if not freq")
-            freq = np.arange(0, f_max+delta_f, delta_f)
-        f_ref = freq[np.argmin(abs(freq - f_min))]
-        p_ref = func(f_ref) if fill_value is None else fill_value
+            freq = np.arange(0, f_max + delta_f, delta_f)
+        f_ref = freq[np.argmin(abs(freq - float(f_min)))]
+        delta_f = freq[1] - freq[0]
+        f_ref = max(f_ref, delta_f)
 
-        def get_psd_bin(f):
-            if f > f_min:
-                return func(f)
-            else:
-                return cls._patch_low_freqs(f, f_ref, p_ref)
-        return cls(np.vectorize(get_psd_bin)(freq), index=freq, **kws)
+        # check what type of LAL function we have
+        try:
+            p_ref = func(f_ref)
+            def psd_func(f, f_low):
+                p = np.zeros_like(f)
+                p[f >= f_low] = np.vectorize(func)(f[f >= f_low])
+                return p
+        except TypeError:
+            # this function expected (f: REAL8FrequencySeries, f_min: float)
+            # let's turn it into a function with the (f) signature
+            # (this is inefficient but we usually don't care)
+            def psd_func(f, f_low):
+                psd = lal.CreateREAL8FrequencySeries("psd", 0., f[0], delta_f,
+                                                     lal.DimensionlessUnit,
+                                                     len(f)+1)
+                func(psd, f_low)
+                return  np.array(psd.data.data)[:-1]
+            p_ref = psd_func([f_ref], f_ref)
+
+        if fill_value is not None:
+            p_ref = fill_value
+
+        psd_values = psd_func(freq, f_min)
+        psd_values[freq < f_min] = cls._patch_low_freqs(freq[freq < f_min],
+                                                        f_ref, p_ref)
+        return cls(psd_values, index=freq, **kws)
 
     @staticmethod
     def _patch_low_freqs(f, f_ref, psd_ref):
@@ -1029,8 +1054,8 @@ class PowerSpectrum(FrequencySeries):
         noise : FrequencySeries
             noise realization.
         """
-        if isinstance(prng, int):
-            prng = np.random.default_rng(prng)
+        if isinstance(prng, (int, float)):
+            prng = np.random.default_rng(int(prng))
         elif isinstance(prng, np.random.Generator):
             pass
         elif prng is None:
