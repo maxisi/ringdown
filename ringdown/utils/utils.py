@@ -144,6 +144,7 @@ def string_to_tuple(s):
 def load_config(config_input):
     if isinstance(config_input, str):
         if os.path.exists(config_input):
+            logger.info(f"Loading config from {config_input}")
             raw_config = ConfigParser()
             raw_config.read(config_input)
 

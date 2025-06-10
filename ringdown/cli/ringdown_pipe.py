@@ -83,11 +83,7 @@ def main(args=None):
         logging.getLogger().setLevel(logging.INFO)
 
     # load config file
-    config_path = os.path.abspath(args.config)
-    if not os.path.isfile(config_path):
-        raise FileNotFoundError(f"unable to load: {config_path}")
-    logging.info(f"Loading config from {config_path}")
-    config = rd.utils.load_config(config_path)
+    config = rd.utils.load_config(os.path.abspath(args.config))
 
     # determine run directory
     outdir = args.outdir or config.get(PIPE_SECTION, "outdir", fallback=None)
