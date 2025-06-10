@@ -1139,7 +1139,8 @@ class PowerSpectrum(FrequencySeries):
         elif delta_t is not None and f_samp is not None:
             if delta_t != 1 / f_samp:
                 raise ValueError("cannot specify both delta_t and f_samp/max")
-
+        logger.info(f"duration: {duration}, delta_t: {delta_t}, "
+                    f"f_samp: {f_samp}")
         # we must have a well formed frequency array to draw TD noise
         t_len = int(duration / delta_t)
         freq = np.fft.rfftfreq(t_len, delta_t)

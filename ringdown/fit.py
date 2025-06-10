@@ -509,6 +509,15 @@ class Fit(object):
             # data was provided, just exit
             return fit
 
+        # add target
+        if config.has_section("target"):
+            kws = {k: try_parse(v) for k, v in config["target"].items()}
+            if not ("ra" in kws and "t0" not in kws):
+                # this is a Fit and not a FitSequence
+                fit.set_target(**kws)
+            else:
+                logger.info(f"ignoring invalid target section: {kws}")
+
         # load data
         if data_kws and not fit.has_data:
             fit.load_data(**data_kws)
@@ -522,15 +531,6 @@ class Fit(object):
                 if k != "ifos"
             }
             fit.fake_data(ifos=ifos, **kws)
-
-        # add target
-        if config.has_section("target"):
-            kws = {k: try_parse(v) for k, v in config["target"].items()}
-            if not ("ra" in kws and "t0" not in kws):
-                # this is a Fit and not a FitSequence
-                fit.set_target(**kws)
-            else:
-                logger.info(f"ignoring invalid target section: {kws}")
 
         # inject signal if requested
         if config.has_section("injection"):
@@ -1296,7 +1296,7 @@ class Fit(object):
         delta_t: float | None = None,
         freq: float | None = None,
         f_samp: float | None = None,
-        f_min: float | None = None,
+        f_min: float = 0,
         f_max: float | None = None,
         delta_f: float | None = None,
         t0: float | None = None,
