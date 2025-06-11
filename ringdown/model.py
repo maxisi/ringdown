@@ -212,7 +212,7 @@ def rd_design_matrix(
     Fc = jnp.reshape(Fc, (nifo, 1, 1))
     Ascales = jnp.reshape(Ascales, (1, 1, nmode))
 
-    # ct and st will have shape (1, nt, nmode)
+    # ct and st will have shape (nifo, nt, nmode)
     decay = jnp.exp(-gamma * ts)
     ct = Ascales * decay * jnp.cos(2 * np.pi * f * ts)
     st = Ascales * decay * jnp.sin(2 * np.pi * f * ts)
