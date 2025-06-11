@@ -749,7 +749,9 @@ def make_model(
             # and matrices are capitalized
 
             a_scale = numpyro.sample(
-                "a_scale", dist.Uniform(0, a_scale_max), sample_shape=(n_modes,)
+                "a_scale",
+                dist.Uniform(0, a_scale_max),
+                sample_shape=(n_modes,)
             )
             # get design matrices which will have shape
             # (n_det, ntime, nquads*nmode)
@@ -771,7 +773,8 @@ def make_model(
             # this is just a zero-mean unit Gaussian: N(mu, Lambda) with
             # mean mu = 0 and covariance Lambda = I
             # (note that the scale of the quadratures has been absorbed into
-            # the design matrix, otherwise we would write Lambda = a_scale I)
+            # the design matrix, otherwise we would write
+            # Lambda = a_scale**2 I)
             mu = jnp.zeros(n_quad_n_modes)
             Lambda_inv = jnp.eye(n_quad_n_modes)
             Lambda_inv_chol = jnp.eye(n_quad_n_modes)
@@ -791,7 +794,7 @@ def make_model(
                     y = strains[i, :]
 
                     # M acts as a coordinate transformation matrix, taking us
-                    # from the space of quadratures to the space of the data ,
+                    # from the space of quadratures to the space of the data,
                     # while M^T takes us from data space to quadrature space
                     # (M is ntime x nquads*nmode)
 
@@ -905,9 +908,9 @@ def make_model(
                 # to achieve the desired covariance, we can *right multiply*
                 # iid N(0,1) variables by Lambda_inv_chol^{-1}, so that
                 # y = x Lambda_inv_chol^{-1} has covariance
-                # < y^T y > = (Lambda_inv_chol^{-1}).T < x^T x >
-                # Lambda_inv_chol^{-1} =
-                # (Lambda_inv_chol^{-1}).T I Lambda_inv_chol^{-1}
+                # < y^T y >
+                # = (Lambda_inv_chol^{-1}).T < x^T x > Lambda_inv_chol^{-1}
+                # = (Lambda_inv_chol^{-1}).T I Lambda_inv_chol^{-1}
                 # = Lambda.
                 if swsh or single_polarization:
                     ax_unit = numpyro.sample(
