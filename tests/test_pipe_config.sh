@@ -7,4 +7,4 @@ wget -nc https://www.gw-openscience.org/eventapi/html/O1_O2-Preliminary/GW150914
 
 cd ..
 
-ringdown_pipe etc/ringdown_pipe_config_example.ini
+ringdown_pipe etc/ringdown_pipe_example.ini
