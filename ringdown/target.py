@@ -91,8 +91,10 @@ class Target(ABC):
         dec: float | None = None,
         psi: float | None = None,
         reference_ifo: str | None = None,
+        slide: dict | None = None,
         antenna_patterns: dict | None = None,
-        **kws,
+        ifos: list[str] | None = None,
+        duration: float = 0.0,
     ):
         """Create a target object from a dictionary or keyword arguments.
         The source sky location and orientation can be specified by the `ra`,
@@ -120,14 +122,28 @@ class Target(ABC):
         reference_ifo : str, None
             detector name for time reference, or `None` for geocenter (default
             `None`)
+        slide : dict, None
+            optional mapping of `{ifo: float}` seconds to add on top of default sky-based delays.
         antenna_patterns : dict, None
             dictionary of antenna patterns for each detector, or `None` to
             compute from sky location.
         """
+        # If no sky location, use explicit detector times & patterns
         if ra is None:
-            return DetectorTarget.construct(t0, antenna_patterns, **kws)
-        else:
-            return SkyTarget.construct(t0, ra, dec, psi, reference_ifo, **kws)
+            return DetectorTarget.construct(
+                t0, antenna_patterns, ifos=ifos, duration=duration
+            )
+
+        # Sky-based target, with optional slide offsets
+        return SkyTarget.construct(
+            t0,
+            ra,
+            dec,
+            psi,
+            reference_ifo,
+            duration=duration,
+            slide=slide,
+        )
 
 
 @dataclass
@@ -139,16 +155,17 @@ class SkyTarget(Target):
     dec: float | None = None
     psi: float | None = None
     duration: float = 0
+    slide: dict | None = None
 
     def __post_init__(self):
         # validate input: floats or None
         for k, v in self.as_dict().items():
             if v is not None and not isinstance(v, lal.LIGOTimeGPS):
                 setattr(self, k, float(v))
-        # make sure options are not contradictory
+        # make sure required options are not contradictory (slide is optional)
         if self.is_set:
             for k, v in self.as_dict().items():
-                if v is None:
+                if v is None and k != 'slide':
                     raise ValueError(f"missing {k}")
 
     @property
@@ -182,8 +199,12 @@ class SkyTarget(Target):
         else:
             raise ValueError(f"unrecognized detector {ifo}")
         tgps = lal.LIGOTimeGPS(self.geocenter_time)
-        dt = lal.TimeDelayFromEarthCenter(det.location, self.ra, self.dec, tgps)
+        dt = lal.TimeDelayFromEarthCenter(
+            det.location, self.ra, self.dec, tgps)
         t0 = self.geocenter_time + dt
+        # apply optional slide offsets
+        if self.slide and ifo in self.slide:
+            t0 = t0 + float(self.slide[ifo])
         return float(t0)
 
     def get_antenna_patterns(self, ifo) -> tuple[float, float]:
@@ -219,7 +240,7 @@ class SkyTarget(Target):
         psi: float,
         reference_ifo: str | None = None,
         duration: float = 0.0,
-        **kws,
+        slide: dict | None = None,
     ):
         """Create a sky location from a reference time, either a specific
         detector or geocenter.
@@ -238,6 +259,8 @@ class SkyTarget(Target):
             detector name, or `None` for geocenter (default `None`)
         duration : float
             analysis duration (default 0.)
+        slide : dict, None
+            optional mapping of `{ifo: float}` seconds to add on top of default sky-based delays.
 
         Returns
         -------
@@ -251,9 +274,7 @@ class SkyTarget(Target):
             tgps = lal.LIGOTimeGPS(t0)
             dt = lal.TimeDelayFromEarthCenter(det.location, ra, dec, tgps)
             tgeo = t0 - dt
-        if kws:
-            logger.info(f"unused keyword arguments: {kws}")
-        return cls(lal.LIGOTimeGPS(tgeo), ra, dec, psi, duration)
+        return cls(lal.LIGOTimeGPS(tgeo), ra, dec, psi, duration, slide)
 
     @property
     def settings(self) -> dict:

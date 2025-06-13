@@ -1606,6 +1606,7 @@ class Fit(object):
         ra: float | None = None,
         dec: float | None = None,
         psi: float | None = None,
+        slide: dict | None = None,
         duration: float | None = None,
         reference_ifo: str | None = None,
         antenna_patterns: dict | None = None,
@@ -1657,6 +1658,8 @@ class Fit(object):
             source declination (rad).
         psi : float
             source polarization angle (rad).
+        slide : dict
+            mapping `{ifo: float}` of additional seconds to shift each detector's start time relative to default sky-based delays.
         duration : float
             analysis segment length in seconds, or time unit indexing data
             (overrides `n_analyze`).
@@ -1685,13 +1688,15 @@ class Fit(object):
             settings.update(self.target.settings)
             del settings["target"]
         else:
+            # delegate slide and pattern overrides to Target.construct
             self.target = Target.construct(
                 t0,
                 ra,
                 dec,
                 psi,
                 reference_ifo,
-                antenna_patterns,
+                slide=slide,
+                antenna_patterns=antenna_patterns,
                 ifos=self.ifos,
                 duration=duration,
             )
