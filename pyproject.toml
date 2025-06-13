@@ -49,6 +49,7 @@ extra = [
 dev-dependencies = [
     "ringdown",
     "jupyter",
+    "pre-commit"
 ]
 
 [tool.uv.sources]
