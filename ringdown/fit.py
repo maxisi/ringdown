@@ -793,6 +793,8 @@ class Fit(object):
         kws["times"] = {i: d.time.values for i, d in self.data.items()}
         kws["t0_default"] = self.t0
         kws["modes"] = self.modes
+        # propagate slide-based detector times to injection templates
+        kws["trigger_times"] = self.start_times
         return waveforms.get_detector_signals(**kws)
 
     def inject(self, no_noise=False, **kws) -> None:

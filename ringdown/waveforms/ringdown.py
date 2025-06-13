@@ -34,7 +34,7 @@ class Ringdown(Signal):
     def complex_mode(
         time: np.ndarray,
         omega: float | np.ndarray,
-        gamma: float | np.ndarray,
+        g: float | np.ndarray,
         a: float | np.ndarray,
         ellip: float | np.ndarray,
         theta: float | np.ndarray,
@@ -57,7 +57,7 @@ class Ringdown(Signal):
             time array [t].
         omega : float
             angular frequency of the mode [1/t].
-        gamma : float
+        g : float
             damping rate of the mode [1/t].
         a : float
             amplitude of the mode.
@@ -76,7 +76,7 @@ class Ringdown(Signal):
         phi_p = phi - theta
         phi_m = -(phi + theta)
         iwt = 1j * omega * time
-        vt = gamma * time
+        vt = g * time
         # h = 0.5*A*exp(-time*gamma)*((1 + ellip)*exp(-1j*(wt - phi_p)) +
         #                             (1 - ellip)*exp(1j*(wt + phi_m)))
         h = ((0.5 * a) * (1 + ellip)) * np.exp(1j * phi_p - iwt - vt) + (
@@ -86,7 +86,7 @@ class Ringdown(Signal):
 
     # _MODE_PARS = [k.lower()
     # for k in getfullargspec(Ringdown.complex_mode)[0][1:]]
-    _MODE_PARS = ["omega", "gamma", "a", "ellip", "theta", "phi"]
+    _MODE_PARS = ["omega", "g", "a", "ellip", "theta", "phi"]
 
     @staticmethod
     def _construct_parameters(ndmin=0, **kws):
@@ -98,7 +98,7 @@ class Ringdown(Signal):
             if k in Ringdown._MODE_PARS
         }
         # obtain frequencies from remnant parameters if necessary
-        freq_keys = ["omega", "gamma", "f", "tau"]
+        freq_keys = ["omega", "g", "f", "tau"]
         if "modes" in kws and not any([k in kws for k in freq_keys]):
             kws["approx"] = kws.get("approx", False)
             kws["f"], kws["tau"] = [], []
@@ -111,8 +111,8 @@ class Ringdown(Signal):
         # frequency parameters
         if "f" in kws and "omega" not in kws:
             pars["omega"] = 2 * np.pi * np.array(kws.pop("f"), ndmin=ndmin)
-        if "tau" in kws and "gamma" not in kws:
-            pars["gamma"] = 1 / np.array(kws.pop("tau"), ndmin=ndmin)
+        if "tau" in kws and "g" not in kws:
+            pars["g"] = 1 / np.array(kws.pop("tau"), ndmin=ndmin)
         pars.update(kws)
         return pars
 
@@ -185,7 +185,7 @@ class Ringdown(Signal):
         # add a damping to the amplitude near t0 for t < t0
         if two_sided:
             margs["omega"] = margs["omega"] * np.exp(df_pre)
-            margs["gamma"] = -margs["gamma"] * np.exp(-dtau_pre)
+            margs["g"] = -margs["g"] * np.exp(-dtau_pre)
             mpre = (time < t0) & (time > t0 - 0.5 * signal_buffer)
             signal[mpre] = np.sum(
                 cls.complex_mode(t[mpre] - t0, *margs.values()), axis=1
@@ -197,7 +197,7 @@ class Ringdown(Signal):
         if k == "f":
             return self.get_parameter("omega", *args, **kwargs) / (2 * np.pi)
         elif k == "tau":
-            return 1 / self.get_parameter("gamma", *args, **kwargs)
+            return 1 / self.get_parameter("g", *args, **kwargs)
         elif k == "phip" or k == "phim":
             th = self.get_parameter("theta", *args, **kwargs)
             ph = self.get_parameter("phi", *args, **kwargs)
@@ -208,7 +208,7 @@ class Ringdown(Signal):
         elif k == "quality":
             # Q = pi*f*tau
             w = self.get_parameter("omega", *args, **kwargs)
-            v = self.get_parameter("gamma", *args, **kwargs)
+            v = self.get_parameter("g", *args, **kwargs)
             return 0.5 * w / v
         else:
             return super().get_parameter(k, *args, **kwargs)

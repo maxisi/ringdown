@@ -158,10 +158,16 @@ class SkyTarget(Target):
     slide: dict | None = None
 
     def __post_init__(self):
-        # validate input: floats or None
+        # validate numeric fields (except slide) and convert to float
         for k, v in self.as_dict().items():
+            if k == 'slide':
+                continue
             if v is not None and not isinstance(v, lal.LIGOTimeGPS):
                 setattr(self, k, float(v))
+        # convert slide offsets to float if provided
+        if isinstance(self.slide, dict):
+            self.slide = {ifo: float(offset)
+                          for ifo, offset in self.slide.items()}
         # make sure required options are not contradictory (slide is optional)
         if self.is_set:
             for k, v in self.as_dict().items():
