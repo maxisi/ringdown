@@ -149,3 +149,4 @@ dmypy.json
 *.dat
 *.dat.gz
 *.dat.txt
+*.nc
