@@ -1142,6 +1142,9 @@ def get_arviz(
         "time_index": time_index,
         "time_index_1": time_index,
     }
+    # always include strain scale in constant_data
+    in_data = {"scale": scale or 1.0}
+
     if store_data:
         # get constant_data
         in_dims = {
@@ -1152,9 +1155,8 @@ def get_arviz(
             "fc": ["ifo"],
             "epoch": ["ifo"],
         }
-        in_data = {
-            k: np.array(v) for k, v in zip(in_dims.keys(), sampler._args)
-        }
+        in_data.update({k: np.array(v)
+                       for k, v in zip(in_dims.keys(), sampler._args)})
         in_data["epoch"] = np.array(epoch)
         in_data["scale"] = scale or 1.0
         # get injections, if provided
@@ -1164,7 +1166,8 @@ def get_arviz(
         dims.update(in_dims)
         obs_data = {"strain": in_data.pop("strain")}
     else:
-        in_data = None
+        # keep only 'scale' in constant_data when store_data is False
+        pass
 
     result = az.from_numpyro(
         sampler, dims=dims, coords=coords, constant_data=in_data
