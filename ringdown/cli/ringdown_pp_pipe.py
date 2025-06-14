@@ -103,6 +103,7 @@ def main(args=None):
         'acf': 'acf{ifo}.dat',
         'prior': 'prior.nc',
         'prior_exe': 'prior.py',
+        'collect_exe': 'collect.py',
         'run_config': 'engine/pp_{i}/config.ini',
         'run_result': 'engine/pp_{i}/result.nc',
         'run_task': 'TaskFile',
@@ -296,13 +297,32 @@ def main(args=None):
     os.chmod(epath, st.st_mode | 0o111)
     logging.info("Wrote prior executable: {}".format(epath))
 
-    # ----------------------------------------------------------------------------
+    # -------------------------------------------------------------------------
+    # Set up script to collect PP results
+    COLLECT_EXE = [
+        "#!/usr/bin/env python",
+        "",
+        "import ringdown as rd",
+        "",
+        "results = rd.ResultCollection.from_netcdf('{}')".format(
+            PATHS['run_result'].format(i='*')),
+        "results.to_pp_result().to_hdf5()",
+    ]
+
+    epath = PATHS['collect_exe']
+    with open(epath, 'w') as f:
+        f.write('\n'.join(COLLECT_EXE))
+    st = os.stat(epath)
+    os.chmod(epath, st.st_mode | 0o111)
+    logging.info("Wrote collect executable: {}".format(epath))
+
+    # -------------------------------------------------------------------------
     # Set up slurm workflow
 
     # If given args.ntasks, then request that many tasks; otherwise try to have
     # as many tasks as there are runs to process.
-    if args.ntasks < 0:
-        NTASK = nruns
+    if args.ntasks <= 0:
+        NTASK = min(nruns, 100)
     else:
         NTASK = args.ntasks
 
@@ -334,10 +354,13 @@ def main(args=None):
             '',
             f'cd {outdir}',
             '# prior job',
-            f'priorid=$(get_id "$(sbatch -p cca -c 4 -t 0-1 {PATHS["prior_exe"]})")',
+            f'priorid=$(get_id "$(sbatch -p genx -c 4 -t 0-1 {PATHS["prior_exe"]})")',
             '',
             '# pp jobs',
-            f'{command} --dependency=afterok:$priorid -p cca -n {NTASK} -c {NDEVICE} disBatch {PATHS["run_task"]}',
+            f'ppid=$(get_id "$({command} --dependency=afterok:$priorid -p cca -n {NTASK} -c {NDEVICE} disBatch {PATHS["run_task"]})")',
+            '',
+            '# collect job',
+            f'{command} --dependency=afterok:$ppid -p genx -c 4 -t 0-1 {PATHS["collect_exe"]}',
             'cd -',
         ]
     else:
@@ -370,7 +393,10 @@ def main(args=None):
             f'priorid=$(get_id "$({prior_command})")',
             '',
             '# pp jobs',
-            pp_command,
+            f'ppid=$(get_id "$({pp_command})")',
+            '',
+            '# collect job',
+            f'{command} --dependency=afterok:$ppid -p genx -c 4 -t 0-1 {PATHS["collect_exe"]}',
             'cd -',
         ]
 
