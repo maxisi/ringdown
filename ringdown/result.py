@@ -2545,7 +2545,7 @@ class PPResult(object):
         difference: bool = True,
         latex: bool = False,
         palette: str | list[str] | None = None,
-    ) -> "matplotlib.axes.Axes":
+    ):
         """P–P plot of injection marginal quantiles.
 
         Arguments
