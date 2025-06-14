@@ -2457,7 +2457,7 @@ class PPResult(object):
         return self._info
 
     @classmethod
-    def from_results_collection(cls, results: ResultCollection, ing
+    def from_results_collection(cls, results: ResultCollection,
                                 prior: Result | None = None):
         """Construct a PPResult from a ResultCollection."""
         quantiles = results.get_injection_marginal_quantiles_dataframe()
