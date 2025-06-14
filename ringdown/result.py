@@ -22,6 +22,7 @@ from glob import glob
 from parse import parse
 import logging
 from scipy.stats import gaussian_kde
+import xarray as xr
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,7 @@ class Result(az.InferenceData):
         # produce h_det (i.e., sum of all modes) if not already present
         if produce_h_det:
             self.h_det
+        self._fit = None
 
     @property
     def has_imr_result(self) -> bool:
@@ -298,10 +300,11 @@ class Result(az.InferenceData):
 
     def get_fit(self, **kwargs):
         """Get a Fit object from the result."""
-        if self.config:
+        if self._fit is None and self.config:
             from .fit import Fit
-
-            return Fit.from_config(self._config_object, result=self, **kwargs)
+            self._fit = Fit.from_config(self._config_object, result=self,
+                                        **kwargs)
+        return self._fit
 
     def draw_sample(
         self,
@@ -914,7 +917,7 @@ class Result(az.InferenceData):
     ) -> "Result":
         """Reweight the posterior to a uniform amplitude prior.
 
-        The “primal” posterior has a density :math:`p(a, a_{\\rm scale}) =
+        The "primal" posterior has a density :math:`p(a, a_{\\rm scale}) =
         N(a; 0, a_{\\rm scale}) 1/a_{\\rm scale max}`. The target posterior
         we want has a density :math:`p(a, a_{\\rm scale}) \\propto
         \\frac{1}{|a|^{n-1}} \\frac{1}{a_{\\rm scale max}}` for :math:`n`
@@ -1177,6 +1180,148 @@ class Result(az.InferenceData):
             else:
                 raise ValueError("kind must be 'quantile' or 'zscore'.")
         return pd.Series(qs)
+
+    def get_marginal_quantiles(self, reference_values: dict | None = None
+                               ) -> xr.Dataset:
+        """Compute the marginal quantiles of the injection parameters.
+
+        Arguments
+        ---------
+        truth : list[str] | None
+            list of parameters to compute quantiles for (def., all parameters).
+
+        Returns
+        -------
+        quantiles : xr.Dataset
+            Dataset of marginal quantiles.
+        """
+        samples = self.stacked_samples
+        qs = {}
+        for k, v in reference_values.items():
+            if v is None or k not in samples:
+                continue
+            if np.isscalar(v):
+                # compute quantile for scalar parameter
+                # counting number of samples below the reference value
+                qs[k] = (samples[k] <= v).mean(dim="sample")
+            else:
+                # vector parameter
+                qs[k] = (samples[k] <= np.array(v)[:, None]).mean(dim="sample")
+        return xr.Dataset(data_vars=qs)
+
+    @property
+    def injection_marginal_quantiles(self) -> xr.Dataset:
+        """Compute the marginal quantiles of the injection parameters.
+        """
+        return self.get_marginal_quantiles(self.config['injection'])
+
+    def get_injection_marginal_quantiles_series(self, **kws) -> pd.Series:
+        """Compute the marginal quantiles of the injection parameters.
+        """
+        # set labeling options (e.g., whether to show p index)
+        fmt = self.default_label_format.copy()
+        fmt.update(kws)
+        # get quantile Dataset
+        qs = self.injection_marginal_quantiles
+        # generate labeled dictionary of quantiles
+        qdict = {}
+        for k, q in qs.items():
+            if k in self._df_parameters:
+                par = self._df_parameters[k]
+                if "mode" in q.dims:
+                    for mode in q.mode.values:
+                        key_df = par.get_label(mode=mode, **fmt)
+                        qdict[key_df] = q.sel(mode=mode).values
+                else:
+                    key_df = par.get_label(**fmt)
+                    qdict[key_df] = q.values
+        return pd.Series(qdict, dtype=float)
+
+    def get_injection_parameters(self, include_opt_snr: bool = False,
+                                 include_mf_snr: bool = False,
+                                 latex: bool = False,
+                                 **kws) -> pd.Series:
+        """Get injection parameters as a pandas Series.
+
+        Arguments
+        ---------
+        include_opt_snr : bool
+            include optimal SNR (def., `False`).
+        include_mf_snr : bool
+            include matched-filter SNR (def., `False`).
+        latex : bool
+            use LaTeX formatting for the labels (def., `False`).
+
+        Returns
+        -------
+        params : pd.Series
+            injection parameters as a pandas Series.
+        """
+        # set labeling options (e.g., whether to format as LaTeX)
+        fmt = self.default_label_format.copy()
+        fmt.update(kws)
+        fmt["latex"] = latex
+        # get injection parameters
+        inj = self.config.get("injection", {})
+        qdict = {}
+        for k, v in inj.items():
+            if k in self._df_parameters:
+                par = self._df_parameters[k]
+                if np.isscalar(v):
+                    key = par.get_label(**fmt)
+                    qdict[key] = v
+                else:
+                    for mode, val in zip(self.modes, v):
+                        key = par.get_label(mode=mode, **fmt)
+                        qdict[key] = val
+        # add SNRs if requested
+        if include_opt_snr:
+            qdict["snr_opt"] = self.compute_injected_snrs(optimal=True)
+        if include_mf_snr:
+            qdict["snr_mf"] = self.compute_injected_snrs(optimal=False)
+        return pd.Series(qdict, dtype=float)
+
+    @property
+    def injection(self) -> data.StrainStack:
+        """Injection waveforms as StrainStack."""
+        if "injection" in self.constant_data:
+            return data.StrainStack(self.constant_data.injection)
+        else:
+            return None
+
+    @property
+    def whitened_injection(self) -> data.StrainStack:
+        """Whiten the injection waveforms."""
+        if self.injection is None:
+            return None
+        return self.injection.whiten(self.cholesky_factors.values)
+
+    def compute_injected_snrs(self, optimal: bool = True,
+                              network: bool = True) -> np.ndarray | float:
+        """Compute the injected SNRs for the result.
+
+        Arguments
+        ---------
+        optimal : bool
+            compute optimal SNR (def., `True`).
+        network : bool
+            compute network SNR (def., `True`).
+
+        Returns
+        -------
+        snr : np.ndarray | float
+            injected SNRs; if `network` is `True`, returns the quadrature sum
+            of the SNRs and the output will be a float; if `network` is `False`,
+            returns an array of SNRs for each detector.
+        """
+        if self.injection is None:
+            return None
+        data = None if optimal else self.observed_strain
+        snr = self.injection.compute_snr(self.cholesky_factors, data)
+        if network:
+            return float(np.linalg.norm(snr, axis=0))
+        else:
+            return snr
 
     # ------------------------------------------------------------------------
     # PLOTS
@@ -1845,6 +1990,33 @@ class ResultCollection(utils.MultiIndexCollection):
                 dfs.append(df)
         return pd.concat(dfs, ignore_index=True)
 
+    def get_injection_parameters_dataframe(self, **kws) -> pd.DataFrame:
+        """Get injection parameters as a pandas DataFrame."""
+        qs = {i: r.get_injection_parameters(**kws) for i, r in self.items()}
+        return pd.DataFrame(qs).T
+
+    def get_injection_marginal_quantiles_dataframe(self,
+                                                   **kws) -> pd.DataFrame:
+        """Compute the marginal quantiles of the injection parameters.
+        """
+        qs = {i: r.get_injection_marginal_quantiles_series(**kws) for i, r
+              in self.items()}
+        return pd.DataFrame(qs).T
+
+    def compute_injected_snrs(self, optimal: bool = True,
+                              network: bool = True,
+                              progress: bool = False,
+                              ) -> pd.Series | pd.DataFrame:
+        """Get the injected SNRs for the result.
+        """
+        tqdm = utils.get_tqdm(progress)
+        snrs = {i: r.compute_injected_snrs(optimal=optimal, network=network)
+                for i, r in tqdm(self.items(), desc="results", total=len(self))}
+        if network:
+            return pd.Series(snrs)
+        else:
+            return pd.DataFrame(snrs).T
+
     def imr_consistency(self, *args, progress=False, **kwargs) -> pd.DataFrame:
         """Compute the IMR consistency for the collection.
         See :meth:`Result.imr_consistency` for details.
@@ -1983,7 +2155,7 @@ class ResultCollection(utils.MultiIndexCollection):
                 if optimal:
                     d = None
                 else:
-                    d = [dd[i0 : i0 + n] for i0, dd in zip(i0s, data)]
+                    d = [dd[i0: i0 + n] for i0, dd in zip(i0s, data)]
                 snr = wfs_sliced.compute_snr(
                     chol, data=d, network=network, cumulative=cumulative
                 )
