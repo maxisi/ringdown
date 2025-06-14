@@ -2521,7 +2521,7 @@ class PPResult(object):
         self.truths.to_hdf(path, key=self._truth_group, mode="a")
         with h5py.File(path, "a") as f:
             f.attrs["rundir"] = self.rundir
-            # JSON-encode the config dict so it can be stored as a HDF5 attribute
+            # JSON-encode the dict so it can be stored as a HDF5 attribute
             f.attrs["config"] = json.dumps(self.info)
         logger.info(f"Saved PP results: {path}")
 
