@@ -1,6 +1,6 @@
 """Module defining the core :class:`Result` class."""
 
-__all__ = ["Result", "ResultCollection"]
+__all__ = ["Result", "ResultCollection", "PPResultCollection"]
 
 import os
 import numpy as np
@@ -2390,3 +2390,85 @@ class ResultCollection(utils.MultiIndexCollection):
         # Make the main axes active in the matplotlib state machine
         plt.sca(grid.ax_joint)
         return grid, df_rd
+
+
+class PPResultCollection(ResultCollection):
+    """Extension of ResultCollection with P–P plotting utilities."""
+
+    def __init__(self, results=None, index=None, reference_mass=None,
+                 reference_time=None):
+        # support initializing from an existing ResultCollection
+        if isinstance(results, ResultCollection):
+            rc = results
+            super().__init__(results=rc.results, index=rc.index)
+        else:
+            super().__init__(results=results, index=index,
+                             reference_mass=reference_mass,
+                             reference_time=reference_time)
+        self._null_cum_hists = {}
+        self._null_bands = {}
+
+    def __str__(self):
+        return f"PPResultCollection({self.index})"
+
+    def __repr__(self):
+        return f"PPResultCollection({self.index})"
+
+    # P–P plotting helpers
+    def _get_null_cum_hists(self, N, nbins, nsamp, nhist):
+        k = (N, nbins, nsamp, nhist)
+        if k not in self._null_cum_hists:
+            ks = np.linspace(0, 1, nbins + 1)
+            hs = []
+            for _ in range(nhist):
+                qs = np.random.uniform(0, nsamp + 1, size=N) / nsamp
+                hs.append(np.histogram(qs, bins=ks)[0])
+            chs = np.cumsum(hs, axis=1) / N
+            self._null_cum_hists[k] = chs
+        return self._null_cum_hists[k]
+
+    def _get_null_band(self, N, nbins, nsamp, nhist, p):
+        k = (N, nbins, nsamp, nhist, p)
+        if k not in self._null_bands:
+            chs = self._get_null_cum_hists(N, nbins, nsamp, nhist)
+            self._null_bands[k] = np.percentile(chs, p, axis=0)
+        return self._null_bands[k]
+
+    def pp_plot(self, keys=None, nmax=None, nbins=50,
+                nsamp=200, nhist=10000, ax=None,
+                bands=(99.73, 95.45, 68.27), difference=True,
+                modes=None):
+        """P–P plot of injection marginal quantiles."""
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        if not self.results:
+            raise ValueError("no results loaded!")
+        qdf = self.get_injection_marginal_quantiles_dataframe()
+        if keys is not None:
+            qdf = qdf[keys]
+        N = len(qdf) if nmax is None else min(nmax, len(qdf))
+        ks = np.linspace(0, 1, nbins + 1)
+        m = self._get_null_band(N, nbins, nsamp, nhist,
+                                50) if difference else 0
+        if ax is None:
+            fig, ax = plt.subplots()
+        for ci in bands:
+            hi = self._get_null_band(N, nbins, nsamp, nhist, 50 + 0.5 * ci)
+            lo = self._get_null_band(N, nbins, nsamp, nhist, 50 - 0.5 * ci)
+            ax.fill_between(ks[:-1], hi - m, lo - m, step='post',
+                            color='gray', alpha=0.15)
+        if difference:
+            ax.axhline(0, c='k')
+        else:
+            ax.plot(ks[:-1], ks[:-1], c='k')
+        colors = sns.color_palette(n_colors=len(qdf.columns))
+        for k, c in zip(qdf.columns, colors):
+            y, _ = np.histogram(qdf[k].iloc[:N], bins=ks)
+            ax.step(ks[:-1], np.cumsum(y) / N - m, label=k, c=c)
+        ncol = 2 if len(qdf.columns) > 16 else 1
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left',
+                  frameon=False, ncol=ncol)
+        ax.set_xlabel(r'$p$')
+        ax.set_ylabel(r'$p-p$' if difference else r'$p$')
+        ax.set_title(f'$N = {N}$')
+        return ax
