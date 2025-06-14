@@ -35,6 +35,7 @@ dependencies = [
 ringdown_fit = "ringdown.cli.ringdown_fit:main"
 ringdown_pipe = "ringdown.cli.ringdown_pipe:main"
 ringdown_scan = "ringdown.cli.ringdown_scan:main"
+ringdown_pp_pipe = "ringdown.cli.ringdown_pp_pipe:main"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
