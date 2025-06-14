@@ -7,7 +7,6 @@ import numpy as np
 import arviz as az
 import scipy.linalg as sl
 from arviz.data.base import dict_to_dataset
-from . import qnms
 from . import indexing
 from . import data
 from .imr import IMRResult
@@ -23,6 +22,7 @@ from parse import parse
 import logging
 from scipy.stats import gaussian_kde
 import xarray as xr
+from .labeling import ParameterLabel
 
 logger = logging.getLogger(__name__)
 
@@ -116,14 +116,14 @@ class Result(az.InferenceData):
         self._imr_result.set_ringdown_reference(self)
 
     @property
-    def _df_parameters(self) -> dict[str, qnms.ParameterLabel]:
+    def _df_parameters(self) -> dict[str, ParameterLabel]:
         """Default parameters for DataFrames."""
         df_parameters = {}
         for m in _DATAFRAME_PARAMETERS:
             if m in getattr(self, "posterior", {}):
-                df_parameters[m] = qnms.ParameterLabel(m)
+                df_parameters[m] = ParameterLabel(m)
             elif m.upper() in getattr(self, "posterior", {}):
-                df_parameters[m.upper()] = qnms.ParameterLabel(m)
+                df_parameters[m.upper()] = ParameterLabel(m)
         return df_parameters
 
     @property
@@ -661,7 +661,7 @@ class Result(az.InferenceData):
                 pars.append(p)
             else:
                 raise ValueError(f"Parameter {par} not found in posterior.")
-        self._df_parameters.update({p: qnms.ParameterLabel(p) for p in pars})
+        self._df_parameters.update({p: ParameterLabel(p) for p in pars})
 
     def get_parameter_key_map(self, modes: bool = True, **kws) -> dict:
         """Get a dictionary of parameter labels for the result."""
@@ -695,7 +695,7 @@ class Result(az.InferenceData):
         If `ignore_index`, the index will be reset rather than showing the
         location in the original set of samples.
 
-        The parameters are labeled using the `qnms.ParameterLabel` class.
+        The parameters are labeled using the `ParameterLabel` class.
 
         Arguments
         ---------
@@ -708,7 +708,7 @@ class Result(az.InferenceData):
             (def., `False`).
         **kws : dict
             additional keyword arguments to pass to the `get_label` method of
-            :class:`qnms.ParameterLabel`.
+            :class:`ParameterLabel`.
         """
         # set labeling options (e.g., whether to show p index)
         fmt = self.default_label_format.copy()
@@ -758,7 +758,7 @@ class Result(az.InferenceData):
             random number generator or seed (optional).
         **kws : dict
             additional keyword arguments to pass to the `get_label` method of
-            :class:`qnms.ParameterLabel`.
+            :class:`ParameterLabel`.
 
         Returns
         -------
@@ -803,7 +803,7 @@ class Result(az.InferenceData):
             :meth:`get_mode_parameter_dataframe`.
         **kws : dict
             additional keyword arguments to pass to the `get_mode_label` method
-            of :class:`qnms.ParameterLabel`.
+            of :class:`ParameterLabel`.
         """
         df = self.get_mode_parameter_dataframe(*args, **kws)
         return df[df["mode"] == indexing.get_mode_label(mode, **kws)]
@@ -2392,27 +2392,24 @@ class ResultCollection(utils.MultiIndexCollection):
         return grid, df_rd
 
 
-class PPResultCollection(ResultCollection):
+class PPResult(object):
     """Extension of ResultCollection with P–P plotting utilities."""
 
-    def __init__(self, results=None, index=None, reference_mass=None,
-                 reference_time=None):
-        # support initializing from an existing ResultCollection
-        if isinstance(results, ResultCollection):
-            rc = results
-            super().__init__(results=rc.results, index=rc.index)
-        else:
-            super().__init__(results=results, index=index,
-                             reference_mass=reference_mass,
-                             reference_time=reference_time)
-        self._null_cum_hists = {}
-        self._null_bands = {}
+    def __init__(self, quantiles=None, truth=None, prior=None,
+                 rundir=None):
+        self.quantiles = quantiles
+        self.truth = truth
+        self.prior = prior
+        self.rundir = rundir or ''
+
+    def __len__(self):
+        return len(self.quantiles)
 
     def __str__(self):
-        return f"PPResultCollection({self.index})"
+        return f"PPResult({self.rundir}, {len(self)})"
 
     def __repr__(self):
-        return f"PPResultCollection({self.index})"
+        return str(self)
 
     # P–P plotting helpers
     def _get_null_cum_hists(self, N, nbins, nsamp, nhist):
@@ -2481,7 +2478,10 @@ class PPResultCollection(ResultCollection):
         import seaborn as sns
         if not self.results:
             raise ValueError("no results loaded!")
-        qdf = self.get_injection_marginal_quantiles_dataframe(latex=latex)
+        qdf = self.quantiles
+        if latex:
+            qdf.columns = [self.results[0]._df_parameters[k].get_label(latex=True)
+                           for k in qdf.columns]
         if keys is not None:
             if latex:
                 key_map = self.results[0].get_parameter_key_map()
