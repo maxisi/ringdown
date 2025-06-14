@@ -2437,13 +2437,13 @@ class PPResultCollection(ResultCollection):
     def pp_plot(self, keys=None, nmax=None, nbins=50,
                 nsamp=200, nhist=10000, ax=None,
                 bands=(99.73, 95.45, 68.27), difference=True,
-                modes=None):
+                modes=None, latex=False):
         """P–P plot of injection marginal quantiles."""
         import matplotlib.pyplot as plt
         import seaborn as sns
         if not self.results:
             raise ValueError("no results loaded!")
-        qdf = self.get_injection_marginal_quantiles_dataframe()
+        qdf = self.get_injection_marginal_quantiles_dataframe(latex=latex)
         if keys is not None:
             qdf = qdf[keys]
         N = len(qdf) if nmax is None else min(nmax, len(qdf))
