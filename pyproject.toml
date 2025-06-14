@@ -51,7 +51,8 @@ extra = [
 dev-dependencies = [
     "ringdown",
     "jupyter",
-    "pre-commit"
+    "pre-commit",
+    "pytest"
 ]
 
 [tool.uv.sources]
