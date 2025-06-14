@@ -1,6 +1,6 @@
 """Module defining the core :class:`Result` class."""
 
-__all__ = ["Result", "ResultCollection", "PPResultCollection"]
+__all__ = ["Result", "ResultCollection", "PPResult"]
 
 import os
 import numpy as np
@@ -22,7 +22,8 @@ from parse import parse
 import logging
 from scipy.stats import gaussian_kde
 import xarray as xr
-from .labeling import ParameterLabel
+from .labeling import ParameterLabel, get_latex_from_key
+import h5py
 
 logger = logging.getLogger(__name__)
 
@@ -1582,6 +1583,7 @@ class ResultCollection(utils.MultiIndexCollection):
         index: list | None = None,
         reference_mass: float | None = None,
         reference_time: float | None = None,
+        info: dict | None = None,
     ) -> None:
         _results = []
         for r in results:
@@ -1589,7 +1591,7 @@ class ResultCollection(utils.MultiIndexCollection):
                 _results.append(r)
             else:
                 _results.append(Result(r))
-        super().__init__(_results, index, reference_mass, reference_time)
+        super().__init__(_results, index, reference_mass, reference_time, info)
         self._targets = None
         self._imr_result = None
         self.collection_key = DEFAULT_COLLECTION_KEY
@@ -1832,7 +1834,7 @@ class ResultCollection(utils.MultiIndexCollection):
             results.append(Result.from_netcdf(path, config=cpath))
         info = kws.get("info", {})
         info["provenance"] = paths
-        return cls(results, index, **kws)
+        return cls(results, index, info=info, **kws)
 
     def to_netcdf(self, paths: str | None = None, **kws) -> None:
         """Save the collection of results to NetCDF files.
@@ -2178,6 +2180,22 @@ class ResultCollection(utils.MultiIndexCollection):
     # -----------------------------------------------------------------------
     # PLOTS
 
+    def to_pp_result(self, prior: Result | None = None) -> "PPResult":
+        """Convert the ResultCollection to a PPResult.
+
+        Arguments
+        ---------
+        prior : Result | None
+            prior result to use for the PP plot. If None, the prior will be
+            inferred from the data.
+
+        Returns
+        -------
+        pp_result : PPResult
+            PPResult object.
+        """
+        return PPResult.from_results_collection(self, prior)
+
     def plot_mass_spin(
         self,
         ndraw: int = 500,
@@ -2393,23 +2411,107 @@ class ResultCollection(utils.MultiIndexCollection):
 
 
 class PPResult(object):
-    """Extension of ResultCollection with P–P plotting utilities."""
+    """PP results container with P–P plotting utilities."""
 
-    def __init__(self, quantiles=None, truth=None, prior=None,
-                 rundir=None):
+    _truth_group = 'truths'
+    _quantile_group = 'quantiles'
+
+    def __init__(self, quantiles: pd.DataFrame,
+                 truth: pd.DataFrame,
+                 prior: Result | None = None,
+                 rundir: str | None = None,
+                 info: dict | None = None):
         self.quantiles = quantiles
-        self.truth = truth
+        self.truths = truth
         self.prior = prior
         self.rundir = rundir or ''
+        self._info = info
+        self._config = None
+        self._null_cum_hists = {}
+        self._null_bands = {}
 
     def __len__(self):
         return len(self.quantiles)
 
     def __str__(self):
-        return f"PPResult({self.rundir}, {len(self)})"
+        return f"PPResult('{self.rundir}', N={len(self)})"
 
     def __repr__(self):
         return str(self)
+
+    @property
+    def config(self) -> configparser.ConfigParser | None:
+        if self._config is None:
+            # attempt to read in config from rundir
+            config_path = os.path.join(self.rundir, 'config.ini')
+            if os.path.exists(config_path):
+                self._config = utils.load_config(config_path)
+        return self._config
+
+    @property
+    def info(self) -> dict:
+        if not self._info and self.config is not None:
+            # Convert ConfigParser to dict
+            self._info = {s: dict(self.config.items(s))
+                          for s in self.config.sections()}
+        return self._info
+
+    @classmethod
+    def from_results_collection(cls, results: ResultCollection, ing
+                                prior: Result | None = None):
+        """Construct a PPResult from a ResultCollection."""
+        quantiles = results.get_injection_marginal_quantiles_dataframe()
+        truth = results.get_injection_parameters_dataframe(include_mf_snr=True,
+                                                           include_opt_snr=True)
+        if 'provenance' in results.info:
+            if isinstance(results.info['provenance'], str):
+                path = results.info['provenance']
+            else:
+                # assume list of paths
+                path = results.info['provenance'][0]
+            if 'engine' in path:
+                rundir = path.split('engine')[0]
+            else:
+                rundir = path
+        else:
+            rundir = ''
+        return cls(quantiles, truth, prior=prior, rundir=rundir)
+
+    def to_hdf5(self, path: str) -> None:
+        """Save the PPResult to an HDF5 file.
+        The file is saved to path under different groups: "quantiles" and "truths".
+        The run directory is saved as an attribute of the file.
+
+        Arguments
+        ---------
+        path : str
+            path to the HDF5 file
+        """
+        self.quantiles.to_hdf(path, key=self._quantile_group, mode="w")
+        self.truths.to_hdf(path, key=self._truth_group, mode="a")
+        with h5py.File(path, 'a') as f:
+            f.attrs['rundir'] = self.rundir
+            # JSON-encode the config dict so it can be stored as a HDF5 attribute
+            f.attrs['config'] = json.dumps(self.info)
+        logger.info(f"Saved PP results: {path}")
+
+    @classmethod
+    def read_hdf5(cls, path: str) -> "PPResult":
+        """Read a PPResult from an HDF5 file."""
+        # Read DataFrames directly from the HDF5 file path
+        quantiles = pd.read_hdf(path, key=cls._quantile_group)
+        truth = pd.read_hdf(path, key=cls._truth_group)
+        # Read rundir and config attributes
+        with h5py.File(path, 'r') as f:
+            rundir = f.attrs.get('rundir', '')
+            config_attr = f.attrs.get('config', '{}')
+        # JSON-decode the config attribute
+        if isinstance(config_attr, (bytes, bytearray)):
+            config_str = config_attr.decode('utf-8')
+        else:
+            config_str = config_attr
+        info = json.loads(config_str)
+        return cls(quantiles, truth, rundir=rundir, info=info)
 
     # P–P plotting helpers
     def _get_null_cum_hists(self, N, nbins, nsamp, nhist):
@@ -2431,7 +2533,7 @@ class PPResult(object):
             self._null_bands[k] = np.percentile(chs, p, axis=0)
         return self._null_bands[k]
 
-    def pp_plot(
+    def plot(
         self,
         keys: list[str] | None = None,
         nmax: int | None = None,
@@ -2476,21 +2578,19 @@ class PPResult(object):
         """
         import matplotlib.pyplot as plt
         import seaborn as sns
-        if not self.results:
+        if self.quantiles is None or self.quantiles.empty:
             raise ValueError("no results loaded!")
-        qdf = self.quantiles
+        # get quantile DataFrame for selected parameters
+        qdf = self.quantiles[keys] if keys is not None else self.quantiles
         if latex:
-            qdf.columns = [self.results[0]._df_parameters[k].get_label(latex=True)
-                           for k in qdf.columns]
-        if keys is not None:
-            if latex:
-                key_map = self.results[0].get_parameter_key_map()
-                keys = [key_map[k] for k in keys]
-            qdf = qdf[keys]
+            qdf = qdf.copy()
+            qdf.rename(columns=get_latex_from_key, inplace=True)
+        # construct null distribution
         N = len(qdf) if nmax is None else min(nmax, len(qdf))
         ks = np.linspace(0, 1, nbins + 1)
         m = self._get_null_band(N, nbins, nsamp, nhist,
                                 50) if difference else 0
+        # plot null distribution
         if ax is None:
             fig, ax = plt.subplots()
         for ci in bands:
@@ -2502,6 +2602,7 @@ class PPResult(object):
             ax.axhline(0, c='k')
         else:
             ax.plot(ks[:-1], ks[:-1], c='k')
+        # plot results
         colors = sns.color_palette(palette, n_colors=len(qdf.columns))
         for k, c in zip(qdf.columns, colors):
             y, _ = np.histogram(qdf[k].iloc[:N], bins=ks)
