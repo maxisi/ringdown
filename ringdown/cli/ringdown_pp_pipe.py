@@ -221,8 +221,10 @@ def main(args=None):
         # detectors (as chosen above), irrespective of the Target sky location.
         if config[PIPE_SECTION].getboolean('timeslides', False):
             delays = {ifo: t[i] - t0 for ifo, t in t_chosen.items()}
-            config_child['target']['slide'] = str({i: float(v)
-                                                   for i, v in delays.items()})
+            if not config_child.has_section('data'):
+                config_child.add_section('data')
+            config_child['data']['slide'] = str({i: -float(v)
+                                                 for i, v in delays.items()})
 
         # Write out config file for this run
         rpath = PATHS['run_result'].format(i=i)

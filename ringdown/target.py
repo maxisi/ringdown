@@ -91,7 +91,6 @@ class Target(ABC):
         dec: float | None = None,
         psi: float | None = None,
         reference_ifo: str | None = None,
-        slide: dict | None = None,
         antenna_patterns: dict | None = None,
         ifos: list[str] | None = None,
         duration: float = 0.0,
@@ -122,8 +121,6 @@ class Target(ABC):
         reference_ifo : str, None
             detector name for time reference, or `None` for geocenter (default
             `None`)
-        slide : dict, None
-            optional mapping of `{ifo: float}` seconds to add on top of default sky-based delays.
         antenna_patterns : dict, None
             dictionary of antenna patterns for each detector, or `None` to
             compute from sky location.
@@ -134,7 +131,6 @@ class Target(ABC):
                 t0, antenna_patterns, ifos=ifos, duration=duration
             )
 
-        # Sky-based target, with optional slide offsets
         return SkyTarget.construct(
             t0,
             ra,
@@ -142,7 +138,6 @@ class Target(ABC):
             psi,
             reference_ifo,
             duration=duration,
-            slide=slide,
         )
 
 
@@ -155,23 +150,16 @@ class SkyTarget(Target):
     dec: float | None = None
     psi: float | None = None
     duration: float = 0
-    slide: dict | None = None
 
     def __post_init__(self):
-        # validate numeric fields (except slide) and convert to float
+        # validate numeric fields and convert to float
         for k, v in self.as_dict().items():
-            if k == 'slide':
-                continue
             if v is not None and not isinstance(v, lal.LIGOTimeGPS):
                 setattr(self, k, float(v))
-        # convert slide offsets to float if provided
-        if isinstance(self.slide, dict):
-            self.slide = {ifo: float(offset)
-                          for ifo, offset in self.slide.items()}
-        # make sure required options are not contradictory (slide is optional)
+        # make sure required options are not contradictory
         if self.is_set:
             for k, v in self.as_dict().items():
-                if v is None and k != 'slide':
+                if v is None:
                     raise ValueError(f"missing {k}")
 
     @property
@@ -208,9 +196,6 @@ class SkyTarget(Target):
         dt = lal.TimeDelayFromEarthCenter(
             det.location, self.ra, self.dec, tgps)
         t0 = self.geocenter_time + dt
-        # apply optional slide offsets
-        if self.slide and ifo in self.slide:
-            t0 = t0 + float(self.slide[ifo])
         return float(t0)
 
     def get_antenna_patterns(self, ifo) -> tuple[float, float]:
@@ -246,7 +231,6 @@ class SkyTarget(Target):
         psi: float,
         reference_ifo: str | None = None,
         duration: float = 0.0,
-        slide: dict | None = None,
     ):
         """Create a sky location from a reference time, either a specific
         detector or geocenter.
@@ -265,8 +249,6 @@ class SkyTarget(Target):
             detector name, or `None` for geocenter (default `None`)
         duration : float
             analysis duration (default 0.)
-        slide : dict, None
-            optional mapping of `{ifo: float}` seconds to add on top of default sky-based delays.
 
         Returns
         -------
@@ -280,7 +262,7 @@ class SkyTarget(Target):
             tgps = lal.LIGOTimeGPS(t0)
             dt = lal.TimeDelayFromEarthCenter(det.location, ra, dec, tgps)
             tgeo = t0 - dt
-        return cls(lal.LIGOTimeGPS(tgeo), ra, dec, psi, duration, slide)
+        return cls(lal.LIGOTimeGPS(tgeo), ra, dec, psi, duration)
 
     @property
     def settings(self) -> dict:
