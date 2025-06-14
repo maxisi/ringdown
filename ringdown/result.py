@@ -303,8 +303,10 @@ class Result(az.InferenceData):
         """Get a Fit object from the result."""
         if self._fit is None and self.config:
             from .fit import Fit
-            self._fit = Fit.from_config(self._config_object, result=self,
-                                        **kwargs)
+
+            self._fit = Fit.from_config(
+                self._config_object, result=self, **kwargs
+            )
         return self._fit
 
     def draw_sample(
@@ -1182,8 +1184,9 @@ class Result(az.InferenceData):
                 raise ValueError("kind must be 'quantile' or 'zscore'.")
         return pd.Series(qs)
 
-    def get_marginal_quantiles(self, reference_values: dict | None = None
-                               ) -> xr.Dataset:
+    def get_marginal_quantiles(
+        self, reference_values: dict | None = None
+    ) -> xr.Dataset:
         """Compute the marginal quantiles of the injection parameters.
 
         Arguments
@@ -1212,15 +1215,13 @@ class Result(az.InferenceData):
 
     @property
     def injection_marginal_quantiles(self) -> xr.Dataset:
-        """Compute the marginal quantiles of the injection parameters.
-        """
-        if not self.config.get('injection', None):
+        """Compute the marginal quantiles of the injection parameters."""
+        if not self.config.get("injection", None):
             return xr.Dataset()
-        return self.get_marginal_quantiles(self.config['injection'])
+        return self.get_marginal_quantiles(self.config["injection"])
 
     def get_injection_marginal_quantiles_series(self, **kws) -> pd.Series:
-        """Compute the marginal quantiles of the injection parameters.
-        """
+        """Compute the marginal quantiles of the injection parameters."""
         # set labeling options (e.g., whether to show p index)
         fmt = self.default_label_format.copy()
         fmt.update(kws)
@@ -1240,10 +1241,13 @@ class Result(az.InferenceData):
                     qdict[key_df] = q.values
         return pd.Series(qdict, dtype=float)
 
-    def get_injection_parameters(self, include_opt_snr: bool = False,
-                                 include_mf_snr: bool = False,
-                                 latex: bool = False,
-                                 **kws) -> pd.Series:
+    def get_injection_parameters(
+        self,
+        include_opt_snr: bool = False,
+        include_mf_snr: bool = False,
+        latex: bool = False,
+        **kws,
+    ) -> pd.Series:
         """Get injection parameters as a pandas Series.
 
         Arguments
@@ -1299,8 +1303,9 @@ class Result(az.InferenceData):
             return None
         return self.injection.whiten(self.cholesky_factors.values)
 
-    def compute_injected_snrs(self, optimal: bool = True,
-                              network: bool = True) -> np.ndarray | float:
+    def compute_injected_snrs(
+        self, optimal: bool = True, network: bool = True
+    ) -> np.ndarray | float:
         """Compute the injected SNRs for the result.
 
         Arguments
@@ -2010,23 +2015,26 @@ class ResultCollection(utils.MultiIndexCollection):
         qs = {i: r.get_injection_parameters(**kws) for i, r in self.items()}
         return pd.DataFrame(qs).T
 
-    def get_injection_marginal_quantiles_dataframe(self,
-                                                   **kws) -> pd.DataFrame:
-        """Compute the marginal quantiles of the injection parameters.
-        """
-        qs = {i: r.get_injection_marginal_quantiles_series(**kws) for i, r
-              in self.items()}
+    def get_injection_marginal_quantiles_dataframe(self, **kws) -> pd.DataFrame:
+        """Compute the marginal quantiles of the injection parameters."""
+        qs = {
+            i: r.get_injection_marginal_quantiles_series(**kws)
+            for i, r in self.items()
+        }
         return pd.DataFrame(qs).T
 
-    def compute_injected_snrs(self, optimal: bool = True,
-                              network: bool = True,
-                              progress: bool = False,
-                              ) -> pd.Series | pd.DataFrame:
-        """Get the injected SNRs for the result.
-        """
+    def compute_injected_snrs(
+        self,
+        optimal: bool = True,
+        network: bool = True,
+        progress: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """Get the injected SNRs for the result."""
         tqdm = utils.get_tqdm(progress)
-        snrs = {i: r.compute_injected_snrs(optimal=optimal, network=network)
-                for i, r in tqdm(self.items(), desc="results", total=len(self))}
+        snrs = {
+            i: r.compute_injected_snrs(optimal=optimal, network=network)
+            for i, r in tqdm(self.items(), desc="results", total=len(self))
+        }
         if network:
             return pd.Series(snrs)
         else:
@@ -2426,18 +2434,21 @@ class ResultCollection(utils.MultiIndexCollection):
 class PPResult(object):
     """PP results container with P–P plotting utilities."""
 
-    _truth_group = 'truths'
-    _quantile_group = 'quantiles'
+    _truth_group = "truths"
+    _quantile_group = "quantiles"
 
-    def __init__(self, quantiles: pd.DataFrame,
-                 truth: pd.DataFrame,
-                 prior: Result | None = None,
-                 rundir: str | None = None,
-                 info: dict | None = None):
+    def __init__(
+        self,
+        quantiles: pd.DataFrame,
+        truth: pd.DataFrame,
+        prior: Result | None = None,
+        rundir: str | None = None,
+        info: dict | None = None,
+    ):
         self.quantiles = quantiles
         self.truths = truth
         self.prior = prior
-        self.rundir = rundir or ''
+        self.rundir = rundir or ""
         self._info = info
         self._config = None
         self._null_cum_hists = {}
@@ -2456,7 +2467,7 @@ class PPResult(object):
     def config(self) -> configparser.ConfigParser | None:
         if self._config is None:
             # attempt to read in config from rundir
-            config_path = os.path.join(self.rundir, 'config.ini')
+            config_path = os.path.join(self.rundir, "config.ini")
             if os.path.exists(config_path):
                 self._config = utils.load_config(config_path)
         return self._config
@@ -2465,35 +2476,39 @@ class PPResult(object):
     def info(self) -> dict:
         if not self._info and self.config is not None:
             # Convert ConfigParser to dict
-            self._info = {s: dict(self.config.items(s))
-                          for s in self.config.sections()}
+            self._info = {
+                s: dict(self.config.items(s)) for s in self.config.sections()
+            }
         return self._info
 
     @classmethod
-    def from_results_collection(cls, results: ResultCollection,
-                                prior: Result | None = None):
+    def from_results_collection(
+        cls, results: ResultCollection, prior: Result | None = None
+    ):
         """Construct a PPResult from a ResultCollection."""
         quantiles = results.get_injection_marginal_quantiles_dataframe()
-        truth = results.get_injection_parameters_dataframe(include_mf_snr=True,
-                                                           include_opt_snr=True)
-        if 'provenance' in results.info:
-            if isinstance(results.info['provenance'], str):
-                path = results.info['provenance']
+        truth = results.get_injection_parameters_dataframe(
+            include_mf_snr=True, include_opt_snr=True
+        )
+        if "provenance" in results.info:
+            if isinstance(results.info["provenance"], str):
+                path = results.info["provenance"]
             else:
                 # assume list of paths
-                path = results.info['provenance'][0]
-            if 'engine' in path:
-                rundir = path.split('engine')[0]
+                path = results.info["provenance"][0]
+            if "engine" in path:
+                rundir = path.split("engine")[0]
             else:
                 rundir = path
         else:
-            rundir = ''
+            rundir = ""
         return cls(quantiles, truth, prior=prior, rundir=rundir)
 
     def to_hdf5(self, path: str | None = None) -> None:
         """Save the PPResult to an HDF5 file.
-        The file is saved to path under different groups: "quantiles" and "truths".
-        The run directory is saved as an attribute of the file.
+
+        The file is saved to path under different groups: "quantiles" and
+        "truths". The run directory is saved as an attribute of the file.
 
         Arguments
         ---------
@@ -2501,13 +2516,13 @@ class PPResult(object):
             path to the HDF5 file
         """
         if path is None:
-            path = os.path.join(self.rundir, 'pp_result.h5')
+            path = os.path.join(self.rundir, "pp_result.h5")
         self.quantiles.to_hdf(path, key=self._quantile_group, mode="w")
         self.truths.to_hdf(path, key=self._truth_group, mode="a")
-        with h5py.File(path, 'a') as f:
-            f.attrs['rundir'] = self.rundir
+        with h5py.File(path, "a") as f:
+            f.attrs["rundir"] = self.rundir
             # JSON-encode the config dict so it can be stored as a HDF5 attribute
-            f.attrs['config'] = json.dumps(self.info)
+            f.attrs["config"] = json.dumps(self.info)
         logger.info(f"Saved PP results: {path}")
 
     @classmethod
@@ -2517,12 +2532,12 @@ class PPResult(object):
         quantiles = pd.read_hdf(path, key=cls._quantile_group)
         truth = pd.read_hdf(path, key=cls._truth_group)
         # Read rundir and config attributes
-        with h5py.File(path, 'r') as f:
-            rundir = f.attrs.get('rundir', '')
-            config_attr = f.attrs.get('config', '{}')
+        with h5py.File(path, "r") as f:
+            rundir = f.attrs.get("rundir", "")
+            config_attr = f.attrs.get("config", "{}")
         # JSON-decode the config attribute
         if isinstance(config_attr, (bytes, bytearray)):
-            config_str = config_attr.decode('utf-8')
+            config_str = config_attr.decode("utf-8")
         else:
             config_str = config_attr
         info = json.loads(config_str)
@@ -2593,6 +2608,7 @@ class PPResult(object):
         """
         import matplotlib.pyplot as plt
         import seaborn as sns
+
         if self.quantiles is None or self.quantiles.empty:
             raise ValueError("no results loaded!")
         # get quantile DataFrame for selected parameters
@@ -2611,21 +2627,23 @@ class PPResult(object):
         for ci in bands:
             hi = self._get_null_band(N, nbins, nsamp, nhist, 50 + 0.5 * ci)
             lo = self._get_null_band(N, nbins, nsamp, nhist, 50 - 0.5 * ci)
-            ax.fill_between(ks[:-1], hi - m, lo - m, step='post',
-                            color='gray', alpha=0.15)
+            ax.fill_between(
+                ks[:-1], hi - m, lo - m, step="post", color="gray", alpha=0.15
+            )
         if difference:
-            ax.axhline(0, c='k')
+            ax.axhline(0, c="k")
         else:
-            ax.plot(ks[:-1], ks[:-1], c='k')
+            ax.plot(ks[:-1], ks[:-1], c="k")
         # plot results
         colors = sns.color_palette(palette, n_colors=len(qdf.columns))
         for k, c in zip(qdf.columns, colors):
             y, _ = np.histogram(qdf[k].iloc[:N], bins=ks)
             ax.step(ks[:-1], np.cumsum(y) / N - m, label=k, c=c)
         ncol = 2 if len(qdf.columns) > 16 else 1
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left',
-                  frameon=False, ncol=ncol)
-        ax.set_xlabel(r'$p$')
-        ax.set_ylabel(r'$p-p$' if difference else r'$p$')
-        ax.set_title(f'$N = {N}$')
+        ax.legend(
+            bbox_to_anchor=(1.05, 1), loc="upper left", frameon=False, ncol=ncol
+        )
+        ax.set_xlabel(r"$p$")
+        ax.set_ylabel(r"$p-p$" if difference else r"$p$")
+        ax.set_title(f"$N = {N}$")
         return ax
