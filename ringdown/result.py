@@ -2490,7 +2490,7 @@ class PPResult(object):
             rundir = ''
         return cls(quantiles, truth, prior=prior, rundir=rundir)
 
-    def to_hdf5(self, path: str) -> None:
+    def to_hdf5(self, path: str | None = None) -> None:
         """Save the PPResult to an HDF5 file.
         The file is saved to path under different groups: "quantiles" and "truths".
         The run directory is saved as an attribute of the file.
@@ -2500,6 +2500,8 @@ class PPResult(object):
         path : str
             path to the HDF5 file
         """
+        if path is None:
+            path = os.path.join(self.rundir, 'pp_result.h5')
         self.quantiles.to_hdf(path, key=self._quantile_group, mode="w")
         self.truths.to_hdf(path, key=self._truth_group, mode="a")
         with h5py.File(path, 'a') as f:
@@ -2509,7 +2511,7 @@ class PPResult(object):
         logger.info(f"Saved PP results: {path}")
 
     @classmethod
-    def read_hdf5(cls, path: str) -> "PPResult":
+    def from_hdf5(cls, path: str) -> "PPResult":
         """Read a PPResult from an HDF5 file."""
         # Read DataFrames directly from the HDF5 file path
         quantiles = pd.read_hdf(path, key=cls._quantile_group)
