@@ -2434,17 +2434,58 @@ class PPResultCollection(ResultCollection):
             self._null_bands[k] = np.percentile(chs, p, axis=0)
         return self._null_bands[k]
 
-    def pp_plot(self, keys=None, nmax=None, nbins=50,
-                nsamp=200, nhist=10000, ax=None,
-                bands=(99.73, 95.45, 68.27), difference=True,
-                modes=None, latex=False):
-        """P–P plot of injection marginal quantiles."""
+    def pp_plot(
+        self,
+        keys: list[str] | None = None,
+        nmax: int | None = None,
+        nbins: int = 50,
+        nsamp: int = 200,
+        nhist: int = 10000,
+        ax: None = None,
+        bands: tuple[float, ...] = (99.73, 95.45, 68.27),
+        difference: bool = True,
+        latex: bool = False,
+        palette: str | list[str] | None = None,
+    ) -> "matplotlib.axes.Axes":
+        """P–P plot of injection marginal quantiles.
+
+        Arguments
+        ---------
+        keys : list
+            list of parameters to plot (optional).
+        nmax : int
+            maximum number of results to plot (optional).
+        nbins : int
+            number of bins in the histogram (def., `50`).
+        nsamp : int
+            number of samples to draw from the null distribution
+            (def., `200`).
+        nhist : int
+            number of histograms to draw from the null distribution
+            (def., `10000`).
+        ax : matplotlib.axes.Axes
+            matplotlib axes object (optional).
+        bands : tuple
+            tuple of confidence levels for the null distribution
+            (def., `(99.73, 95.45, 68.27)`).
+        difference : bool
+            whether to plot the difference between the empirical and null
+            distributions (def., `True`).
+
+        Returns
+        -------
+        ax : matplotlib.axes.Axes
+            matplotlib axes object.
+        """
         import matplotlib.pyplot as plt
         import seaborn as sns
         if not self.results:
             raise ValueError("no results loaded!")
         qdf = self.get_injection_marginal_quantiles_dataframe(latex=latex)
         if keys is not None:
+            if latex:
+                key_map = self.results[0].get_parameter_key_map()
+                keys = [key_map[k] for k in keys]
             qdf = qdf[keys]
         N = len(qdf) if nmax is None else min(nmax, len(qdf))
         ks = np.linspace(0, 1, nbins + 1)
@@ -2461,7 +2502,7 @@ class PPResultCollection(ResultCollection):
             ax.axhline(0, c='k')
         else:
             ax.plot(ks[:-1], ks[:-1], c='k')
-        colors = sns.color_palette(n_colors=len(qdf.columns))
+        colors = sns.color_palette(palette, n_colors=len(qdf.columns))
         for k, c in zip(qdf.columns, colors):
             y, _ = np.histogram(qdf[k].iloc[:N], bins=ks)
             ax.step(ks[:-1], np.cumsum(y) / N - m, label=k, c=c)
