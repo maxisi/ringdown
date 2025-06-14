@@ -1214,6 +1214,8 @@ class Result(az.InferenceData):
     def injection_marginal_quantiles(self) -> xr.Dataset:
         """Compute the marginal quantiles of the injection parameters.
         """
+        if not self.config.get('injection', None):
+            return xr.Dataset()
         return self.get_marginal_quantiles(self.config['injection'])
 
     def get_injection_marginal_quantiles_series(self, **kws) -> pd.Series:
@@ -1803,21 +1805,32 @@ class ResultCollection(utils.MultiIndexCollection):
             additional keyword arguments to pass to the constructor, like
             reference_mass or reference_time
         """
-        index = index or []
+        paths = []
+        indxs = []
         cpaths = []
+        if index is not None:
+            index = [tuple(np.atleast_1d(idx)) for idx in index]
         if isinstance(path_input, str):
-            paths = sorted(glob(path_input))
-            logger.info(f"loading {len(paths)} results from {path_input}")
-            for path in paths:
+            all_paths = sorted(glob(path_input))
+            logger.info(f"loading {len(all_paths)} results from {path_input}")
+            for path in all_paths:
                 pattern = parse(path_input.replace("*", "{}"), path).fixed
                 idx = tuple([utils.try_parse(k) for k in pattern])
-                index.append(idx)
+                if index is None or idx in index:
+                    indxs.append(idx)
+                    paths.append(path)
+                else:
+                    logger.debug(f"skipping {idx} because it is not in index")
                 if isinstance(config, str):
                     cpath = config.replace("*", "{}").format(*pattern)
                     if os.path.exists(cpath):
                         cpaths.append(cpath)
         else:
             paths = path_input
+        if index is not None and len(index) != len(paths):
+            for idx in index:
+                if idx not in indxs:
+                    logger.warning(f"index {idx} not found")
         if config is not None:
             if len(cpaths) != len(paths):
                 raise ValueError(
@@ -1834,7 +1847,7 @@ class ResultCollection(utils.MultiIndexCollection):
             results.append(Result.from_netcdf(path, config=cpath))
         info = kws.get("info", {})
         info["provenance"] = paths
-        return cls(results, index, info=info, **kws)
+        return cls(results, indxs, info=info, **kws)
 
     def to_netcdf(self, paths: str | None = None, **kws) -> None:
         """Save the collection of results to NetCDF files.
