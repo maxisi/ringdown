@@ -325,7 +325,7 @@ def main(args=None):
         "",
         "import ringdown as rd",
         "",
-        "results = rd.ResultCollection.from_netcdf('{}')".format(
+        "results = rd.ResultCollection.from_netcdf('{}', load_h_de_mode=False)".format(
             PATHS["run_result"].format(i="*")
         ),
         "results.to_pp_result().to_hdf5()",
