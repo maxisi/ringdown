@@ -46,7 +46,7 @@ DEFAULT_COLLECTION_KEY = "run"
 class Result(az.InferenceData):
     """Result from a ringdown fit."""
 
-    def __init__(self, *args, config=None, produce_h_det=True, **kwargs):
+    def __init__(self, *args, config=None, produce_h_det=False, **kwargs):
         """Initialize a result from a ringdown fit.
 
         Arguments
@@ -196,9 +196,10 @@ class Result(az.InferenceData):
         self._default_label_format.update(kws)
 
     @classmethod
-    def from_netcdf(cls, *args, config=None, **kwargs) -> "Result":
+    def from_netcdf(cls, *args, produce_h_det=False, config=None,
+                    **kwargs) -> "Result":
         data = super().from_netcdf(*args, **kwargs)
-        return cls(data, config=config)
+        return cls(data, produce_h_det=produce_h_det, config=config)
 
     from_netcdf.__doc__ = az.InferenceData.from_netcdf.__doc__
 
@@ -1787,6 +1788,7 @@ class ResultCollection(utils.MultiIndexCollection):
         path_input: str | list,
         index: list = None,
         config: str | list | None = None,
+        produce_h_det: bool = False,
         progress: bool = True,
         **kws,
     ):
@@ -1852,7 +1854,8 @@ class ResultCollection(utils.MultiIndexCollection):
         for path, cpath in tqdm(
             zip(paths, cpaths), total=len(paths), desc="results"
         ):
-            results.append(Result.from_netcdf(path, config=cpath))
+            results.append(Result.from_netcdf(path, config=cpath,
+                                              produce_h_det=produce_h_det))
         info = kws.get("info", {})
         info["provenance"] = paths
         return cls(results, indxs, info=info, **kws)
