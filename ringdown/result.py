@@ -1208,9 +1208,12 @@ class Result(az.InferenceData):
                 # compute quantile for scalar parameter
                 # counting number of samples below the reference value
                 qs[k] = (samples[k] <= v).mean(dim="sample")
+                # qs[k] = utils.stats.quantile_at_value(samples[k], v)
             else:
                 # vector parameter
                 qs[k] = (samples[k] <= np.array(v)[:, None]).mean(dim="sample")
+                # qs[k] = [utils.stats.quantile_at_value(samples[k], vi)
+                # for vi in v]
         return xr.Dataset(data_vars=qs)
 
     @property
@@ -2613,6 +2616,10 @@ class PPResult(object):
             raise ValueError("no results loaded!")
         # get quantile DataFrame for selected parameters
         qdf = self.quantiles[keys] if keys is not None else self.quantiles
+        # Remove rows with NaN values and warn if any were removed
+        qdf = qdf.dropna()
+        if len(qdf) < len(self):
+            logger.warning(f"Dropped {len(self) - len(qdf)} rows with NaNs")
         if latex:
             qdf = qdf.copy()
             qdf.rename(columns=get_latex_from_key, inplace=True)
