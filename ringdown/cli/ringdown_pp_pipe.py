@@ -37,15 +37,27 @@ from ringdown.config import PIPE_SECTION
 
 def get_parser():
     p = argparse.ArgumentParser(description="Ringdown PP analysis")
-    p.add_argument('config', help="Path to configuration file.")
-    p.add_argument('-o', '--outdir', default=None, help="Output directory.")
-    p.add_argument('--force', action='store_true', help="Run even if output "
-                   "directory already exists (pre-existing runs will not be "
-                   "repeated).")
-    p.add_argument('-s', '--submit', action='store_true', help="Submit slurm "
-                   "job automatically.")
-    p.add_argument('--ntasks', default=-1, type=int,
-                   help="Maximum number of tasks to request through SLURM.")
+    p.add_argument("config", help="Path to configuration file.")
+    p.add_argument("-o", "--outdir", default=None, help="Output directory.")
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help="Run even if output "
+        "directory already exists (pre-existing runs will not be "
+        "repeated).",
+    )
+    p.add_argument(
+        "-s",
+        "--submit",
+        action="store_true",
+        help="Submit slurm job automatically.",
+    )
+    p.add_argument(
+        "--ntasks",
+        default=-1,
+        type=int,
+        help="Maximum number of tasks to request through SLURM.",
+    )
     p.add_argument(
         "--platform",
         choices=["cpu", "gpu"],
@@ -54,8 +66,8 @@ def get_parser():
     )
     p.add_argument("-C", "--constraints", help="SLURM constraints.")
     p.add_argument("-t", "--time", help="SLURM time directive.")
-    p.add_argument('--seed', default=None, type=int, help="Random seed.")
-    p.add_argument('-v', '--verbose', action='store_true')
+    p.add_argument("--seed", default=None, type=int, help="Random seed.")
+    p.add_argument("-v", "--verbose", action="store_true")
     return p
 
 
@@ -75,14 +87,14 @@ def main(args=None):
     config = rd.utils.load_config(os.path.abspath(args.config))
 
     # set random seed (purposedly fail if not provided)
-    seed = args.seed or config.getint(PIPE_SECTION, 'seed')
+    seed = args.seed or config.getint(PIPE_SECTION, "seed")
     logging.info(f"Random seed set to {seed}")
     rng = np.random.default_rng(seed)
 
     # determine run directory
-    outdir = args.outdir or config.get(PIPE_SECTION, 'outdir', fallback=None)
+    outdir = args.outdir or config.get(PIPE_SECTION, "outdir", fallback=None)
     if not outdir:
-        outdir = f'ringdown_pp_{time.time():.0f}'
+        outdir = f"ringdown_pp_{time.time():.0f}"
         logging.warning(f"No run directory provided, defaulting to {outdir}")
     outdir = os.path.abspath(outdir)
     logging.info(f"Running in {outdir}")
@@ -98,24 +110,24 @@ def main(args=None):
         os.makedirs(outdir)
 
     PATHS = {
-        'config': 'config.ini',
-        'command': 'pipe.sh',
-        'acf': 'acf{ifo}.dat',
-        'prior': 'prior.nc',
-        'prior_exe': 'prior.py',
-        'collect_exe': 'collect.py',
-        'run_config': 'engine/pp_{i}/config.ini',
-        'run_result': 'engine/pp_{i}/result.nc',
-        'run_task': 'TaskFile',
-        'exe': 'submit.sh',
+        "config": "config.ini",
+        "command": "pipe.sh",
+        "acf": "acf{ifo}.dat",
+        "prior": "prior.nc",
+        "prior_exe": "prior.py",
+        "collect_exe": "collect.py",
+        "run_config": "engine/pp_{i}/config.ini",
+        "run_result": "engine/pp_{i}/result.nc",
+        "run_task": "TaskFile",
+        "exe": "submit.sh",
     }
     PATHS = {k: os.path.join(outdir, v) for k, v in PATHS.items()}
 
     # record config and arguments for reproducibility
-    with open(PATHS['config'], 'w') as f:
+    with open(PATHS["config"], "w") as f:
         config.write(f)
 
-    with open(PATHS['command'], 'w') as f:
+    with open(PATHS["command"], "w") as f:
         f.write(f"{' '.join(sys.argv)}\n\n")
         for k, v in vars(args).items():
             f.write(f"# {k}: {v}\n")
@@ -127,7 +139,7 @@ def main(args=None):
     ##############################################################################
 
     # Get number of injections
-    nruns = config.getint(PIPE_SECTION, 'nruns')
+    nruns = config.getint(PIPE_SECTION, "nruns")
 
     # Create a fit object, which we will use to manipulate data and obtain prior
     # this fit will automatically take care of all data handling based on config
@@ -135,28 +147,31 @@ def main(args=None):
 
     # cache ACFs
     for ifo, acf in fit.acfs.items():
-        acf.to_csv(PATHS['acf'].format(ifo=ifo), sep='\t', header=None)
+        acf.to_csv(PATHS["acf"].format(ifo=ifo), sep="\t", header=None)
 
-    # ----------------------------------------------------------------------------
+    # --------------------------------------------------------------------------
     # Select analysis times
 
     # Determine boundaries of injection region: an interval determined by
     # t0+/-inj_zone_duration, with an exclusion zone carved outaround
     # the indicated trigger time t0 (potentially of zero width, if no exclusion
-    # required, i.e., `safe_zone_duration = 0`); by default, the injection region
-    # is the entire time range of the data.
-    safe_zone_duration = config.getfloat(PIPE_SECTION, 'safe-zone-duration',
-                                         fallback=0)
-    inj_zone_duration = config.getfloat(PIPE_SECTION, 'inj-zone-duration',
-                                        fallback=np.inf)
+    # required, i.e., `safe_zone_duration = 0`); by default, the injection
+    # region is the entire time range of the data.
+    safe_zone_duration = config.getfloat(
+        PIPE_SECTION, "safe-zone-duration", fallback=0
+    )
+    inj_zone_duration = config.getfloat(
+        PIPE_SECTION, "inj-zone-duration", fallback=np.inf
+    )
 
     # Pick as many random times uniformly within the injection region as the
-    # requested number of injections. Do this in two steps: first, select randomly
-    # from before and after the censored trigger time; then, choose randomly
-    # between before and after for each entry.
+    # requested number of injections. Do this in two steps: first, select
+    # randomly from before and after the censored trigger time; then, choose
+    # randomly between before and after for each entry.
     #
-    # NOTE: this selects different times for each detector, but only the ones for
-    # the first detector will be used unless the `timeslides` option is given.
+    # NOTE: this selects different times for each detector, but only the ones
+    # for the first detector will be used unless the `timeslides` option is
+    # given.
     t_chosen = {}
     for ifo, data in fit.data.items():
         t = data.time
@@ -166,13 +181,13 @@ def main(args=None):
         t_before = rng.uniform(t_min, fit.t0 - safe_zone_duration, nruns)
         t_after = rng.uniform(fit.t0 + safe_zone_duration, t_max, nruns)
         mask = rng.integers(0, 2, nruns)
-        t_chosen[ifo] = mask*t_before + (1 - mask)*t_after
+        t_chosen[ifo] = mask * t_before + (1 - mask) * t_after
 
-    # ----------------------------------------------------------------------------
+    # --------------------------------------------------------------------------
     # Set up children fits
 
-    if rerun and os.path.exists(PATHS['run_task']):
-        os.remove(PATHS['run_task'])
+    if rerun and os.path.exists(PATHS["run_task"]):
+        os.remove(PATHS["run_task"])
 
     # determine how many devices to use, will default to 1 for GPUs and
     # 4 for CPUs
@@ -200,41 +215,46 @@ def main(args=None):
     logging.info("Ready to process {} runs.".format(nruns))
     for i in range(nruns):
         # Set up child configuration file
-        cpath = PATHS['run_config'].format(i=i)
+        cpath = PATHS["run_config"].format(i=i)
         # TODO: fix for caching
         rundir = os.path.dirname(cpath)
         os.makedirs(rundir, exist_ok=True)
-        config_child = rd.utils.load_config(PATHS['config'])
+        config_child = rd.utils.load_config(PATHS["config"])
 
         # Point to data
         # TODO: modify if allowing on-the-fly noise generation
-        config_child['data']['path'] = config['data']['path']
+        config_child["data"]["path"] = config["data"]["path"]
 
         # Point to the ACFs we cached above
-        config_child['acf'] = dict(path=PATHS['acf'], float_precision='round_trip',
-                                   sep='\\t', header='None')
+        config_child["acf"] = dict(
+            path=PATHS["acf"],
+            float_precision="round_trip",
+            sep="\\t",
+            header="None",
+        )
 
-        # By default, set the target time to be the one corresponding to the first
-        # detector in the random selection made above
+        # By default, set the target time to be the one corresponding to the
+        # first detector in the random selection made above
         t0 = t_chosen[fit.ifos[0]][i]
-        config_child['target']['t0'] = str(t0)
+        config_child["target"]["t0"] = str(t0)
         # If `timeslides` is turned on, then pick random times for all
         # detectors (as chosen above), irrespective of the Target sky location.
-        if config[PIPE_SECTION].getboolean('timeslides', False):
+        if config[PIPE_SECTION].getboolean("timeslides", False):
             delays = {ifo: t[i] - t0 for ifo, t in t_chosen.items()}
-            if not config_child.has_section('data'):
-                config_child.add_section('data')
-            config_child['data']['slide'] = str({i: -float(v)
-                                                 for i, v in delays.items()})
+            if not config_child.has_section("data"):
+                config_child.add_section("data")
+            config_child["data"]["slide"] = str(
+                {i: -float(v) for i, v in delays.items()}
+            )
 
         # Write out config file for this run
-        rpath = PATHS['run_result'].format(i=i)
+        rpath = PATHS["run_result"].format(i=i)
         if os.path.exists(rpath):
             logging.info("Run {} already exists. Will skip.".format(i))
         else:
-            with open(cpath, 'w') as f:
+            with open(cpath, "w") as f:
                 config_child.write(f)
-            with open(PATHS['run_task'], 'a') as f:
+            with open(PATHS["run_task"], "a") as f:
                 f.write(TASK.format(rundir=rundir, result=rpath, config=cpath))
 
     logging.info("Done processing {} runs.".format(nruns))
@@ -254,12 +274,12 @@ def main(args=None):
         "import arviz as az",
         "import os",
         "",
-        "if os.path.exists('{}'):".format(PATHS['prior']),
-        "    prior = az.from_netcdf('{}')".format(PATHS['prior']),
+        "if os.path.exists('{}'):".format(PATHS["prior"]),
+        "    prior = az.from_netcdf('{}')".format(PATHS["prior"]),
         "else:",
-        "    fit = rd.Fit.from_config('{}')".format(PATHS['config']),
+        "    fit = rd.Fit.from_config('{}')".format(PATHS["config"]),
         "    fit.run(prior=True)",
-        "    fit.prior.to_netcdf('{}')".format(PATHS['prior']),
+        "    fit.prior.to_netcdf('{}')".format(PATHS["prior"]),
         "    prior = fit.prior",
         "",
         "# initialize RNG",
@@ -272,9 +292,10 @@ def main(args=None):
         "data = data.isel(sample=random_subset)",
         "",
         "configs = sorted(glob('{}'))".format(
-            PATHS['run_config'].format(i='*')),
+            PATHS["run_config"].format(i="*")
+        ),
         "for i,p in enumerate(configs):",
-        "    if os.path.exists('{}'.format(i=i)):".format(PATHS['run_result']),
+        "    if os.path.exists('{}'.format(i=i)):".format(PATHS["run_result"]),
         "        print('WARNING: skipping run {}'.format(i))",
         "    else:",
         "        with open(p, 'r+') as f:",
@@ -283,16 +304,16 @@ def main(args=None):
         "            else:",
         "                f.write('\\n[injection]\\n')",
         "                f.write('# sample {}\\n'.format(i))",
-        "                f.write(\"# {}\\n\")".format(fit),
+        '                f.write("# {}\\n")'.format(fit),
         "                for k, v in data.isel(sample=i).data_vars.items():",
         "                    if 'h_det' not in k:",
         "                        v_str = np.array2string(v.values, separator=', ')",
         "                        f.write('{} = {}\\n'.format(k, v_str))",
     ]
 
-    epath = PATHS['prior_exe']
-    with open(epath, 'w') as f:
-        f.write('\n'.join(PRIOR_EXE))
+    epath = PATHS["prior_exe"]
+    with open(epath, "w") as f:
+        f.write("\n".join(PRIOR_EXE))
     st = os.stat(epath)
     os.chmod(epath, st.st_mode | 0o111)
     logging.info("Wrote prior executable: {}".format(epath))
@@ -305,13 +326,14 @@ def main(args=None):
         "import ringdown as rd",
         "",
         "results = rd.ResultCollection.from_netcdf('{}')".format(
-            PATHS['run_result'].format(i='*')),
+            PATHS["run_result"].format(i="*")
+        ),
         "results.to_pp_result().to_hdf5()",
     ]
 
-    epath = PATHS['collect_exe']
-    with open(epath, 'w') as f:
-        f.write('\n'.join(COLLECT_EXE))
+    epath = PATHS["collect_exe"]
+    with open(epath, "w") as f:
+        f.write("\n".join(COLLECT_EXE))
     st = os.stat(epath)
     os.chmod(epath, st.st_mode | 0o111)
     logging.info("Wrote collect executable: {}".format(epath))
@@ -340,28 +362,28 @@ def main(args=None):
 
     if args.platform == "cpu":
         EXE = [
-            '#! /usr/bin/env bash',
-            '',
-            'function get_id() {',
+            "#! /usr/bin/env bash",
+            "",
+            "function get_id() {",
             '    if [[ "$1" =~ Submitted\ batch\ job\ ([0-9]+) ]]; then',
             '        echo "${BASH_REMATCH[1]}"',
-            '        exit 0',
-            '    else',
+            "        exit 0",
+            "    else",
             '        echo "sbatch failed"',
-            '        exit 1',
-            '    fi',
-            '}',
-            '',
-            f'cd {outdir}',
-            '# prior job',
+            "        exit 1",
+            "    fi",
+            "}",
+            "",
+            f"cd {outdir}",
+            "# prior job",
             f'priorid=$(get_id "$(sbatch -p genx -c 4 -t 0-1 {PATHS["prior_exe"]})")',
-            '',
-            '# pp jobs',
+            "",
+            "# pp jobs",
             f'ppid=$(get_id "$({command} --dependency=afterok:$priorid -p cca -n {NTASK} -c {NDEVICE} disBatch {PATHS["run_task"]})")',
-            '',
-            '# collect job',
-            f'{command} --dependency=afterok:$ppid -p genx -c 4 -t 0-1 {PATHS["collect_exe"]}',
-            'cd -',
+            "",
+            "# collect job",
+            f"{command} --dependency=afterok:$ppid -p genx -c 4 -t 0-1 {PATHS['collect_exe']}",
+            "cd -",
         ]
     else:
         # these options are set to match the GPU nodes at the Flatiron Institute
@@ -376,38 +398,39 @@ def main(args=None):
         )
 
         EXE = [
-            '#! /usr/bin/env bash',
-            '',
-            'function get_id() {',
+            "#! /usr/bin/env bash",
+            "",
+            "function get_id() {",
             '    if [[ "$1" =~ Submitted\ batch\ job\ ([0-9]+) ]]; then',
             '        echo "${BASH_REMATCH[1]}"',
-            '        exit 0',
-            '    else',
+            "        exit 0",
+            "    else",
             '        echo "sbatch failed"',
-            '        exit 1',
-            '    fi',
-            '}',
-            '',
-            f'cd {outdir}',
-            '# prior job',
+            "        exit 1",
+            "    fi",
+            "}",
+            "",
+            f"cd {outdir}",
+            "# prior job",
             f'priorid=$(get_id "$({prior_command})")',
-            '',
-            '# pp jobs',
+            "",
+            "# pp jobs",
             f'ppid=$(get_id "$({pp_command})")',
-            '',
-            '# collect job',
-            f'{command} --dependency=afterok:$ppid -p genx -c 4 -t 0-1 {PATHS["collect_exe"]}',
-            'cd -',
+            "",
+            "# collect job",
+            f"{command} --dependency=afterok:$ppid -p genx -c 4 -t 0-1 {PATHS['collect_exe']}",
+            "cd -",
         ]
 
-    epath = PATHS['exe']
-    with open(epath, 'w') as f:
-        f.write('\n'.join(EXE))
+    epath = PATHS["exe"]
+    with open(epath, "w") as f:
+        f.write("\n".join(EXE))
     st = os.stat(epath)
     os.chmod(epath, st.st_mode | 0o111)
     if args.submit:
         print(f"Submitting: {epath}")
         import subprocess
+
         subprocess.run(epath)
     else:
         print(f"Submit by running: {epath}")
