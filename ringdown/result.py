@@ -2561,7 +2561,7 @@ class PPResult(object):
             ks = np.linspace(0, 1, nbins + 1)
             hs = []
             for _ in range(nhist):
-                qs = np.random.uniform(0, nsamp + 1, size=N) / (nsamp + 1)
+                qs = np.random.rand(N)
                 hs.append(np.histogram(qs, bins=ks)[0])
             chs = np.cumsum(hs, axis=1) / N
             self._null_cum_hists[k] = chs
