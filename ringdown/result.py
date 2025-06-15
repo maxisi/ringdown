@@ -1205,7 +1205,8 @@ class Result(az.InferenceData):
         quantiles : xr.Dataset
             Dataset of marginal quantiles.
         """
-        samples = self.stacked_samples
+        samples = self.posterior
+        d = ("chain", "draw")
         qs = {}
         for k, v in reference_values.items():
             if v is None or k not in samples:
@@ -1213,13 +1214,10 @@ class Result(az.InferenceData):
             if np.isscalar(v):
                 # compute quantile for scalar parameter
                 # counting number of samples below the reference value
-                qs[k] = (samples[k] <= v).mean(dim="sample")
-                # qs[k] = utils.stats.quantile_at_value(samples[k], v)
+                qs[k] = (samples[k] <= v).mean(dim=d)
             else:
                 # vector parameter
-                qs[k] = (samples[k] <= np.array(v)[:, None]).mean(dim="sample")
-                # qs[k] = [utils.stats.quantile_at_value(samples[k], vi)
-                # for vi in v]
+                qs[k] = (samples[k] <= np.array(v)[None, None, :]).mean(dim=d)
         return xr.Dataset(data_vars=qs)
 
     @property
