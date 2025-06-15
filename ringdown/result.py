@@ -2561,7 +2561,7 @@ class PPResult(object):
             ks = np.linspace(0, 1, nbins + 1)
             hs = []
             for _ in range(nhist):
-                qs = np.random.uniform(0, nsamp + 1, size=N) / nsamp
+                qs = np.random.uniform(0, nsamp + 1, size=N) / (nsamp + 1)
                 hs.append(np.histogram(qs, bins=ks)[0])
             chs = np.cumsum(hs, axis=1) / N
             self._null_cum_hists[k] = chs
@@ -2648,12 +2648,12 @@ class PPResult(object):
         if difference:
             ax.axhline(0, c="k")
         else:
-            ax.plot(ks[:-1], ks[:-1], c="k")
+            ax.step(ks[:-1], ks[:-1], c="k")
         # plot results
         colors = sns.color_palette(palette, n_colors=len(qdf.columns))
         for k, c in zip(qdf.columns, colors):
             y, _ = np.histogram(qdf[k].iloc[:N], bins=ks)
-            ax.step(ks[:-1], np.cumsum(y) / N - m, label=k, c=c)
+            ax.step(ks[:-1], np.cumsum(y) / N - m, label=k, c=c, where="post")
         ncol = 2 if len(qdf.columns) > 16 else 1
         ax.legend(
             bbox_to_anchor=(1.05, 1), loc="upper left", frameon=False, ncol=ncol
