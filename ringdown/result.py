@@ -2651,14 +2651,15 @@ class PPResult(object):
             _, ax = plt.subplots()
         # plot null distribution
         ks = np.linspace(0, 1, nbins + 1)
-        m = 0 if difference else ks[1:]
+        m = np.zeros_like(ks[1:]) if difference else ks[1:]
         for sigma in bands:
             half_band = sigma * np.sqrt(self._null_var(ks[1:], N))
             ax.fill_between(ks[:-1], m + half_band, m - half_band, step="post",
-                             color="gray", alpha=0.15)
+                            color="gray", alpha=0.15)
         ax.step(ks[:-1], m, c="k", where="post")
         # plot results
         colors = sns.color_palette(palette, n_colors=len(qdf.columns))
+        m = ks[1:] if difference else 0
         for k, c in zip(qdf.columns, colors):
             y, _ = np.histogram(qdf[k].iloc[:N], bins=ks)
             ax.step(ks[:-1], np.cumsum(y) / N - m, label=k, c=c, where="post",
@@ -2666,7 +2667,7 @@ class PPResult(object):
         ncol = 2 if len(qdf.columns) > 16 else 1
         if legend:
             lkws = dict(bbox_to_anchor=(1.05, 1), loc="upper left",
-                         frameon=False, ncol=ncol)
+                        frameon=False, ncol=ncol)
             lkws.update(legend_kws or {})
             ax.legend(**lkws)
         ax.set_xlabel(r"$p$")
