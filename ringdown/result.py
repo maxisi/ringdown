@@ -2554,25 +2554,31 @@ class PPResult(object):
         info = json.loads(config_str)
         return cls(quantiles, truth, rundir=rundir, info=info)
 
-    # P–P plotting helpers
-    def _get_null_cum_hists(self, N, nbins, nsamp, nhist):
-        k = (N, nbins, nsamp, nhist)
-        if k not in self._null_cum_hists:
-            ks = np.linspace(0, 1, nbins + 1)
-            hs = []
-            for _ in range(nhist):
-                qs = np.random.rand(N)
-                hs.append(np.histogram(qs, bins=ks)[0])
-            chs = np.cumsum(hs, axis=1) / N
-            self._null_cum_hists[k] = chs
-        return self._null_cum_hists[k]
+    @staticmethod
+    def _null_var(x, n):
+        """Returns the theoretical variance for the ECDF of n samples drawn
+        from a uniform distribution between 0 and 1.
 
-    def _get_null_band(self, N, nbins, nsamp, nhist, p):
-        k = (N, nbins, nsamp, nhist, p)
-        if k not in self._null_bands:
-            chs = self._get_null_cum_hists(N, nbins, nsamp, nhist)
-            self._null_bands[k] = np.percentile(chs, p, axis=0)
-        return self._null_bands[k]
+        The true CDF for a U[0, 1] distribution is F(x) = x, which means that
+        if ECDF_n(x) is the ECDF for n samples, then n * ECDF_n(x) is a
+        drawn from a Binomial distribution with n trials and probability
+        p = x. The variance of a Binomial distribution is
+        var(X) = n * p * (1 - p), so the variance of the ECDF is
+        var(F(x)) = x * (1 - x) / n.
+
+        Arguments
+        ---------
+        x : float
+            the value at which to evaluate the variance, 0 <= x <= 1
+        n : int
+            the number of samples drawn from the uniform distribution
+
+        Returns
+        -------
+        var : float
+            the variance of the difference of the ECDFs
+        """
+        return x * (1 - x) / n
 
     def plot(
         self,
@@ -2582,10 +2588,13 @@ class PPResult(object):
         nsamp: int = 200,
         nhist: int = 10000,
         ax: None = None,
-        bands: tuple[float, ...] = (99.73, 95.45, 68.27),
+        bands: tuple[float, ...] = (3, 2, 1),
         difference: bool = True,
         latex: bool = False,
         palette: str | list[str] | None = None,
+        legend: bool = True,
+        legend_kws: dict | None = None,
+        line_kws: dict | None = None,
     ):
         """P–P plot of injection marginal quantiles.
 
@@ -2606,11 +2615,17 @@ class PPResult(object):
         ax : matplotlib.axes.Axes
             matplotlib axes object (optional).
         bands : tuple
-            tuple of confidence levels for the null distribution
-            (def., `(99.73, 95.45, 68.27)`).
+            tuple of sigmas to plot for the null distribution
+            (def., `(3, 2, 1)`).
         difference : bool
             whether to plot the difference between the empirical and null
             distributions (def., `True`).
+        legend : bool
+            whether to plot the legend (def., `True`).
+        legend_kws : dict
+            keyword arguments for the legend (optional).
+        line_kws : dict
+            keyword arguments for the PP lines (optional).
 
         Returns
         -------
@@ -2622,42 +2637,38 @@ class PPResult(object):
 
         if self.quantiles is None or self.quantiles.empty:
             raise ValueError("no results loaded!")
-        # get quantile DataFrame for selected parameters
+        # get quantile DataFrame for selected parameters, dropping NaNs
         qdf = self.quantiles[keys] if keys is not None else self.quantiles
-        # Remove rows with NaN values and warn if any were removed
         qdf = qdf.dropna()
         if len(qdf) < len(self):
             logger.warning(f"Dropped {len(self) - len(qdf)} rows with NaNs")
         if latex:
             qdf = qdf.copy()
             qdf.rename(columns=get_latex_from_key, inplace=True)
-        # construct null distribution
         N = len(qdf) if nmax is None else min(nmax, len(qdf))
-        ks = np.linspace(0, 1, nbins + 1)
-        m = self._get_null_band(N, nbins, nsamp, nhist,
-                                50) if difference else 0
-        # plot null distribution
+        # initialize figure
         if ax is None:
-            fig, ax = plt.subplots()
-        for ci in bands:
-            hi = self._get_null_band(N, nbins, nsamp, nhist, 50 + 0.5 * ci)
-            lo = self._get_null_band(N, nbins, nsamp, nhist, 50 - 0.5 * ci)
-            ax.fill_between(
-                ks[:-1], hi - m, lo - m, step="post", color="gray", alpha=0.15
-            )
-        if difference:
-            ax.axhline(0, c="k")
-        else:
-            ax.step(ks[:-1], ks[:-1], c="k")
+            _, ax = plt.subplots()
+        # plot null distribution
+        ks = np.linspace(0, 1, nbins + 1)
+        m = 0 if difference else ks[1:]
+        for sigma in bands:
+            half_band = sigma * np.sqrt(self._null_var(ks[1:], N))
+            ax.fill_between(ks[:-1], m + half_band, m - half_band, step="post",
+                             color="gray", alpha=0.15)
+        ax.step(ks[:-1], m, c="k", where="post")
         # plot results
         colors = sns.color_palette(palette, n_colors=len(qdf.columns))
         for k, c in zip(qdf.columns, colors):
             y, _ = np.histogram(qdf[k].iloc[:N], bins=ks)
-            ax.step(ks[:-1], np.cumsum(y) / N - m, label=k, c=c, where="post")
+            ax.step(ks[:-1], np.cumsum(y) / N - m, label=k, c=c, where="post",
+                    **(line_kws or {}))
         ncol = 2 if len(qdf.columns) > 16 else 1
-        ax.legend(
-            bbox_to_anchor=(1.05, 1), loc="upper left", frameon=False, ncol=ncol
-        )
+        if legend:
+            lkws = dict(bbox_to_anchor=(1.05, 1), loc="upper left",
+                         frameon=False, ncol=ncol)
+            lkws.update(legend_kws or {})
+            ax.legend(**lkws)
         ax.set_xlabel(r"$p$")
         ax.set_ylabel(r"$p-p$" if difference else r"$p$")
         ax.set_title(f"$N = {N}$")
