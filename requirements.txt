@@ -1,5 +1,5 @@
 numpy==2.2.6
-lalsuite==7.24
+lalsuite==7.26.1
 h5py~=3.12
 arviz~=0.20
 pandas~=2.2
