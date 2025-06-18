@@ -1841,6 +1841,8 @@ class ResultCollection(utils.MultiIndexCollection):
                         cpaths.append(cpath)
         else:
             paths = path_input
+        if len(paths) == 0:
+            raise ValueError("No results found.")
         if index is not None and len(index) != len(paths):
             for idx in index:
                 if idx not in indxs:
