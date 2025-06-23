@@ -196,14 +196,14 @@ class Result(az.InferenceData):
         self._default_label_format.update(kws)
 
     @classmethod
-    def from_netcdf(cls, *args, load_h_de_mode=True, produce_h_det=False,
+    def from_netcdf(cls, *args, load_h_det_mode=True, produce_h_det=False,
                     config=None, **kwargs) -> "Result":
         group_kwargs = kwargs.pop("group_kwargs", {})
-        if not load_h_de_mode:
+        if not load_h_det_mode:
             group_kwargs["posterior"] = {"drop_variables": ["h_det_mode"]}
         data = super().from_netcdf(*args, group_kwargs=group_kwargs, **kwargs)
         # if h_det_mode is not loaded, we cannot produce h_det
-        produce_h_det = produce_h_det and load_h_de_mode
+        produce_h_det = produce_h_det and load_h_det_mode
         return cls(data, produce_h_det=produce_h_det, config=config)
 
     from_netcdf.__doc__ = az.InferenceData.from_netcdf.__doc__
@@ -1791,7 +1791,7 @@ class ResultCollection(utils.MultiIndexCollection):
         path_input: str | list,
         index: list = None,
         config: str | list | None = None,
-        load_h_de_mode: bool = True,
+        load_h_det_mode: bool = True,
         produce_h_det: bool = False,
         progress: bool = True,
         **kws,
@@ -1861,7 +1861,7 @@ class ResultCollection(utils.MultiIndexCollection):
             zip(paths, cpaths), total=len(paths), desc="results"
         ):
             results.append(Result.from_netcdf(path, config=cpath,
-                                              load_h_de_mode=load_h_de_mode,
+                                              load_h_det_mode=load_h_det_mode,
                                               produce_h_det=produce_h_det))
         info = kws.get("info", {})
         info["provenance"] = paths
