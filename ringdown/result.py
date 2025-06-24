@@ -1650,7 +1650,8 @@ class ResultCollection(utils.MultiIndexCollection):
             return self.results[0].imr_result
         return self._imr_result
 
-    def set_imr_result(self, imr_result: IMRResult) -> None:
+    def set_imr_result(self, imr_result: IMRResult,
+                       inherit: bool = True) -> None:
         """Set the reference IMR result for the collection.
 
         Arguments
@@ -1662,6 +1663,9 @@ class ResultCollection(utils.MultiIndexCollection):
         if old_imr_result is not None and not old_imr_result.empty:
             logger.warning("Overwriting existing IMR result.")
         self._imr_result = imr_result
+        if inherit:
+            for r in self.results:
+                r.set_imr_result(imr_result)
 
     @property
     def results(self) -> list[Result]:
