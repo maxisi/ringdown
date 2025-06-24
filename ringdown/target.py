@@ -94,6 +94,7 @@ class Target(ABC):
         antenna_patterns: dict | None = None,
         ifos: list[str] | None = None,
         duration: float = 0.0,
+        **kws,
     ):
         """Create a target object from a dictionary or keyword arguments.
         The source sky location and orientation can be specified by the `ra`,
@@ -125,6 +126,9 @@ class Target(ABC):
             dictionary of antenna patterns for each detector, or `None` to
             compute from sky location.
         """
+        if kws:
+            logger.info(f"ignoring {kws}")
+
         # If no sky location, use explicit detector times & patterns
         if ra is None:
             return DetectorTarget.construct(
@@ -231,7 +235,6 @@ class SkyTarget(Target):
         psi: float,
         reference_ifo: str | None = None,
         duration: float = 0.0,
-        **kws,
     ):
         """Create a sky location from a reference time, either a specific
         detector or geocenter.
@@ -263,8 +266,6 @@ class SkyTarget(Target):
             tgps = lal.LIGOTimeGPS(t0)
             dt = lal.TimeDelayFromEarthCenter(det.location, ra, dec, tgps)
             tgeo = t0 - dt
-        if kws:
-            logger.info(f"ignoring {kws}")
         return cls(lal.LIGOTimeGPS(tgeo), ra, dec, psi, duration)
 
     @property
