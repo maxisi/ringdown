@@ -1630,12 +1630,29 @@ class ResultCollection(utils.MultiIndexCollection):
         """
         results = self.results[start_loc::n]
         index = self.index[start_loc::n]
-        return ResultCollection(
+        rc = ResultCollection(
             results=results,
             index=index,
             reference_mass=self.reference_mass,
             reference_time=self.reference_time,
         )
+        if self.imr_result is not None:
+            rc.set_imr_result(self.imr_result)
+        return rc
+
+    def select(self, index: list | None = None) -> "ResultCollection":
+        """Select a subset of the collection."""
+        if index is None:
+            index = self.index
+        rc = ResultCollection(
+            results=self.results[index],
+            index=index,
+            reference_mass=self.reference_mass,
+            reference_time=self.reference_time,
+        )
+        if self.imr_result is not None:
+            rc.set_imr_result(self.imr_result)
+        return rc
 
     @property
     def has_imr_result(self) -> bool:
