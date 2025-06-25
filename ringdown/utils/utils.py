@@ -217,7 +217,7 @@ class MultiIndexCollection(object):
 
     def add(self, key, value):
         # Update value if key already exists
-        if key in self.keys:
+        if key in self.keys():
             index = self.index.index(key)
             self.data[index] = value
         else:
