@@ -213,7 +213,7 @@ class MultiIndexCollection(object):
         return self.data[i]
 
     def __repr__(self):
-        return f"MultiIndexCollection({self.index})"
+        return f"{self.__class__.__name__}({self.index})"
 
     def add(self, key, value):
         # Update value if key already exists
@@ -245,7 +245,7 @@ class MultiIndexCollection(object):
         if len(index) != len(set(index)):
             raise ValueError("Index must be unique.")
         # Create new collection with proper slicing
-        return MultiIndexCollection(
+        return self.__class__(
             data=[self.get(i) for i in index],
             index=index,
             reference_mass=self.reference_mass,
@@ -269,7 +269,7 @@ class MultiIndexCollection(object):
         """
         data = self.data[start_loc::n]
         index = self.index[start_loc::n]
-        return MultiIndexCollection(
+        return self.__class__(
             data=data,
             index=index,
             reference_mass=self.reference_mass,

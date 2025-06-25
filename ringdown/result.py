@@ -1610,9 +1610,6 @@ class ResultCollection(utils.MultiIndexCollection):
         self._imr_result = None
         self.collection_key = DEFAULT_COLLECTION_KEY
 
-    def __repr__(self):
-        return f"ResultCollection({self.index})"
-
     @property
     def has_imr_result(self) -> bool:
         """Check if the collection has an IMR result."""
