@@ -2221,6 +2221,7 @@ class ResultCollection(utils.MultiIndexCollection):
         prng: int | np.random.Generator | None = None,
         index_label: str = None,
         hue: str = None,
+        hue_order: list | None = None,
         palette=None,
         hue_norm=None,
         dropna: bool = False,
@@ -2265,6 +2266,8 @@ class ResultCollection(utils.MultiIndexCollection):
             label for the index column in the DataFrame (optional).
         hue : str
             alias for index_label (optional).
+        hue_order : list
+            order of hue variable (optional).
         palette : str
             color palette for hue variable (optional).
         hue_norm : tuple
@@ -2337,6 +2340,7 @@ class ResultCollection(utils.MultiIndexCollection):
             hue=index_label,
             palette=palette,
             hue_norm=hue_norm,
+            hue_order=hue_order,
             dropna=dropna,
             height=height,
             ratio=ratio,
