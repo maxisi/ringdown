@@ -1644,9 +1644,15 @@ class ResultCollection(utils.MultiIndexCollection):
         """Select a subset of the collection."""
         if index is None:
             index = self.index
+        # Determine positions to keep
+        locs = [i for i, idx_val in enumerate(self.index) if idx_val in index]
+        # Build lists of selected results and corresponding indices
+        selected_results = [self.results[i] for i in locs]
+        selected_index = [self.index[i] for i in locs]
+        # Create new collection with proper slicing
         rc = ResultCollection(
-            results=self.results[index],
-            index=index,
+            results=selected_results,
+            index=selected_index,
             reference_mass=self.reference_mass,
             reference_time=self.reference_time,
         )
