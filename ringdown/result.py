@@ -2565,13 +2565,71 @@ class PPResult(object):
         """
         return x * (1 - x) / n
 
+    def plot_quantiles(self, keys: list[str] | None = None, latex: bool = False,
+                       bins: int = 20, ax: None = None):
+        """Plot the empirical quantiles of the injection marginal distribution.
+
+        Arguments
+        ---------
+        keys : list
+            list of parameters to plot (optional).
+        latex : bool
+            whether to use LaTeX labels for the parameters (optional).
+        bins : int
+            number of bins in the histogram (optional).
+        ax : matplotlib.axes.Axes
+            matplotlib axes object (optional).
+
+        Returns
+        -------
+        ax : matplotlib.axes.Axes
+            matplotlib axes object.
+        """
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        if self.quantiles is None or self.quantiles.empty:
+            raise ValueError("no results loaded!")
+
+        # get quantile DataFrame for selected parameters, dropping NaNs
+        qdf = self.quantiles[keys] if keys is not None else self.quantiles
+        qdf = qdf.dropna()
+        if len(qdf) < len(self):
+            logger.warning(f"Dropped {len(self) - len(qdf)} rows with NaNs")
+        if latex:
+            qdf = qdf.copy()
+            qdf.rename(columns=get_latex_from_key, inplace=True)
+        # drop columns that have a single unique value
+        qdf = qdf.loc[:, qdf.nunique() > 1]
+
+        ax = sns.histplot(data=qdf, element='step', palette='husl',
+                          bins=bins, fill=False, ax=ax)
+
+        # theoretical uncertainty from Binomial distribution
+        n = len(qdf)
+        p = 1 / bins
+        mean = n*p
+        scale = np.sqrt(n*p*(1-p))
+
+        # plot theoretical uncertainty
+        ax.axhline(mean, color='gray', linestyle='--', zorder=-100)
+        for sigma in [1, 2, 3]:
+            ax.fill_between([0, 1],
+                            [mean-sigma*scale, mean-sigma*scale],
+                            [mean+sigma*scale, mean+sigma*scale],
+                            color='gray', alpha=0.1, zorder=-100)
+
+        ax.set_ylim(0)
+        ax.set_xlim(0, 1)
+        plt.xlabel('recovered quantile')
+        plt.ylabel('count')
+        return ax
+
     def plot(
         self,
         keys: list[str] | None = None,
         nmax: int | None = None,
         nbins: int = 50,
-        nsamp: int = 200,
-        nhist: int = 10000,
         ax: None = None,
         bands: tuple[float, ...] = (3, 2, 1),
         difference: bool = True,
@@ -2591,12 +2649,6 @@ class PPResult(object):
             maximum number of results to plot (optional).
         nbins : int
             number of bins in the histogram (def., `50`).
-        nsamp : int
-            number of samples to draw from the null distribution
-            (def., `200`).
-        nhist : int
-            number of histograms to draw from the null distribution
-            (def., `10000`).
         ax : matplotlib.axes.Axes
             matplotlib axes object (optional).
         bands : tuple
@@ -2630,6 +2682,9 @@ class PPResult(object):
         if latex:
             qdf = qdf.copy()
             qdf.rename(columns=get_latex_from_key, inplace=True)
+        # drop columns that have a single unique value
+        qdf = qdf.loc[:, qdf.nunique() > 1]
+        # get number of simulations to plot
         N = len(qdf) if nmax is None else min(nmax, len(qdf))
         # initialize figure
         if ax is None:
