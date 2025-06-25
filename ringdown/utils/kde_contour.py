@@ -274,7 +274,7 @@ def kdeplot_2d_clevels(xs, ys, levels=10, fill=False, n_grid=128, **kws):
         ax.contour(XS, YS, ZS, levels=lev, **kws)
 
 
-def kdeplot(x, y=None, orientation='vertical', **kws):
+def kdeplot(x, y=None, orientation='vertical', sort_hues=True, **kws):
     """ Plot a one-dimensional or two-dimensional kernel density estimate.
     Compatible with seaborn's `kdeplot`.
 
@@ -295,7 +295,10 @@ def kdeplot(x, y=None, orientation='vertical', **kws):
 
     if 'hue' in kws:
         hues = kws.pop('hue')
-        hues_unique = sorted(hues.unique())
+        if sort_hues:
+            hues_unique = sorted(hues.unique())
+        else:
+            hues_unique = hues
         n_hues = len(hues_unique)
 
         if 'palette' in kws:
