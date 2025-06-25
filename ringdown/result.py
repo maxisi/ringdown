@@ -1640,10 +1640,13 @@ class ResultCollection(utils.MultiIndexCollection):
             rc.set_imr_result(self.imr_result)
         return rc
 
-    def select(self, index: list | None = None) -> "ResultCollection":
+    def select(self, index: list | None = None,
+               simple_index: bool = False) -> "ResultCollection":
         """Select a subset of the collection."""
         if index is None:
             index = self.index
+        elif simple_index:
+            index = [tuple(idx) for idx in index]
         # Determine positions to keep
         locs = [i for i, idx_val in enumerate(self.index) if idx_val in index]
         # Build lists of selected results and corresponding indices
