@@ -246,7 +246,7 @@ class MultiIndexCollection(object):
             raise ValueError("Index must be unique.")
         # Create new collection with proper slicing
         return self.__class__(
-            data=[self.get(i) for i in index],
+            [self.get(i) for i in index],
             index=index,
             reference_mass=self.reference_mass,
             reference_time=self.reference_time,
@@ -267,11 +267,9 @@ class MultiIndexCollection(object):
         new_collection : MultiIndexCollection
             thinned collection.
         """
-        data = self.data[start_loc::n]
-        index = self.index[start_loc::n]
         return self.__class__(
-            data=data,
-            index=index,
+            self.data[start_loc::n],
+            index=self.index[start_loc::n],
             reference_mass=self.reference_mass,
             reference_time=self.reference_time,
         )
