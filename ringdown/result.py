@@ -2350,6 +2350,7 @@ class ResultCollection(utils.MultiIndexCollection):
             {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max}
         )
         joint_kws = {} if joint_kws is None else joint_kws.copy()
+        joint_kws.setdefault("palette", palette)
         joint_kws.update(kws)
         marginal_kws = {} if marginal_kws is None else marginal_kws.copy()
         for k in ["x_min", "x_max", "y_min", "y_max"]:
@@ -2393,6 +2394,7 @@ class ResultCollection(utils.MultiIndexCollection):
         grid.plot_joint(utils.kdeplot, **joint_kws)
 
         marginal_kws.setdefault("color", color)
+        marginal_kws.setdefault("palette", joint_kws["palette"])
         if "fill" in joint_kws:
             marginal_kws.setdefault("fill", joint_kws["fill"])
 
