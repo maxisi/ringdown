@@ -1613,56 +1613,6 @@ class ResultCollection(utils.MultiIndexCollection):
     def __repr__(self):
         return f"ResultCollection({self.index})"
 
-    def thin(self, n: int, start_loc: int = 0) -> "ResultCollection":
-        """Thin the collection by taking every `n`th result.
-
-        Arguments
-        ---------
-        n : int
-            number of results to skip between each result.
-        start_loc : int
-            starting location in the collection to thin from (def., 0).
-
-        Returns
-        -------
-        new_collection : ResultCollection
-            thinned collection.
-        """
-        results = self.results[start_loc::n]
-        index = self.index[start_loc::n]
-        rc = ResultCollection(
-            results=results,
-            index=index,
-            reference_mass=self.reference_mass,
-            reference_time=self.reference_time,
-        )
-        if self.imr_result is not None:
-            rc.set_imr_result(self.imr_result)
-        return rc
-
-    def select(self, index: list | None = None,
-               simple_index: bool = False) -> "ResultCollection":
-        """Select a subset of the collection."""
-        if index is None:
-            index = self.index
-        elif simple_index:
-            index = [tuple(idx) for idx in index]
-        # Determine positions to keep
-        locs = [i for i, idx_val in enumerate(self.index) if idx_val in index]
-        # Build lists of selected results and corresponding indices
-        selected_results = [self.results[i] for i in locs]
-        selected_index = [self.index[i] for i in locs]
-        # Create new collection with proper slicing
-        rc = ResultCollection(
-            results=selected_results,
-            index=selected_index,
-            reference_mass=self.reference_mass,
-            reference_time=self.reference_time,
-        )
-        if self.imr_result is not None:
-            rc.set_imr_result(self.imr_result)
-        return rc
-
     @property
     def has_imr_result(self) -> bool:
         """Check if the collection has an IMR result."""

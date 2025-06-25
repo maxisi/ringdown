@@ -234,6 +234,48 @@ class MultiIndexCollection(object):
     def get(self, key):
         return self.data[self.index.index(key)]
 
+    def select(self, index: list | None = None,
+               simple_index: bool = False) -> "MultiIndexCollection":
+        """Select a subset of the collection."""
+        if index is None:
+            index = self.index
+        elif simple_index:
+            index = [tuple(idx) for idx in index]
+        # Determine positions to keep
+        if len(index) != len(set(index)):
+            raise ValueError("Index must be unique.")
+        # Create new collection with proper slicing
+        return MultiIndexCollection(
+            data=[self.get(i) for i in index],
+            index=index,
+            reference_mass=self.reference_mass,
+            reference_time=self.reference_time,
+        )
+
+    def thin(self, n: int, start_loc: int = 0) -> "MultiIndexCollection":
+        """Thin the collection by taking every `n`th result.
+
+        Arguments
+        ---------
+        n : int
+            number of results to skip between each result.
+        start_loc : int
+            starting location in the collection to thin from (def., 0).
+
+        Returns
+        -------
+        new_collection : MultiIndexCollection
+            thinned collection.
+        """
+        data = self.data[start_loc::n]
+        index = self.index[start_loc::n]
+        return MultiIndexCollection(
+            data=data,
+            index=index,
+            reference_mass=self.reference_mass,
+            reference_time=self.reference_time,
+        )
+
     @property
     def as_dict(self):
         if self._key_size == 1:
