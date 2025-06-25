@@ -2565,8 +2565,14 @@ class PPResult(object):
         """
         return x * (1 - x) / n
 
-    def plot_quantiles(self, keys: list[str] | None = None, latex: bool = False,
-                       bins: int = 20, ax: None = None):
+    def plot_quantiles(self, keys: list[str] | None = None,
+                       latex: bool = False,
+                       bins: int = 20,
+                       palette: str | list[str] | None = None,
+                       ax: None = None,
+                       legend: bool = True,
+                       legend_kws: dict | None = None,
+                       **kws):
         """Plot the empirical quantiles of the injection marginal distribution.
 
         Arguments
@@ -2577,8 +2583,14 @@ class PPResult(object):
             whether to use LaTeX labels for the parameters (optional).
         bins : int
             number of bins in the histogram (optional).
+        palette : str | list[str] | None
+            color palette for the histogram (optional).
         ax : matplotlib.axes.Axes
             matplotlib axes object (optional).
+        legend : bool
+            whether to plot the legend (def., True).
+        legend_kws : dict
+            keyword arguments for the legend (optional).
 
         Returns
         -------
@@ -2602,9 +2614,8 @@ class PPResult(object):
         # drop columns that have a single unique value
         qdf = qdf.loc[:, qdf.nunique() > 1]
 
-        ax = sns.histplot(data=qdf, element='step', palette='husl',
+        ax = sns.histplot(data=qdf, element='step', palette=palette,
                           bins=bins, fill=False, ax=ax)
-
         # theoretical uncertainty from Binomial distribution
         n = len(qdf)
         p = 1 / bins
@@ -2623,6 +2634,17 @@ class PPResult(object):
         ax.set_xlim(0, 1)
         plt.xlabel('recovered quantile')
         plt.ylabel('count')
+        # custom legend: one line per column following the histplot palette
+        if legend:
+            from matplotlib.lines import Line2D
+            colors = sns.color_palette(palette, n_colors=len(qdf.columns))
+            handles = [Line2D([], [], color=c) for c in colors]
+            labels = qdf.columns.tolist()
+            ncol = 2 if len(labels) > 16 else 1
+            lkws = dict(bbox_to_anchor=(1.05, 1), loc='upper left',
+                        frameon=False, ncol=ncol)
+            lkws.update(legend_kws or {})
+            ax.legend(handles=handles, labels=labels, **lkws)
         return ax
 
     def plot(
@@ -2657,6 +2679,10 @@ class PPResult(object):
         difference : bool
             whether to plot the difference between the empirical and null
             distributions (def., `True`).
+        latex : bool
+            whether to use LaTeX labels for the parameters (optional).
+        palette : str | list[str] | None
+            color palette for the histogram (optional).
         legend : bool
             whether to plot the legend (def., `True`).
         legend_kws : dict
