@@ -298,7 +298,7 @@ def kdeplot(x, y=None, orientation='vertical', sort_hues=True, **kws):
         if sort_hues:
             hues_unique = sorted(hues.unique())
         else:
-            hues_unique = hues
+            hues_unique = hues.unique()
         n_hues = len(hues_unique)
 
         if 'palette' in kws:
