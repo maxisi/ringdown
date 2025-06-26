@@ -325,7 +325,7 @@ def main(args=None):
         "",
         "import ringdown as rd",
         "",
-        "results = rd.ResultCollection.from_netcdf('{}', load_h_de_mode=False)".format(
+        "results = rd.ResultCollection.from_netcdf('{}', load_h_det_mode=False)".format(
             PATHS["run_result"].format(i="*")
         ),
         "results.to_pp_result().to_hdf5()",
@@ -376,20 +376,24 @@ def main(args=None):
             "",
             f"cd {outdir}",
             "# prior job",
-            f'priorid=$(get_id "$(sbatch -p genx -c 4 -t 0-1 {PATHS["prior_exe"]})")',
+            f'priorid=$(get_id "$(sbatch -p genx -c 4 -t 0-1 {
+                PATHS["prior_exe"]})")',
             "",
             "# pp jobs",
-            f'ppid=$(get_id "$({command} --dependency=afterok:$priorid -p cca -n {NTASK} -c {NDEVICE} disBatch {PATHS["run_task"]})")',
+            f'ppid=$(get_id "$({command} --dependency=afterok:$priorid -p cca -n {
+                NTASK} -c {NDEVICE} disBatch {PATHS["run_task"]})")',
             "",
             "# collect job",
-            f"{command} --dependency=afterok:$ppid -p genx -c 4 -t 0-1 {PATHS['collect_exe']}",
+            f"{command} --dependency=afterok:$ppid -p genx -c 4 -t 0-1 {
+                PATHS['collect_exe']}",
             "cd -",
         ]
     else:
         # these options are set to match the GPU nodes at the Flatiron Institute
         # see https://wiki.flatironinstitute.org/SCC/Software/UsingTheGPUNodes
         NCPU = 16
-        prior_command = f"sbatch -p gpu --gpus-per-task=1 --cpus-per-task={NCPU} {PATHS['prior_exe']}"
+        prior_command = f"sbatch -p gpu --gpus-per-task=1 --cpus-per-task={
+            NCPU} {PATHS['prior_exe']}"
         pp_command = (
             f"{command} --dependency=afterok:$priorid -p gpu -n {NTASK} "
             f"--gpus-per-task={NDEVICE} "
@@ -418,7 +422,8 @@ def main(args=None):
             f'ppid=$(get_id "$({pp_command})")',
             "",
             "# collect job",
-            f"{command} --dependency=afterok:$ppid -p genx -c 4 -t 0-1 {PATHS['collect_exe']}",
+            f"{command} --dependency=afterok:$ppid -p genx -c 4 -t 0-1 {
+                PATHS['collect_exe']}",
             "cd -",
         ]
 
