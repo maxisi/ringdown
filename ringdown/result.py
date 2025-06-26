@@ -646,7 +646,7 @@ class Result(az.InferenceData):
     def ess(self) -> float:
         """Minimum effective sample size for all parameters in the result."""
         # check effective number of samples and rerun if necessary
-        ess = az.ess(self)
+        ess = az.ess(self.posterior)
         mess = ess.min()
         mess_arr = np.array([mess[k].values[()] for k in mess.keys()])
         return np.min(mess_arr)
@@ -1191,7 +1191,8 @@ class Result(az.InferenceData):
         return pd.Series(qs)
 
     def get_marginal_quantiles(
-        self, reference_values: dict | None = None
+        self, reference_values: dict | None = None,
+        downsample: int | bool = False,
     ) -> xr.Dataset:
         """Compute the marginal quantiles of the injection parameters.
 
@@ -1206,6 +1207,17 @@ class Result(az.InferenceData):
             Dataset of marginal quantiles.
         """
         samples = self.posterior
+        if downsample:
+            # downsample to requested size or closest integer multiple
+            # of chains
+            if not isinstance(downsample, int):
+                downsample = self.ess
+            n = max(0, int(downsample / samples.chain.size))
+            if n == 0:
+                logger.warning("Downsampling maxed out at number of chains"
+                               "(likely due to insufficient ESS)")
+            samples = samples.isel(draw=np.random.choice(samples.sizes["draw"],
+                                                         n, replace=False))
         d = ("chain", "draw")
         qs = {}
         for k, v in reference_values.items():
@@ -1220,20 +1232,20 @@ class Result(az.InferenceData):
                 qs[k] = (samples[k] <= np.array(v)[None, None, :]).mean(dim=d)
         return xr.Dataset(data_vars=qs)
 
-    @property
-    def injection_marginal_quantiles(self) -> xr.Dataset:
+    def get_injection_marginal_quantiles(self, **kws) -> xr.Dataset:
         """Compute the marginal quantiles of the injection parameters."""
         if not self.config.get("injection", None):
             return xr.Dataset()
-        return self.get_marginal_quantiles(self.config["injection"])
+        return self.get_marginal_quantiles(self.config["injection"], **kws)
 
-    def get_injection_marginal_quantiles_series(self, **kws) -> pd.Series:
+    def get_injection_marginal_quantiles_series(self, downsample: int | bool =
+                                                False, **kws) -> pd.Series:
         """Compute the marginal quantiles of the injection parameters."""
         # set labeling options (e.g., whether to show p index)
         fmt = self.default_label_format.copy()
         fmt.update(kws)
         # get quantile Dataset
-        qs = self.injection_marginal_quantiles
+        qs = self.get_injection_marginal_quantiles(downsample=downsample)
         # generate labeled dictionary of quantiles
         qdict = {}
         for k, q in qs.items():
@@ -2479,10 +2491,12 @@ class PPResult(object):
 
     @classmethod
     def from_results_collection(
-        cls, results: ResultCollection, prior: Result | None = None
+        cls, results: ResultCollection, prior: Result | None = None,
+        downsample: int | bool = False,
     ):
         """Construct a PPResult from a ResultCollection."""
-        quantiles = results.get_injection_marginal_quantiles_dataframe()
+        quantiles = results.get_injection_marginal_quantiles_dataframe(
+            downsample=downsample)
         truth = results.get_injection_parameters_dataframe(
             include_mf_snr=True, include_opt_snr=True
         )
