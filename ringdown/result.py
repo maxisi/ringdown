@@ -1210,12 +1210,15 @@ class Result(az.InferenceData):
         if downsample:
             # downsample to requested size or closest integer multiple
             # of chains
-            if not isinstance(downsample, int):
+            if isinstance(downsample, bool):
                 downsample = self.ess
-            n = max(0, int(downsample / samples.chain.size))
+            nchains = samples.chain.size
+            n = max(0, int(downsample / nchains))
             if n == 0:
-                logger.warning("Downsampling maxed out at number of chains"
-                               "(likely due to insufficient ESS)")
+                logger.warning(
+                    f"Downsampling maxed out at number of chains ({nchains}) "
+                    f"(possibly insufficient ESS {downsample})"
+                )
             samples = samples.isel(draw=np.random.choice(samples.sizes["draw"],
                                                          n, replace=False))
         d = ("chain", "draw")
@@ -1783,6 +1786,7 @@ class ResultCollection(utils.MultiIndexCollection):
         load_h_det_mode: bool = True,
         produce_h_det: bool = False,
         progress: bool = True,
+        max_length: int | None = None,
         **kws,
     ):
         """Load a collection of results from NetCDF files.
@@ -1804,6 +1808,9 @@ class ResultCollection(utils.MultiIndexCollection):
             index, or used to glob for files.
         progress : bool
             show progress bar (def., `True`)
+        max_length : int
+            maximum number of results to load; if not provided, will load all
+            results (useful for debugging).
         **kws : dict
             additional keyword arguments to pass to the constructor, like
             reference_mass or reference_time
@@ -1844,6 +1851,12 @@ class ResultCollection(utils.MultiIndexCollection):
                 )
         else:
             cpaths = [None] * len(paths)
+        if max_length is not None:
+            logger.info(f"Limiting to {max_length} results")
+            max_length = min(max_length, len(paths))
+            paths = paths[:max_length]
+            cpaths = cpaths[:max_length]
+            indxs = indxs[:max_length]
         results = []
         tqdm = utils.get_tqdm(progress)
         for path, cpath in tqdm(
@@ -2200,10 +2213,17 @@ class ResultCollection(utils.MultiIndexCollection):
                 snrs.append(snr)
         return np.stack(snrs)
 
+    @property
+    def ess(self) -> pd.Series:
+        """Effective sample size for each result in the collection."""
+        return pd.Series(
+            {k: r.ess for k, r in self.items()}
+        )
+
     # -----------------------------------------------------------------------
     # PLOTS
 
-    def to_pp_result(self, prior: Result | None = None) -> "PPResult":
+    def to_pp_result(self, prior: Result | None = None, **kws) -> "PPResult":
         """Convert the ResultCollection to a PPResult.
 
         Arguments
@@ -2217,7 +2237,7 @@ class ResultCollection(utils.MultiIndexCollection):
         pp_result : PPResult
             PPResult object.
         """
-        return PPResult.from_results_collection(self, prior)
+        return PPResult.from_results_collection(self, prior, **kws)
 
     def plot_mass_spin(
         self,
