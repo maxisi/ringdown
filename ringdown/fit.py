@@ -1797,7 +1797,8 @@ class Fit(object):
         """
         return {i: self.acfs[i].whiten(d) for i, d in datas.items()}
 
-    def compute_injected_snrs(self, optimal=True, network=True) -> dict | float:
+    def compute_injected_snrs(self, optimal=True, network=True,
+                              cumulative=False) -> dict | float:
         """Return a dictionary of injected SNRs for each detector.
 
         Arguments
@@ -1819,7 +1820,10 @@ class Fit(object):
             snrs = {i: 0.0 for i in self.ifos}
 
         winjs = self.whiten(self.analysis_injections)
-        opt_snrs = {ifo: np.linalg.norm(wi) for ifo, wi in winjs.items()}
+        if cumulative:
+            opt_snrs = {i: np.sqrt(np.cumsum(w**2)) for i, w in winjs.items()}
+        else:
+            opt_snrs = {i: np.linalg.norm(w) for i, w in winjs.items()}
 
         if optimal:
             snrs = opt_snrs
@@ -1827,7 +1831,11 @@ class Fit(object):
             wdata = self.whiten(self.analysis_data)
             snrs = {}
             for ifo, opt_snr in opt_snrs.items():
-                snrs[ifo] = np.dot(wdata[ifo], winjs[ifo]) / opt_snr
+                wdwh = wdata[ifo] * winjs[ifo]
+                if cumulative:
+                    snrs[ifo] = np.cumsum(wdwh) / opt_snr
+                else:
+                    snrs[ifo] = np.sum(wdwh) / opt_snr
 
         if network:
             return np.linalg.norm(list(snrs.values()))
