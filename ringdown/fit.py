@@ -1838,7 +1838,10 @@ class Fit(object):
                     snrs[ifo] = np.sum(wdwh) / opt_snr
 
         if network:
-            return np.linalg.norm(list(snrs.values()))
+            snr2 = 0
+            for s in snrs.values():
+                snr2 += s*s
+            return np.sqrt(snr2)
         else:
             return snrs
 
