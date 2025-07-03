@@ -1192,7 +1192,7 @@ class Result(az.InferenceData):
 
     def get_marginal_quantiles(
         self, reference_values: dict | None = None,
-        downsample: int | bool = False,
+        ess: int | bool = False,
     ) -> xr.Dataset:
         """Compute the marginal quantiles of the injection parameters.
 
@@ -1207,20 +1207,17 @@ class Result(az.InferenceData):
             Dataset of marginal quantiles.
         """
         samples = self.posterior
-        if downsample:
-            # downsample to requested size or closest integer multiple
-            # of chains
-            if isinstance(downsample, bool):
-                downsample = self.ess
+        if ess:
+            # thin chains to ESS or closest integer multiple of chains
+            if isinstance(ess, bool):
+                ess = self.ess
             nchains = samples.chain.size
-            n = max(0, int(downsample / nchains))
-            if n == 0:
-                logger.warning(
-                    f"Downsampling maxed out at number of chains ({nchains}) "
-                    f"(possibly insufficient ESS {downsample})"
-                )
-            samples = samples.isel(draw=np.random.choice(samples.sizes["draw"],
-                                                         n, replace=False))
+            ess_per_chain = max(1, int(ess / nchains))
+            if ess_per_chain == 1:
+                logger.warning("Requested one sample per chain.")
+            thin = max(1, int(samples.draw.size / ess_per_chain))
+            # select every thin samples along the draw dimension for all chains
+            samples = samples.isel(draw=slice(None, None, thin))
         d = ("chain", "draw")
         qs = {}
         for k, v in reference_values.items():
@@ -1360,10 +1357,30 @@ class Result(az.InferenceData):
         self,
         var_names: list[str] = ["a"],
         compact: bool = True,
+        injection: bool = True,
         *args,
         **kwargs,
     ):
-        """Alias for :func:`arviz.plot_trace`."""
+        """Alias for :func:`arviz.plot_trace`.
+
+        Arguments
+        ---------
+        var_names : list[str]
+            list of variable names to plot (def., `["a"]`).
+        compact : bool
+            use compact plot (def., `True`).
+        injection : bool
+            plot injection parameters (def., `True`).
+        *args, **kwargs : dict
+            additional arguments to pass to :func:`arviz.plot_trace`.
+        """
+        if injection:
+            injdict = self.info.get("injection", {})
+            lines = []
+            for k in var_names:
+                if k in injdict:
+                    lines.append((k, {}, np.atleast_1d(injdict[k])))
+            kwargs["lines"] = lines
         return az.plot_trace(
             self, compact=compact, var_names=var_names, *args, **kwargs
         )
@@ -2464,6 +2481,7 @@ class PPResult(object):
 
     _truth_group = "truths"
     _quantile_group = "quantiles"
+    _ess_group = "ess"
 
     def __init__(
         self,
@@ -2472,10 +2490,12 @@ class PPResult(object):
         prior: Result | None = None,
         rundir: str | None = None,
         info: dict | None = None,
+        ess: pd.Series | None = None,
     ):
         self.quantiles = quantiles
         self.truths = truth
         self.prior = prior
+        self.ess = ess
         self.rundir = rundir or ""
         self._info = info
         self._config = None
@@ -2512,7 +2532,7 @@ class PPResult(object):
     @classmethod
     def from_results_collection(
         cls, results: ResultCollection, prior: Result | None = None,
-        downsample: int | bool = False,
+        downsample: int | bool = False, include_ess: bool = True,
     ):
         """Construct a PPResult from a ResultCollection."""
         quantiles = results.get_injection_marginal_quantiles_dataframe(
@@ -2532,7 +2552,8 @@ class PPResult(object):
                 rundir = path
         else:
             rundir = ""
-        return cls(quantiles, truth, prior=prior, rundir=rundir)
+        ess = results.ess if include_ess else None
+        return cls(quantiles, truth, prior=prior, rundir=rundir, ess=ess)
 
     def to_hdf5(self, path: str | None = None) -> None:
         """Save the PPResult to an HDF5 file.
@@ -2549,6 +2570,8 @@ class PPResult(object):
             path = os.path.join(self.rundir, "pp_result.h5")
         self.quantiles.to_hdf(path, key=self._quantile_group, mode="w")
         self.truths.to_hdf(path, key=self._truth_group, mode="a")
+        if self.ess is not None:
+            self.ess.to_hdf(path, key=self._ess_group, mode="a")
         with h5py.File(path, "a") as f:
             f.attrs["rundir"] = self.rundir
             # JSON-encode the dict so it can be stored as a HDF5 attribute
@@ -2571,7 +2594,13 @@ class PPResult(object):
         else:
             config_str = config_attr
         info = json.loads(config_str)
-        return cls(quantiles, truth, rundir=rundir, info=info)
+        # Read effective sample size if present by checking HDF5 keys
+        ess = None
+        with pd.HDFStore(path, mode='r') as store:
+            hdf_key = f"/{cls._ess_group}"
+            if hdf_key in store.keys():
+                ess = store[cls._ess_group]
+        return cls(quantiles, truth, rundir=rundir, info=info, ess=ess)
 
     @staticmethod
     def _null_var(x, n):
