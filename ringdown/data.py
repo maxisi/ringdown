@@ -914,6 +914,7 @@ class PowerSpectrum(FrequencySeries):
         # check what type of LAL function we have
         try:
             p_ref = func(f_ref)
+
             def psd_func(f, f_low):
                 p = np.zeros_like(f)
                 p[f >= f_low] = np.vectorize(func)(f[f >= f_low])
@@ -927,7 +928,7 @@ class PowerSpectrum(FrequencySeries):
                                                      lal.DimensionlessUnit,
                                                      len(f)+1)
                 func(psd, f_low)
-                return  np.array(psd.data.data)[:-1]
+                return np.array(psd.data.data)[:-1]
             p_ref = psd_func([f_ref], f_ref)
 
         if fill_value is not None:
@@ -1268,8 +1269,8 @@ class AutoCovariance(TimeSeries):
             :class:`Data`.
         method : str
             whether to use Welch's method (``'fd'``), or simply auto-correlate
-            the data (``'td'``). The latter is highly discouraged and will
-            result in a warning. Defaults to `fd`.
+            the data (``'td'``). The latter is highly discouraged. Defaults to
+            `fd`.
         **kws :
             additional keyword arguments passed to
             :meth:`PowerSpectrum.fom_data`.
