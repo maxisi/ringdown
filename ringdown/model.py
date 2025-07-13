@@ -1062,6 +1062,8 @@ MODEL_VARIABLES_BY_MODE = [
     "dg",
     "df_unit",
     "dg_unit",
+    "g_latent",
+    "f_latent"
 ]
 MODEL_DIMENSIONS = {k: ["mode"] for k in MODEL_VARIABLES_BY_MODE}
 MODEL_DIMENSIONS["h_det"] = ["ifo", "time_index"]
