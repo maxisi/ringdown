@@ -317,7 +317,7 @@ class MultiIndexCollection(object):
             try:
                 return len(self.index[0])
             except TypeError:
-                return 1
+                return 0
         else:
             return 0
 
