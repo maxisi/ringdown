@@ -1760,6 +1760,8 @@ class ResultCollection(utils.MultiIndexCollection):
         t0s : np.ndarray
             array of analysis start times.
         """
+        if reference_time and not isinstance(reference_time, bool):
+            self.set_reference_time(reference_time)
         if reference_mass:
             targets = self.targets
             if not isinstance(reference_mass, bool):
