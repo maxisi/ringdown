@@ -234,6 +234,16 @@ class MultiIndexCollection(object):
     def get(self, key):
         return self.data[self.index.index(key)]
 
+    @property
+    def simplified_index(self) -> list:
+        """Simplified index for the collection, with unit-length tuples
+        converted to standalone items."""
+        if len(self) > 0 and self._key_size == 1:
+            index = [k[0] for k in self.index]
+        else:
+            index = self.index
+        return index
+
     def select(self, index: list | None = None,
                simple_index: bool = False) -> "MultiIndexCollection":
         """Select a subset of the collection."""
@@ -307,7 +317,7 @@ class MultiIndexCollection(object):
             try:
                 return len(self.index[0])
             except TypeError:
-                return 0
+                return 1
         else:
             return 0
 

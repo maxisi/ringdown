@@ -2147,16 +2147,6 @@ class ResultCollection(utils.MultiIndexCollection):
             }
         ).T
 
-    @property
-    def simplified_index(self) -> list:
-        """Simplified index for the collection, with unit-lenght tuples
-        converted to standalone items."""
-        if len(self) > 0 and len(self.index[0]) == 1:
-            index = [k[0] for k in self.index]
-        else:
-            index = self.index
-        return index
-
     def compute_posterior_snrs(self, **kws) -> np.ndarray:
         """Compute the posterior SNRs for each result in the collection.
         See :meth:`Result.compute_posterior_snrs` for details.
