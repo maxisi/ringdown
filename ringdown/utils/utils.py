@@ -304,7 +304,10 @@ class MultiIndexCollection(object):
     @property
     def _key_size(self):
         if len(self) > 0:
-            return len(self.index[0])
+            try:
+                return len(self.index[0])
+            except TypeError:
+                return 0
         else:
             return 0
 
