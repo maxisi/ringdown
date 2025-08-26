@@ -1,14 +1,16 @@
 numpy==2.2.6
 lalsuite==7.26.1
-h5py~=3.12
-arviz~=0.20
+h5py~=3.11
+arviz~=0.19
 pandas~=2.2
 qnm==0.4.4
 seaborn~=0.13
 jupyterlab
-tqdm
 ipywidgets
 ipykernel
 numpyro~=0.17
-jax~=0.5
-parse
+jax>=0.4.25,<0.6.1
+parse>=1.20
+jaxlib==0.4.38; sys_platform == 'darwin' and platform_machine == 'x86_64'
+tables~=3.10
+scipy==1.15
