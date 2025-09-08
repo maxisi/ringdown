@@ -1465,7 +1465,7 @@ class IMRResult(pd.DataFrame):
             # check if SNR at midpoint is within bounds
             snr_l, snr_m, snr_h = np.quantile(snrs[-1, :], qs)
             snr_halfway = np.median(snrs[len(snrs) // 2, :])
-            stable_snr = np.abs(snr_halfway - snr_m) < snr_h - snr_l
+            stable_snr = snr_l < snr_halfway < snr_h
             if stable_snr:
                 break
             n *= 2
