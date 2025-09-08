@@ -636,28 +636,46 @@ class IMRResult(pd.DataFrame):
         return_time: bool = False,
         **kws,
     ) -> data.StrainStack:
-        """Get the peak times of the waveform for a given set of detectors.
+        """Generate waveforms for a given number of samples and detectors.
 
         Arguments
         ---------
         nsamp : int | None
-            Number of samples to use for the peak time calculation; if None,
+            Number of posterior samples to use for waveform generation; if None,
             uses all samples in the DataFrame.
         ifos : list of str | None
-            List of detector names to use for the peak time calculation; if
-            None, uses all detectors in the DataFrame.
-        time : np.ndarray | None
-            Time array to use for the peak time calculation; if None, uses
-            a default time array.
+            List of detector names to generate waveforms for; if None, uses all
+            detectors in the DataFrame.
+        time : np.ndarray | dict | None
+            Time array or dictionary of time arrays (per detector) to use for
+            waveform generation; if None, uses a default time array.
         condition : dict | None
-            optional conditioning settings; can include a `t0` argument
-            which is itself a dictionary for different ifos.
+            Optional conditioning settings; can include a `t0` argument
+            which is itself a dictionary for different detectors.
+        cache : bool
+            If True, caches the generated waveforms for reuse.
         prng : np.random.RandomState | int | None
             Random number generator to use for sampling; if None, uses the
             default random number generator.
+        progress : bool
+            If True, displays a progress bar during waveform generation.
+        ringdown_settings : bool | None
+            If True, applies ringdown-specific settings; if None, defaults to
+            the value of `ringdown_slice`.
+        ringdown_slice : bool | None
+            If True, slices the waveforms to the ringdown analysis segment; if
+            None, defaults to the value of `ringdown_settings`.
+        return_time : bool
+            If True, returns the time arrays along with the waveforms.
         kws : dict
-            Additional keyword arguments to pass to the peak
-            time calculation.
+            Additional keyword arguments to pass to the waveform generation.
+
+        Returns
+        -------
+        data.StrainStack | tuple[data.StrainStack, dict]
+            Returns the generated waveforms as a `StrainStack` object. If
+            `return_time` is True, also returns a dictionary of time arrays
+            for each detector.
         """
         if cache and self._waveforms is not None:
             logger.info("using cached waveforms")
