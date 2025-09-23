@@ -234,7 +234,7 @@ class Series(pd.Series):
         ts.attrs.update(dict(load=info))
         return ts
 
-    _DEF_INTERP_KWS = dict(kind='cubic', fill_value=0, bounds_error=False)
+    _DEF_INTERP_KWS = dict(kind='linear', fill_value=0, bounds_error=False)
 
     def interpolate_to_index(self, new_index, **kwargs):
         """Reinterpolate the :class:`Series` to new index.
@@ -462,7 +462,8 @@ class FrequencySeries(Series):
             f_min = f_min_orig if f_min is None else f_min
             f_max = f_max_orig if f_max is None else f_max
             delta_f = delta_f or self.delta_f
-            n = int((f_max - f_min) / delta_f) + 1
+            # n = int((f_max - f_min) / delta_f) + 1
+            n = len(self.freq)
             freq = np.arange(n)*delta_f + f_min
 
         if min(freq) < f_min_orig or max(freq) > f_max_orig:
