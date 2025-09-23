@@ -1176,7 +1176,7 @@ class IMRResult(pd.DataFrame):
                 logger.info(f"no group provided; using {group}")
             config = pe.config.get(group, {}).get("config", {})
             p = {
-                i: data.PowerSpectrum(p).fill_low_frequencies().gate()
+                i: data.PowerSpectrum(p).fill_low_frequencies().gate().interpolate_to_index()
                 for i, p in pe.psd.get(group, {}).items()
             }
             attrs = (attrs or {}).update({"config": config})
@@ -1212,7 +1212,7 @@ class IMRResult(pd.DataFrame):
                             )
                 if "psds" in f[group]:
                     p = {
-                        i: data.PowerSpectrum(p).fill_low_frequencies().gate()
+                        i: data.PowerSpectrum(p).fill_low_frequencies().gate().interpolate_to_index()
                         for i, p in f[group]["psds"].items()
                     }
                 else:
@@ -1607,7 +1607,6 @@ class IMRResult(pd.DataFrame):
             path = os.path.abspath(path)
             r.attrs["path"] = path
             r.attrs.update(attrs)
-            r.set_psds(r.psds)
         else:
             r = cls(path, attrs=attrs, **kws)
         if psds is not None:
