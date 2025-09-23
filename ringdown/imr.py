@@ -446,7 +446,8 @@ class IMRResult(pd.DataFrame):
         """List of detectors in the DataFrame."""
         # try config first
         if "detectors" in self.attrs.get("config", {}):
-            return self.attrs["config"]["detectors"]
+            return [k.replace("'", "") for k in self.attrs["config"]['detectors']]
+            # return self.attrs["config"]['detectors']
         time_keys = [k for k in self.columns if TIME_KEY in k]
         return [k.replace(TIME_KEY, "") for k in time_keys]
 
@@ -803,9 +804,15 @@ class IMRResult(pd.DataFrame):
                     logger.warning("time arrays have inconsistent lengths")
 
         for _, sample in tqdm(df.iterrows(), **tqdm_kws):
-            h = waveforms.get_detector_signals(
-                times=time, ifos=ifos, **sample, **kws
+            if np.array([self.reference_frequency < self.minimum_frequency[ifo] for ifo in ifos]).any():
+                h = waveforms.get_detector_signals(
+                times=time, ifos=ifos, f_low=self.minimum_frequency['waveform'],
+                **sample, **kws
             )
+            else:
+                h = waveforms.get_detector_signals(
+                    times=time, ifos=ifos, **sample, **kws
+                )
             for ifo in ifos:
                 if condition:
                     # look for target time 't0' which can be a dict with
@@ -1600,6 +1607,7 @@ class IMRResult(pd.DataFrame):
             path = os.path.abspath(path)
             r.attrs["path"] = path
             r.attrs.update(attrs)
+            r.set_psds(r.psds)
         else:
             r = cls(path, attrs=attrs, **kws)
         if psds is not None:
