@@ -1933,7 +1933,7 @@ class Fit(object):
             approximant=approximant,
             reference_frequency=reference_frequency,
             psds=psds,
-            **imr_kws
+            **(imr_kws or {})
         )
         imr = fit.imr_result
 
