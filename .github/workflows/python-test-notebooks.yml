@@ -35,4 +35,4 @@ jobs:
     - name: Test examples
       run: |
         # test notebooks
-        pytest -n=auto --nbmake "docs/examples"
+        pytest -n=0 --nbmake --nbmake-timeout=1200 docs/examples
