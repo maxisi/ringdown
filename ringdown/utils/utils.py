@@ -373,8 +373,8 @@ def get_bilby_dict(d):
     """Parse bilby-style data dict string.
     """
     if isinstance(d, str):
-        chars_to_remove = "'{}"
+        chars_to_remove = " '{}"
         translation_table = str.maketrans('', '', chars_to_remove)
         d = {k.translate(translation_table): v.translate(translation_table)
-             for k, v in [i.split(':') for i in d.split(',')]}
+             for k, v in [i.split(':') for i in d.split(',') if ':' in i] }
     return d
