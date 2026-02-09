@@ -5,6 +5,7 @@ for ringdown data.
 __all__ = ["make_model", "get_arviz", "rd_design_matrix"]
 
 import numpy as np
+import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 
@@ -14,7 +15,7 @@ from . import qnms
 from .indexing import ModeIndexList
 from .result import Result
 from .utils.swsh import construct_sYlm, calc_YpYc
-from utils.matrix import apply_matrix_fft_precomputed, apply_cinv_gs_fast, next_fast_len
+from .utils.matrix import apply_matrix_fft_precomputed, apply_cinv_gs_fast, next_fast_len
 
 import arviz as az
 from arviz.data.base import dict_to_dataset
