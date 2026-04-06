@@ -16,7 +16,9 @@ import jaxlib.xla_extension
 import xarray as xr
 import lal
 import logging
+import scipy.linalg  # Added for AR coefficient calculation
 from .data import Data, AutoCovariance, PowerSpectrum
+import jax
 from . import utils
 from .utils import try_parse
 from .target import Target, TargetCollection
@@ -347,7 +349,7 @@ class Fit(object):
     @property
     def run_input(self) -> list:
         """Arguments to be passed to model function at runtime:
-        [times, strains, ls, fp, fc].
+        [times, strains, ar_coeffs, sigmas, fp, fc].
         """
         if not self.has_data:
             raise ValueError("no data loaded")
@@ -383,16 +385,40 @@ class Fit(object):
             np.array(d.time) - self.start_times[i] for i, d in data_dict.items()
         ]
 
+        # MODIFIED: Convert ACFs to AR Coefficients + Sigma for Gohberg-Semencul
+        ar_coeffs = []
+        sigmas = []
+
+        for acf_obj in self.acfs.values():
+            # Extract relevant ACF slice and normalize by strain scale^2
+            # (since strain is scaled by 'scale', Variance is scaled by 'scale^2')
+            acf_vals = acf_obj.iloc[: self.n_analyze].values / scale**2
+
+            # Use Levinson-Durbin (via Toeplitz solver) to get AR coeffs
+            # R * a = -r  where R is Toeplitz(acf[:-1]), r is acf[1:]
+            R = acf_vals[:-1]
+            r = acf_vals[1:]
+
+            # This solves for [a1, a2, ... ap]
+            a_coeffs = scipy.linalg.solve_toeplitz((R, R), -r)
+
+            # Prepend 1.0 to get full AR filter [1, a1, ... ap]
+            full_ar_coeffs = np.concatenate(([1.0], a_coeffs))
+            ar_coeffs.append(full_ar_coeffs)
+
+            # Calculate innovation variance (sigma^2)
+            # sigma^2 = gamma_0 + sum(a_k * gamma_k)
+            sigma_sq = acf_vals[0] + np.dot(a_coeffs, r)
+            sigmas.append(np.sqrt(sigma_sq))
+
         # arguments to be passed to function returned by model_function
         # make sure this agrees with that function call!
-        # [times, strains, ls, fp, fc]
+        # [times, strains, ar_coeffs, sigmas, fp, fc]
         input = [
             times,
             [s.values / scale for s in data_dict.values()],
-            [
-                (a.iloc[: self.n_analyze] / scale**2).cholesky
-                for a in self.acfs.values()
-            ],
+            ar_coeffs,  # New argument for optimized model
+            sigmas,     # New argument for optimized model
             fp,
             fc,
         ]

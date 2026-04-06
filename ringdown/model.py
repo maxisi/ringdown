@@ -5,6 +5,7 @@ for ringdown data.
 __all__ = ["make_model", "get_arviz", "rd_design_matrix"]
 
 import numpy as np
+import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 
@@ -14,6 +15,7 @@ from . import qnms
 from .indexing import ModeIndexList
 from .result import Result
 from .utils.swsh import construct_sYlm, calc_YpYc
+from .utils.matrix import apply_matrix_fft_precomputed, apply_cinv_gs_fast, next_fast_len
 
 import arviz as az
 from arviz.data.base import dict_to_dataset
@@ -186,10 +188,10 @@ def rd_design_matrix(
         dm = jnp.concatenate(
             [
                 # Yp * Fp * cos + Yc * Fc * sin
-                Yp_mat * dm[:, :, :nmode] + Yc_mat * dm[:, :, 3 * nmode :],
+                Yp_mat * dm[:, :, :nmode] + Yc_mat * dm[:, :, 3 * nmode:],
                 # Yp * Fp * sin - Yc * Fc * cos
-                Yp_mat * dm[:, :, nmode : 2 * nmode]
-                - Yc_mat * dm[:, :, 2 * nmode : 3 * nmode],
+                Yp_mat * dm[:, :, nmode: 2 * nmode]
+                - Yc_mat * dm[:, :, 2 * nmode: 3 * nmode],
             ],
             axis=2,
         )
@@ -272,9 +274,9 @@ def get_quad_derived_quantities(
         # ellip = 0 and theta = 0,pi/2 for the single polarization model
     else:
         apx_unit = quads[:nmodes]
-        apy_unit = quads[nmodes : 2 * nmodes]
-        acx_unit = quads[2 * nmodes : 3 * nmodes]
-        acy_unit = quads[3 * nmodes :]
+        apy_unit = quads[nmodes: 2 * nmodes]
+        acx_unit = quads[2 * nmodes: 3 * nmodes]
+        acy_unit = quads[3 * nmodes:]
 
         numpyro.deterministic("apx", apx_unit * a_scale)
         numpyro.deterministic("apy", apy_unit * a_scale)
@@ -525,7 +527,8 @@ def make_model(
     def model(
         times,
         strains,
-        ls,
+        ar_coeffs,
+        sigmas,
         fps,
         fcs,
         predictive: bool = predictive,
@@ -543,19 +546,43 @@ def make_model(
         strains : array_like
             The strain data; list of 1D arrays for each IFO, or a 2D array with
             shape (n_det, n_times).
-        ls : array_like
-            The noise covariance matrices; list of 2D arrays for each IFO, or a
-            3D array with shape (n_det, n_times, n_times).
+        ar_coeffs : array_like
+            The AR coefficients of the noise covariance (used for FFT inversion).
+        sigmas : array_like
+            The innovation standard deviation of the noise.
         fps : array_like
             The "plus" polarization coefficients for each IFO; length `n_det`.
         fcs : array_like
             The "cross" polarization coefficients for each IFO; length `n_det`.
         """
-        times, strains, ls, fps, fcs = map(
-            jnp.array, (times, strains, ls, fps, fcs)
+        times, strains, fps, fcs = map(
+            jnp.array, (times, strains, fps, fcs)
         )
+        ar_coeffs = [jnp.array(a) for a in ar_coeffs]
+        sigmas = jnp.array(sigmas)
 
         n_det = times.shape[0]
+        n_time = times.shape[1]
+
+        # ---------------------------------------------------------------------
+        # Precompute FFTs for GS Inversion (Optimization Trick)
+        # ---------------------------------------------------------------------
+        # We assume AR coeffs are constant per detector.
+        # Find optimal FFT size P + N - 1
+        P = ar_coeffs[0].shape[0]  # Order of AR model
+        n_fft = next_fast_len(n_time + P - 1)
+
+        fft_as = []
+        fft_bs = []
+
+        for i in range(n_det):
+            ac = ar_coeffs[i]
+            # A column: [1, a1, ... ap] padded
+            fft_as.append(jnp.fft.rfft(ac, n=n_fft))
+
+            # B column: [0, ap, ... a1] padded (reversed coeffs)
+            rev_coeffs = jnp.pad(ac[1:][::-1], (1, 0))
+            fft_bs.append(jnp.fft.rfft(rev_coeffs, n=n_fft))
 
         # Here is where the particular model choice is made:
         #
@@ -583,7 +610,8 @@ def make_model(
                 # which, happily, is provided by the composed transformation
                 f_latent = numpyro.sample(
                     "f_latent",
-                    dist.ImproperUniform(dist.constraints.real, (), (n_modes,)),
+                    dist.ImproperUniform(
+                        dist.constraints.real, (), (n_modes,)),
                 )
                 f_transform = dist.transforms.ComposeTransform(
                     [
@@ -594,7 +622,8 @@ def make_model(
                 )
                 f = numpyro.deterministic("f", f_transform(f_latent))
                 numpyro.factor(
-                    "f_transform", f_transform.log_abs_det_jacobian(f_latent, f)
+                    "f_transform", f_transform.log_abs_det_jacobian(
+                        f_latent, f)
                 )
 
                 g = numpyro.sample(
@@ -607,7 +636,8 @@ def make_model(
 
                 g_latent = numpyro.sample(
                     "g_latent",
-                    dist.ImproperUniform(dist.constraints.real, (), (n_modes,)),
+                    dist.ImproperUniform(
+                        dist.constraints.real, (), (n_modes,)),
                 )
                 g_transform = dist.transforms.ComposeTransform(
                     [
@@ -618,7 +648,8 @@ def make_model(
                 )
                 g = numpyro.deterministic("g", g_transform(g_latent))
                 numpyro.factor(
-                    "g_transform", g_transform.log_abs_det_jacobian(g_latent, g)
+                    "g_transform", g_transform.log_abs_det_jacobian(
+                        g_latent, g)
                 )
             else:
                 f = numpyro.sample("f", dist.Uniform(f_min, f_max))
@@ -726,8 +757,10 @@ def make_model(
                     # and the strain (y) for the current detector
                     # (ndet, ntime, nquads*nmode) => (i, ntime, nquads*nmode)
                     M = dms[i, :, :]
-                    L = ls[i, :, :]
                     y = strains[i, :]
+                    sigma = sigmas[i]
+                    fft_a = fft_as[i]
+                    fft_b = fft_bs[i]
 
                     # M acts as a coordinate transformation matrix, taking us
                     # from the space of quadratures to the space of the data ,
@@ -744,9 +777,18 @@ def make_model(
                     # likelihood precision (M^T C^-1 M):
                     #   A_inv = Lambda_inv + M^T C^-1 M
                     # so that A and A_inv are (nquads*nmode, nquads*nmode)
-                    A_inv = Lambda_inv + jnp.dot(
-                        M.T, jsp.linalg.cho_solve((L, True), M)
-                    )
+
+                    # 1. Compute C^{-1} terms using FFT-GS
+                    # C^{-1} y
+                    Cinv_y = apply_cinv_gs_fast(y, fft_a, fft_b, n_fft, sigma)
+
+                    # C^{-1} M (Vectorized over columns)
+                    # Helper closure for vmap
+                    def fast_gs_col(col): return apply_cinv_gs_fast(
+                        col, fft_a, fft_b, n_fft, sigma)
+                    Cinv_M = jax.vmap(fast_gs_col, in_axes=1, out_axes=1)(M)
+
+                    A_inv = Lambda_inv + jnp.dot(M.T, Cinv_M)
                     A_inv_chol = jsp.linalg.cholesky(A_inv, lower=True)
 
                     # we can also compute the marginal-posterior mean (a),
@@ -754,11 +796,8 @@ def make_model(
                     # (mu) and the likelihood mean (M^T C^-1 y):
                     #   a = A_inv (Lambda_inv mu + M^T C^-1 y)
                     # so that a is (nquads*nmode,)
-                    a = jsp.linalg.cho_solve(
-                        (A_inv_chol, True),
-                        jnp.dot(Lambda_inv, mu)
-                        + jnp.dot(M.T, jsp.linalg.cho_solve((L, True), y)),
-                    )
+                    rhs = jnp.dot(Lambda_inv, mu) + jnp.dot(M.T, Cinv_y)
+                    a = jsp.linalg.cho_solve((A_inv_chol, True), rhs)
 
                     # the mean (b) of the marginal likelihood p(y|b, B),
                     # i.e., the likelihood obtained after integrating out
@@ -789,17 +828,14 @@ def make_model(
                     # ignore the 2pi factor since it introduces a term like
                     # - 0.5*ntime*log(2pi), which is constant
                     r = y - b
-                    Cinv_r = jsp.linalg.cho_solve((L, True), r)
 
-                    M_A_Mt_Cinv_r = jnp.dot(
-                        M,
-                        jsp.linalg.cho_solve(
-                            (A_inv_chol, True), jnp.dot(M.T, Cinv_r)
-                        ),
-                    )
+                    # Need C^{-1} r
+                    Cinv_r = apply_cinv_gs_fast(r, fft_a, fft_b, n_fft, sigma)
 
-                    Cinv_M_A_Mt_Cinv_r = jsp.linalg.cho_solve(
-                        (L, True), M_A_Mt_Cinv_r
+                    Mt_Cinv_r = jnp.dot(M.T, Cinv_r)
+                    woodbury_corr = jnp.dot(
+                        Mt_Cinv_r.T,
+                        jsp.linalg.cho_solve((A_inv_chol, True), Mt_Cinv_r)
                     )
 
                     # now all we have left to compute is the log determinant
@@ -814,8 +850,13 @@ def make_model(
                     # writing similarly for |A| and |Lambda|, we thus have
                     # that log_sqrt_det_B = 0.5 log|B| is
                     # (note that |A| = -|A_inv|)
+
+                    # Log Determinants
+                    # log|C| approx 2 * N * log(sigma) for AR process
+                    log_det_C = 2.0 * len(y) * jnp.log(sigma)
+
                     log_sqrt_det_B = (
-                        jnp.sum(jnp.log(jnp.diag(L)))
+                        0.5 * log_det_C
                         - jnp.sum(jnp.log(jnp.diag(Lambda_inv_chol)))
                         + jnp.sum(jnp.log(jnp.diag(A_inv_chol)))
                     )
@@ -823,7 +864,7 @@ def make_model(
                     # putting it all together we can get the contribution
                     # to the log likelihood from this detector
                     logl = (
-                        -0.5 * jnp.dot(r, Cinv_r - Cinv_M_A_Mt_Cinv_r)
+                        -0.5 * (jnp.dot(r, Cinv_r) - woodbury_corr)
                         - log_sqrt_det_B
                     )
 
@@ -952,13 +993,18 @@ def make_model(
 
             if not prior:
                 for i, strain in enumerate(strains):
-                    numpyro.sample(
-                        f"logl_{i}",
-                        dist.MultivariateNormal(
-                            h_det[i, :], scale_tril=ls[i, :, :]
-                        ),
-                        obs=strain,
-                    )
+                    # Compute log likelihood using GS: -0.5 * r^T C^{-1} r - log_det
+                    model_strain = h_det[i, :]
+                    r = strain - model_strain
+                    sigma = sigmas[i]
+
+                    Cinv_r = apply_cinv_gs_fast(
+                        r, fft_as[i], fft_bs[i], n_fft, sigma)
+                    log_det_C = 2.0 * len(r) * jnp.log(sigma)
+
+                    logl = -0.5 * jnp.dot(r, Cinv_r) - 0.5 * log_det_C
+
+                    numpyro.factor(f"logl_{i}", logl)
 
     return model
 
@@ -1049,7 +1095,8 @@ def get_arviz(
     if len(modes) != n_mode:
         raise ValueError(f"expected {n_mode} modes, got {len(modes)}")
     # get ifo from shape of Fc, assuming it's last argument provided to model
-    n_ifo = len(sampler._args[-1])
+    # NOTE: In new model signature, fcs is at index 5. strains is index 1.
+    n_ifo = len(sampler._args[1])
     if ifos is None:
         ifos = np.arange(n_ifo, dtype=int)
     elif len(ifos) != n_ifo:
@@ -1073,13 +1120,22 @@ def get_arviz(
         in_dims = {
             "time": ["ifo", "time_index"],
             "strain": ["ifo", "time_index"],
-            "cholesky_factor": ["ifo", "time_index", "time_index_1"],
+            "ar_coeffs": ["ifo", "ar_lag"],
+            "sigma": ["ifo"],
             "fp": ["ifo"],
             "fc": ["ifo"],
             "epoch": ["ifo"],
         }
+        # Updated mapping for new model signature
+        # args: (times, strains, ar_coeffs, sigmas, fps, fcs)
+        args = sampler._args
         in_data = {
-            k: np.array(v) for k, v in zip(in_dims.keys(), sampler._args)
+            "time": np.array(args[0]),
+            "strain": np.array(args[1]),
+            # "ar_coeffs": np.array(args[2]), # Might be list of arrays, skip for simple netcdf
+            "sigma": np.array(args[3]),
+            "fp": np.array(args[4]),
+            "fc": np.array(args[5]),
         }
         in_data["epoch"] = np.array(epoch)
         in_data["scale"] = scale or 1.0
@@ -1087,6 +1143,7 @@ def get_arviz(
         if injections is not None:
             in_data["injection"] = np.array(injections)
             in_dims["injection"] = ["ifo", "time_index"]
+
         dims.update(in_dims)
         obs_data = {"strain": in_data.pop("strain")}
     else:
