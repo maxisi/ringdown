@@ -31,6 +31,7 @@ def rd_design_matrix(
     Ascales,
     aligned=False,
     YpYc=None,
+    dpsi=None,
     single_polarization=False,
 ):
     """Construct the design matrix for a generic ringdown model.
@@ -126,8 +127,8 @@ def rd_design_matrix(
         M = \\begin{pmatrix}
             F_+ Y_{\\ell m}^+ \\cos\\omega t + F_\\times Y_{\\ell m}^\\times
             \\sin\\omega t \\\\
-            F_+ Y_{\\ell m}^+ \\sin\\omega t + F_\\times Y_{\\ell m}^\\times
-            \\sin\\omega t \\\\
+            F_+ Y_{\\ell m}^+ \\sin\\omega t - F_\\times Y_{\\ell m}^\\times
+            \\cos\\omega t \\\\
         \\end{pmatrix}
 
     This function effects that summation to return a design matrix
@@ -164,7 +165,7 @@ def rd_design_matrix(
     f = jnp.reshape(f, (1, 1, nmode))
     gamma = jnp.reshape(gamma, (1, 1, nmode))
     Fp = jnp.reshape(Fp, (nifo, 1, 1))
-    Fc = jnp.reshape(Fc, (nifo, 1, 1))
+    Fc = jnp.reshape(Fc, (nifo, 1, 1))        
     Ascales = jnp.reshape(Ascales, (1, 1, nmode))
 
     # ct and st will have shape (1, nt, nmode)
@@ -175,6 +176,13 @@ def rd_design_matrix(
     if single_polarization:
         dm = jnp.concatenate((Fp * ct, Fp * st), axis=2)
     else:
+        if aligned:
+            d2psix_mat = jnp.reshape(dpsi[0], (1, 1, 1))
+            d2psiy_mat = jnp.reshape(dpsi[1], (1, 1, 1))
+            # Fp' = Fp * cos(2dpsi) - Fc * sin(2dpsi)
+            # Fc' = Fc * cos(2dpsi) + Fp * sin(2dpsi)
+            Fp, Fc = ((Fp*d2psix_mat) - (Fc*d2psiy_mat), 
+                        (Fc*d2psix_mat) + (Fp*d2psiy_mat))
         dm = jnp.concatenate((Fp * ct, Fp * st, Fc * ct, Fc * st), axis=2)
 
     if aligned and not single_polarization:
@@ -333,6 +341,7 @@ def make_model(
     cosi_min: float | None = None,
     cosi_max: float | None = None,
     cosi: float | None = None,
+    dpsi: float | None = None,
     df_min: None | float | list[None | float] = None,
     df_max: None | float | list[None | float] = None,
     dg_min: None | float | list[None | float] = None,
@@ -390,6 +399,12 @@ def make_model(
         The inclination angle to the angular orbital momentum of the black
         hole. If not `None`, then `cosi_min` and `cosi_max` are ignored and
         the value of `cosi` is fixed.
+
+    dpsi: float or None
+        The arbitrary polarization angle by which we can clockwise rotate the 
+        wave frame around z-hat. In the case of theta = 0 for the aligned model, 
+        psi and theta are degenerate. If not `None` then the value of `dpsi` is
+        fixed.
 
     df_min : None or float or list[None or float]
         The minimum fractional deviation from the GR frequency.  If a list
@@ -505,6 +520,7 @@ def make_model(
     if cosi_min is not None and cosi_max is None:
         cosi_max = 1.0
     fixed_cosi = None
+    fixed_dpsi = None
 
     if cosi_min is not None or cosi is not None:
         if isinstance(modes, int):
@@ -517,6 +533,8 @@ def make_model(
                     "ignoring cosi_min and cosi_max since cosi is fixed"
                 )
             fixed_cosi = cosi
+        if dpsi is not None:
+            fixed_dpsi = dpsi
         mode_array = np.array(modes)
         swsh = construct_sYlm(-2, mode_array[:, 2], mode_array[:, 3])
     else:
@@ -672,11 +690,50 @@ def make_model(
         # various modes should be established, and we can proceed with the
         # rest of the model.
 
+        d2psix, d2psiy = None, None
         if swsh:
+            # if fixed_cosi is None:
+            #     # cosi = numpyro.sample("cosi", dist.Uniform(cosi_min, cosi_max))
+                
+            # else:
+            #     cosi = fixed_cosi
+            # YpYc = calc_YpYc(cosi, swsh)
+            # sini = jnp.sqrt(1 - cosi*cosi)
             if fixed_cosi is None:
-                cosi = numpyro.sample("cosi", dist.Uniform(cosi_min, cosi_max))
+                # cosi = numpyro.sample("cosi", dist.Uniform(cosi_min, cosi_max))
+                cosi_unit = numpyro.sample("cosi_unit", dist.Normal(0, 1))
+                # cosi_norm = jnp.sqrt(dpsix_unit*dpsix_unit + dpsiy_unit*dpsiy_unit + cosi_unit*cosi_unit)
+                if fixed_dpsi is None:
+                    polx_unit = numpyro.sample("polx_unit", dist.Normal(0, 1))
+                    poly_unit = numpyro.sample("poly_unit", dist.Normal(0, 1))
+                    pol_norm = jnp.sqrt(polx_unit*polx_unit + poly_unit*poly_unit + cosi_unit*cosi_unit)
+                    polx, poly = polx_unit/pol_norm, poly_unit/pol_norm
+                    dpsi = numpyro.deterministic("dpsi", jnp.arctan2(poly, polx))
+                    d2psix, d2psiy = jnp.cos(2*dpsi), jnp.sin(2*dpsi)
+                    # dpsix_unit = numpyro.sample("dpsix_unit", dist.Normal(0, 1))
+                    # dpsiy_unit = numpyro.sample("dpsiy_unit", dist.Normal(0, 1))
+                    # # dpsi = numpyro.deterministic("dpsi", jnp.arctan2(dpsix_unit, dpsiy_unit)/2)
+                    # dpsi_norm = jnp.sqrt(dpsix_unit*dpsix_unit + dpsiy_unit*dpsiy_unit)
+                    # dpsix, dpsiy = dpsix_unit/dpsi_norm, dpsiy_unit/dpsi_norm
+                else:
+                    dpsi = fixed_dpsi
+                    d2psix = jnp.cos(2*dpsi)
+                    d2psiy = jnp.sin(2*dpsi)
+                cosi_norm = jnp.sqrt(polx_unit*polx_unit + poly_unit*poly_unit + cosi_unit*cosi_unit)
+                cosi = numpyro.deterministic("cosi", cosi_unit/cosi_norm)
             else:
                 cosi = fixed_cosi
+                if fixed_dpsi is None:
+                    polx_unit = numpyro.sample("polx_unit", dist.Normal(0, 1))
+                    poly_unit = numpyro.sample("poly_unit", dist.Normal(0, 1))
+                    # pol_norm = jnp.sqrt(polx_unit*polx_unit + poly_unit*poly_unit + cosi_unit*cosi_unit)
+                    # polx, poly = polx_unit/pol_norm, poly_unit/pol_norm
+                    dpsi = numpyro.deterministic("dpsi", jnp.arctan2(poly_unit, polx_unit))
+                    d2psix, d2psiy = jnp.cos(2*dpsi), jnp.sin(2*dpsi)
+                else:
+                    dpsi = fixed_dpsi
+                    d2psix = jnp.cos(2*dpsi)
+                    d2psiy = jnp.sin(2*dpsi)
             YpYc = calc_YpYc(cosi, swsh)
         else:
             YpYc = None
@@ -700,6 +757,7 @@ def make_model(
                 fcs,
                 a_scale,
                 aligned=swsh,
+                dpsi=[d2psix, d2psiy],
                 YpYc=YpYc,
                 single_polarization=single_polarization,
             )
@@ -856,6 +914,7 @@ def make_model(
                         "ay_unit", dist.Normal(0, 1), sample_shape=(n_modes,)
                     )
                     unit_quads = jnp.concatenate((ax_unit, ay_unit))
+                    # dpsi = numpyro.deterministic("dpsi", jnp.arctan2(dpsiy, dpsix)/2)
                 else:
                     apx_unit = numpyro.sample(
                         "apx_unit", dist.Normal(0, 1), sample_shape=(n_modes,)
@@ -893,6 +952,7 @@ def make_model(
                 fcs,
                 a_scales,
                 aligned=swsh,
+                dpsi=[d2psix, d2psiy],
                 YpYc=YpYc,
                 single_polarization=single_polarization,
             )
@@ -904,6 +964,7 @@ def make_model(
                     "ay_unit", dist.Normal(0, 1), sample_shape=(n_modes,)
                 )
                 quads = jnp.concatenate((ax_unit, ay_unit))
+                # dpsi = numpyro.deterministic("dpsi", jnp.arctan2(dpsiy/dpsix)/2)
             else:
                 apx_unit = numpyro.sample(
                     "apx_unit", dist.Normal(0, 1), sample_shape=(n_modes,)
