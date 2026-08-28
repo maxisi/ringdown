@@ -18,6 +18,5 @@ dependencies:
   - numpyro=0.15
   - jax=0.4
   - parse
-  - wget
   - pip:
     - git+https://github.com/maxisi/ringdown.git
