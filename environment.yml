@@ -2,7 +2,7 @@ name: ringdown
 channels:
   - conda-forge
 dependencies:
-  - python=3.12
+  - python=3.13
   - numpy=2.5.2
   - lalsuite=7.26
   - h5py=3.16
