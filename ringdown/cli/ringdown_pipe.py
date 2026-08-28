@@ -156,7 +156,7 @@ def main(args=None):
 
     # Set the environment variable so child processes inherit it
     os.environ["RINGDOWN_DEVICE_COUNT"] = str(NDEVICE)
-    
+
     task_opts = [
         "-o {result}",
         f"--platform {args.platform}",

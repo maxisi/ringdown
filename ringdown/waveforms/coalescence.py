@@ -736,15 +736,15 @@ class Coalescence(Signal):
         if window and tcSample >= waveTcSample and not subsample_placement:
             # smoothly turn on waveform
             w = tukey(bufWaveLength, window)
-            w[int(0.5 * bufWaveLength) :] = 1.0
+            w[int(0.5 * bufWaveLength):] = 1.0
         else:
             # no window
             w = 1
 
         h = np.zeros(bufLength, dtype=complex)
         h[bufStartIndex:bufEndIndex] = w * (
-            hp_d[waveStartIndex : waveStartIndex + bufWaveLength]
-            - 1j * hc_d[waveStartIndex : waveStartIndex + bufWaveLength]
+            hp_d[waveStartIndex: waveStartIndex + bufWaveLength]
+            - 1j * hc_d[waveStartIndex: waveStartIndex + bufWaveLength]
         )
         all_kws.update(pars.to_dict())
         return cls(h, index=time, parameters=all_kws)
@@ -799,7 +799,8 @@ class Coalescence(Signal):
                 ma = ls.SimInspiralCreateModeArray()
                 for ell in range(2, ell_max + 1):
                     ls.SimInspiralModeArrayActivateAllModesAtL(ma, ell)
-                    ls.SimInspiralWaveformParamsInsertModeArray(dict_params, ma)
+                    ls.SimInspiralWaveformParamsInsertModeArray(
+                        dict_params, ma)
 
             pars = Parameters.construct(**kws)
             args = pars.get_choosetdmodes_args(self.delta_t)

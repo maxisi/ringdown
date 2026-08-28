@@ -198,7 +198,8 @@ class IMRResult(pd.DataFrame):
     @property
     def approximant(self) -> str | None:
         """Waveform approximant used in analysis."""
-        config_approx = self.attrs.get("config", {}).get("waveform-approximant")
+        config_approx = self.attrs.get(
+            "config", {}).get("waveform-approximant")
         return self.attrs.get("approximant", config_approx)
 
     def set_approximant(self, approximant: str) -> None:
@@ -530,7 +531,8 @@ class IMRResult(pd.DataFrame):
             for _, sample in tqdm(
                 df.iterrows(), total=len(df), ncols=None, desc="peak time"
             ):
-                h = waveforms.Coalescence.from_parameters(time, **sample, **kws)
+                h = waveforms.Coalescence.from_parameters(
+                    time, **sample, **kws)
                 tp = h.get_invariant_peak_time()
                 tp_dict = {}
                 for ifo in ifos:
@@ -807,9 +809,9 @@ class IMRResult(pd.DataFrame):
         for _, sample in tqdm(df.iterrows(), **tqdm_kws):
             if np.array([self.reference_frequency < self.minimum_frequency[ifo] for ifo in ifos]).any():
                 h = waveforms.get_detector_signals(
-                times=time, ifos=ifos, f_low=self.minimum_frequency['waveform'],
-                **sample, **kws
-            )
+                    times=time, ifos=ifos, f_low=self.minimum_frequency['waveform'],
+                    **sample, **kws
+                )
             else:
                 h = waveforms.get_detector_signals(
                     times=time, ifos=ifos, **sample, **kws
@@ -854,7 +856,7 @@ class IMRResult(pd.DataFrame):
             new_time_dict = {}
             for i, t in time_dict.items():
                 i0_dict[i] = np.argmin(abs(t - start_times[i]))
-                new_time_dict[i] = t[i0_dict[i] : i0_dict[i] + n]
+                new_time_dict[i] = t[i0_dict[i]: i0_dict[i] + n]
             h = h.slice(i0_dict, n)
             time_dict = new_time_dict
 
@@ -1180,7 +1182,8 @@ class IMRResult(pd.DataFrame):
                 logger.info(f"no group provided; using {group}")
             config = pe.config.get(group, {}).get("config", {})
             p = {
-                i: data.PowerSpectrum(p).fill_low_frequencies().gate().interpolate_to_index()
+                i: data.PowerSpectrum(p).fill_low_frequencies(
+                ).gate().interpolate_to_index()
                 for i, p in pe.psd.get(group, {}).items()
             }
             attrs = (attrs or {}).update({"config": config})
@@ -1216,7 +1219,8 @@ class IMRResult(pd.DataFrame):
                             )
                 if "psds" in f[group]:
                     p = {
-                        i: data.PowerSpectrum(p).fill_low_frequencies().gate().interpolate_to_index()
+                        i: data.PowerSpectrum(p).fill_low_frequencies(
+                        ).gate().interpolate_to_index()
                         for i, p in f[group]["psds"].items()
                     }
                 else:

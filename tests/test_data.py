@@ -69,7 +69,8 @@ def test_power_spectrum_gate_and_fill_power_of_two():
 
     # 0..1023 Hz at 1 Hz spacing: constructor should append 1024 Hz
     f_odd = np.arange(1024, dtype=float)
-    filled = rd.PowerSpectrum(np.ones_like(f_odd) * 1e-46, index=f_odd, ifo="V1")
+    filled = rd.PowerSpectrum(np.ones_like(
+        f_odd) * 1e-46, index=f_odd, ifo="V1")
     assert filled.index[-1] == 1024
     assert filled.ifo == "V1"
 

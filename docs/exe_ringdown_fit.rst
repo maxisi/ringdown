@@ -8,5 +8,5 @@ Command line
 
    Example config
    ==============
-   
+
    An example configuration file can be found in `../etc/`
