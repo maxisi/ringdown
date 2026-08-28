@@ -63,7 +63,7 @@ templates_path = ['_templates']
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = []
+exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 # autodoc_mock_imports = ["pymc"]
 
@@ -85,4 +85,5 @@ nbsphinx_epilog = """
           `downloaded here <https://github.com/maxisi/ringdown/tree/main/docs/{{ docname }}>`_.
 """
 
+nbsphinx_execute = 'never'
 nbsphinx_timeout = 30
