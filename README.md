@@ -10,7 +10,7 @@ Bayesian analysis of black hole ringdowns.  The original paper that inspired thi
 
 ## Installation
 
-Requires Python 3.12. Intel Macs are not supported (JAX no longer ships x86_64 macOS wheels).
+Requires Python 3.12 or 3.13. Intel Macs are not supported (JAX no longer ships x86_64 macOS wheels).
 
 This package is pip installable:
 
