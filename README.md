@@ -10,6 +10,8 @@ Bayesian analysis of black hole ringdowns.  The original paper that inspired thi
 
 ## Installation
 
+Requires Python 3.12. Intel Macs are not supported (JAX no longer ships x86_64 macOS wheels).
+
 This package is pip installable:
 
 ```shell
@@ -27,7 +29,7 @@ pip install git+https://github.com/maxisi/ringdown.git
 The default install provides a CPU build of JAX. To run on NVIDIA GPUs, upgrade JAX after installing `ringdown`:
 
 ```shell
-pip install --upgrade "jax[cuda]>=0.4.25,<0.6.1"
+pip install --upgrade "jax[cuda12]==0.11.1"
 ```
 
 See the [JAX documentation](https://jax.readthedocs.io/en/latest/installation.html) for CUDA version details and other accelerators.

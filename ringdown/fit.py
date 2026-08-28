@@ -12,7 +12,6 @@ import warnings
 import inspect
 import jax
 import numpyro
-import jaxlib.xla_extension
 import xarray as xr
 import lal
 import logging
@@ -1033,7 +1032,7 @@ class Fit(object):
         rescale_strain: bool = True,
         suppress_warnings: bool = True,
         min_ess: int | None = None,
-        prng: jaxlib.xla_extension.ArrayImpl | int | None = None,
+        prng: jax.Array | int | None = None,
         validation_enabled: bool = False,
         **kwargs,
     ):
@@ -1102,7 +1101,7 @@ class Fit(object):
 
         # log some runtime information
         jax_device_count = jax.device_count()
-        platform = jax.lib.xla_bridge.get_backend().platform.upper()
+        platform = jax.default_backend().upper()
         omp_num_threads = int(os.environ.get("OMP_NUM_THREADS", 1))
         logger.info(
             f"running on {jax_device_count} {platform} using "
@@ -2071,7 +2070,7 @@ class FitSequence(Fit):
         rescale_strain: bool = True,
         suppress_warnings: bool = True,
         min_ess: int | None = None,
-        prng: jaxlib.xla_extension.ArrayImpl | int | None = None,
+        prng: jax.Array | int | None = None,
         validation_enabled: bool = False,
         individual_progress_bars: bool = False,
         recondition: bool = True,
@@ -2134,7 +2133,7 @@ class FitSequence(Fit):
 
         # log some runtime information
         jax_device_count = jax.device_count()
-        platform = jax.lib.xla_bridge.get_backend().platform.upper()
+        platform = jax.default_backend().upper()
         omp_num_threads = int(os.environ.get("OMP_NUM_THREADS", 1))
         logger.info(
             f"running on {jax_device_count} {platform} using "
