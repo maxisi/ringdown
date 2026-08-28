@@ -45,7 +45,7 @@ build-backend = "hatchling.build"
 
 [project.optional-dependencies]
 extra = [
-    "gwpy==3.0.10",
+    "gwpy==4.0.2",
 ]
 
 [project.urls]
