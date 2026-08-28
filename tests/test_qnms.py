@@ -1,6 +1,7 @@
 import pytest
 import ringdown.qnms
 import ringdown.result
+import ringdown.labeling
 
 T_MSUN = 4.9254909476412675e-06
 M_REF = 70
@@ -52,14 +53,14 @@ class TestKerrMode:
 
 
 def test_get_parameter_label_map():
-    ringdown.qnms.get_parameter_label_map(
+    ringdown.labeling.get_parameter_label_map(
         pars=ringdown.result._DATAFRAME_PARAMETERS,
         modes=FTAU_REF.keys())
 
 
 @pytest.mark.parametrize("parameter", ringdown.result._DATAFRAME_PARAMETERS)
 def test_parameter_label(parameter):
-    p = ringdown.qnms.ParameterLabel(parameter)
+    p = ringdown.labeling.ParameterLabel(parameter)
     assert isinstance(p.get_label(latex=True), str)
     assert isinstance(p.get_label(latex=False), str)
     assert isinstance(p.get_key(), str)

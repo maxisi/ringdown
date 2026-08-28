@@ -56,12 +56,7 @@ if args.verbose:
     logging.getLogger().setLevel(logging.INFO)
 
 # load config file
-config_path = os.path.abspath(args.config)
-if not os.path.isfile(config_path):
-    raise FileNotFoundError(f"unable to load: {config_path}")
-logging.info(f"Loading config from {config_path}")
-config = configparser.ConfigParser()
-config.read(config_path)
+config = rd.utils.load_config(os.path.abspath(args.config))
 
 # set random seed (purposedly fail if not provided)
 seed = args.seed or config.getint(PIPE_SECTION, 'seed')

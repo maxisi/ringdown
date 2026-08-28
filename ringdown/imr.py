@@ -446,7 +446,8 @@ class IMRResult(pd.DataFrame):
         """List of detectors in the DataFrame."""
         # try config first
         if "detectors" in self.attrs.get("config", {}):
-            return self.attrs["config"]["detectors"]
+            return [k.replace("'", "") for k in self.attrs["config"]['detectors']]
+            # return self.attrs["config"]['detectors']
         time_keys = [k for k in self.columns if TIME_KEY in k]
         return [k.replace(TIME_KEY, "") for k in time_keys]
 
@@ -636,28 +637,46 @@ class IMRResult(pd.DataFrame):
         return_time: bool = False,
         **kws,
     ) -> data.StrainStack:
-        """Get the peak times of the waveform for a given set of detectors.
+        """Generate waveforms for a given number of samples and detectors.
 
         Arguments
         ---------
         nsamp : int | None
-            Number of samples to use for the peak time calculation; if None,
+            Number of posterior samples to use for waveform generation; if None,
             uses all samples in the DataFrame.
         ifos : list of str | None
-            List of detector names to use for the peak time calculation; if
-            None, uses all detectors in the DataFrame.
-        time : np.ndarray | None
-            Time array to use for the peak time calculation; if None, uses
-            a default time array.
+            List of detector names to generate waveforms for; if None, uses all
+            detectors in the DataFrame.
+        time : np.ndarray | dict | None
+            Time array or dictionary of time arrays (per detector) to use for
+            waveform generation; if None, uses a default time array.
         condition : dict | None
-            optional conditioning settings; can include a `t0` argument
-            which is itself a dictionary for different ifos.
+            Optional conditioning settings; can include a `t0` argument
+            which is itself a dictionary for different detectors.
+        cache : bool
+            If True, caches the generated waveforms for reuse.
         prng : np.random.RandomState | int | None
             Random number generator to use for sampling; if None, uses the
             default random number generator.
+        progress : bool
+            If True, displays a progress bar during waveform generation.
+        ringdown_settings : bool | None
+            If True, applies ringdown-specific settings; if None, defaults to
+            the value of `ringdown_slice`.
+        ringdown_slice : bool | None
+            If True, slices the waveforms to the ringdown analysis segment; if
+            None, defaults to the value of `ringdown_settings`.
+        return_time : bool
+            If True, returns the time arrays along with the waveforms.
         kws : dict
-            Additional keyword arguments to pass to the peak
-            time calculation.
+            Additional keyword arguments to pass to the waveform generation.
+
+        Returns
+        -------
+        data.StrainStack | tuple[data.StrainStack, dict]
+            Returns the generated waveforms as a `StrainStack` object. If
+            `return_time` is True, also returns a dictionary of time arrays
+            for each detector.
         """
         if cache and self._waveforms is not None:
             logger.info("using cached waveforms")
@@ -785,9 +804,15 @@ class IMRResult(pd.DataFrame):
                     logger.warning("time arrays have inconsistent lengths")
 
         for _, sample in tqdm(df.iterrows(), **tqdm_kws):
-            h = waveforms.get_detector_signals(
-                times=time, ifos=ifos, **sample, **kws
+            if np.array([self.reference_frequency < self.minimum_frequency[ifo] for ifo in ifos]).any():
+                h = waveforms.get_detector_signals(
+                times=time, ifos=ifos, f_low=self.minimum_frequency['waveform'],
+                **sample, **kws
             )
+            else:
+                h = waveforms.get_detector_signals(
+                    times=time, ifos=ifos, **sample, **kws
+                )
             for ifo in ifos:
                 if condition:
                     # look for target time 't0' which can be a dict with
@@ -1151,7 +1176,7 @@ class IMRResult(pd.DataFrame):
                 logger.info(f"no group provided; using {group}")
             config = pe.config.get(group, {}).get("config", {})
             p = {
-                i: data.PowerSpectrum(p).fill_low_frequencies().gate()
+                i: data.PowerSpectrum(p).fill_low_frequencies().gate().interpolate_to_index()
                 for i, p in pe.psd.get(group, {}).items()
             }
             attrs = (attrs or {}).update({"config": config})
@@ -1187,7 +1212,7 @@ class IMRResult(pd.DataFrame):
                             )
                 if "psds" in f[group]:
                     p = {
-                        i: data.PowerSpectrum(p).fill_low_frequencies().gate()
+                        i: data.PowerSpectrum(p).fill_low_frequencies().gate().interpolate_to_index()
                         for i, p in f[group]["psds"].items()
                     }
                 else:
@@ -1447,7 +1472,7 @@ class IMRResult(pd.DataFrame):
             # check if SNR at midpoint is within bounds
             snr_l, snr_m, snr_h = np.quantile(snrs[-1, :], qs)
             snr_halfway = np.median(snrs[len(snrs) // 2, :])
-            stable_snr = np.abs(snr_halfway - snr_m) < snr_h - snr_l
+            stable_snr = snr_l < snr_halfway < snr_h
             if stable_snr:
                 break
             n *= 2

@@ -7,6 +7,7 @@ __all__ = ["make_model", "get_arviz", "rd_design_matrix"]
 import numpy as np
 import jax.numpy as jnp
 import jax.scipy as jsp
+import jax
 
 import numpyro
 import numpyro.distributions as dist
@@ -20,6 +21,50 @@ from arviz.data.base import dict_to_dataset
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def smooth_truncation_logprob(a, a_max, delta, clamp_value=20.0):
+    """Compute a numerically stable log-potential for amplitude truncation.
+
+    This function implements a smooth transition in log-probability space that
+    approaches 0 for amplitudes well below a_max and -∞ for amplitudes well
+    above a_max. The transition occurs over a width delta, centered at a_max.
+
+    The function uses a softplus-based implementation of log((1+tanh z)/2) for
+    numerical stability, where z = (a_max - a)/delta. The clamp_value parameter
+    ensures numerical stability by bounding the intermediate calculations.
+
+    Arguments
+    ---------
+    a : array_like
+        The amplitude values to evaluate.
+    a_max : float
+        The maximum amplitude at which the transition occurs.
+    delta : float
+        The width of the smooth transition region.
+    clamp_value : float, optional
+        The maximum absolute value for intermediate calculations to ensure
+        numerical stability. Default is 20.0, which provides a good balance
+        between numerical stability and function behavior.
+
+    Returns
+    -------
+    log_prob : array_like
+        The log-probability values, approaching 0 for a << a_max and -∞ for
+        a >> a_max, with a smooth transition in between.
+    """
+    # 1) compute z
+    z = (a_max - a) / delta
+
+    # 2) replace NaNs / ±Inf with finite
+    z = jnp.nan_to_num(z, nan=-clamp_value, posinf=clamp_value,
+                       neginf=-clamp_value)
+
+    # 3) clamp to avoid extreme values
+    z = jnp.clip(z, -clamp_value, clamp_value)
+
+    # 4) stable log((1+tanh z)/2) = -softplus(-2 z)
+    return -jax.nn.softplus(-2.0 * z)
 
 
 def rd_design_matrix(
@@ -153,6 +198,11 @@ def rd_design_matrix(
     design_matrix : array_like
         The design matrix; shape (nifo, nt, nquads*nmode).
     """
+    if aligned:
+        logger.warning("aligned model is not reviewed for LVK use")
+    if single_polarization:
+        logger.warning("single_polarization model is not reviewed for LVK use")
+
     # times should be originally shaped (nifo, nt)
     # take it to (nifo, nt, 1) where the last dimension is the mode
     ts = jnp.atleast_2d(ts)[:, :, jnp.newaxis]
@@ -167,7 +217,7 @@ def rd_design_matrix(
     Fc = jnp.reshape(Fc, (nifo, 1, 1))
     Ascales = jnp.reshape(Ascales, (1, 1, nmode))
 
-    # ct and st will have shape (1, nt, nmode)
+    # ct and st will have shape (nifo, nt, nmode)
     decay = jnp.exp(-gamma * ts)
     ct = Ascales * decay * jnp.cos(2 * np.pi * f * ts)
     st = Ascales * decay * jnp.sin(2 * np.pi * f * ts)
@@ -186,10 +236,10 @@ def rd_design_matrix(
         dm = jnp.concatenate(
             [
                 # Yp * Fp * cos + Yc * Fc * sin
-                Yp_mat * dm[:, :, :nmode] + Yc_mat * dm[:, :, 3 * nmode :],
+                Yp_mat * dm[:, :, :nmode] + Yc_mat * dm[:, :, 3 * nmode:],
                 # Yp * Fp * sin - Yc * Fc * cos
-                Yp_mat * dm[:, :, nmode : 2 * nmode]
-                - Yc_mat * dm[:, :, 2 * nmode : 3 * nmode],
+                Yp_mat * dm[:, :, nmode: 2 * nmode]
+                - Yc_mat * dm[:, :, 2 * nmode: 3 * nmode],
             ],
             axis=2,
         )
@@ -272,9 +322,9 @@ def get_quad_derived_quantities(
         # ellip = 0 and theta = 0,pi/2 for the single polarization model
     else:
         apx_unit = quads[:nmodes]
-        apy_unit = quads[nmodes : 2 * nmodes]
-        acx_unit = quads[2 * nmodes : 3 * nmodes]
-        acy_unit = quads[3 * nmodes :]
+        apy_unit = quads[nmodes: 2 * nmodes]
+        acx_unit = quads[2 * nmodes: 3 * nmodes]
+        acy_unit = quads[3 * nmodes:]
 
         numpyro.deterministic("apx", apx_unit * a_scale)
         numpyro.deterministic("apy", apy_unit * a_scale)
@@ -320,6 +370,8 @@ def get_quad_derived_quantities(
             numpyro.deterministic("h_det", h_det)
 
         return a, h_det
+    else:
+        return a, None
 
 
 def make_model(
@@ -348,6 +400,7 @@ def make_model(
     predictive: bool = False,
     store_h_det: bool = False,
     store_h_det_mode: bool = False,
+    amplitude_cutoff_fraction: float = 0.1,
 ):
     """
     Arguments
@@ -437,6 +490,15 @@ def make_model(
 
     store_h_det_mode : bool
         Whether to store the mode-by-mode detector-frame waveform in the model.
+
+    amplitude_cutoff_fraction : float
+        Controls the smoothness of the amplitude cutoff when using
+        `flat_amplitude_prior`. The cutoff is implemented using a smooth window
+        that transitions from 1 to 0 over [a_scale_max * (1 -
+        amplitude_cutoff_fraction), a_scale_max]. Larger values make the
+        transition region wider, while smaller values make it narrower. Default
+        is 0.5, which means the transition occurs over the upper half of the
+        amplitude range.
 
     Returns
     -------
@@ -583,7 +645,8 @@ def make_model(
                 # which, happily, is provided by the composed transformation
                 f_latent = numpyro.sample(
                     "f_latent",
-                    dist.ImproperUniform(dist.constraints.real, (), (n_modes,)),
+                    dist.ImproperUniform(
+                        dist.constraints.real, (), (n_modes,)),
                 )
                 f_transform = dist.transforms.ComposeTransform(
                     [
@@ -594,7 +657,8 @@ def make_model(
                 )
                 f = numpyro.deterministic("f", f_transform(f_latent))
                 numpyro.factor(
-                    "f_transform", f_transform.log_abs_det_jacobian(f_latent, f)
+                    "f_transform", f_transform.log_abs_det_jacobian(
+                        f_latent, f)
                 )
 
                 g = numpyro.sample(
@@ -607,7 +671,8 @@ def make_model(
 
                 g_latent = numpyro.sample(
                     "g_latent",
-                    dist.ImproperUniform(dist.constraints.real, (), (n_modes,)),
+                    dist.ImproperUniform(
+                        dist.constraints.real, (), (n_modes,)),
                 )
                 g_transform = dist.transforms.ComposeTransform(
                     [
@@ -618,7 +683,8 @@ def make_model(
                 )
                 g = numpyro.deterministic("g", g_transform(g_latent))
                 numpyro.factor(
-                    "g_transform", g_transform.log_abs_det_jacobian(g_latent, g)
+                    "g_transform", g_transform.log_abs_det_jacobian(
+                        g_latent, g)
                 )
             else:
                 f = numpyro.sample("f", dist.Uniform(f_min, f_max))
@@ -688,7 +754,9 @@ def make_model(
             # and matrices are capitalized
 
             a_scale = numpyro.sample(
-                "a_scale", dist.Uniform(0, a_scale_max), sample_shape=(n_modes,)
+                "a_scale",
+                dist.Uniform(0, a_scale_max),
+                sample_shape=(n_modes,)
             )
             # get design matrices which will have shape
             # (n_det, ntime, nquads*nmode)
@@ -710,7 +778,8 @@ def make_model(
             # this is just a zero-mean unit Gaussian: N(mu, Lambda) with
             # mean mu = 0 and covariance Lambda = I
             # (note that the scale of the quadratures has been absorbed into
-            # the design matrix, otherwise we would write Lambda = a_scale I)
+            # the design matrix, otherwise we would write
+            # Lambda = a_scale**2 I)
             mu = jnp.zeros(n_quad_n_modes)
             Lambda_inv = jnp.eye(n_quad_n_modes)
             Lambda_inv_chol = jnp.eye(n_quad_n_modes)
@@ -730,7 +799,7 @@ def make_model(
                     y = strains[i, :]
 
                     # M acts as a coordinate transformation matrix, taking us
-                    # from the space of quadratures to the space of the data ,
+                    # from the space of quadratures to the space of the data,
                     # while M^T takes us from data space to quadrature space
                     # (M is ntime x nquads*nmode)
 
@@ -844,9 +913,9 @@ def make_model(
                 # to achieve the desired covariance, we can *right multiply*
                 # iid N(0,1) variables by Lambda_inv_chol^{-1}, so that
                 # y = x Lambda_inv_chol^{-1} has covariance
-                # < y^T y > = (Lambda_inv_chol^{-1}).T < x^T x >
-                # Lambda_inv_chol^{-1} =
-                # (Lambda_inv_chol^{-1}).T I Lambda_inv_chol^{-1}
+                # < y^T y >
+                # = (Lambda_inv_chol^{-1}).T < x^T x > Lambda_inv_chol^{-1}
+                # = (Lambda_inv_chol^{-1}).T I Lambda_inv_chol^{-1}
                 # = Lambda.
                 if swsh or single_polarization:
                     ax_unit = numpyro.sample(
@@ -938,16 +1007,24 @@ def make_model(
                 # (2 quadratures)
                 n_quad_n_modes = dms.shape[2]
                 n_quad = n_quad_n_modes / n_modes
+
                 numpyro.factor(
                     "flat_a_prior",
                     (1 - n_quad) * jnp.sum(jnp.log(a))
-                    + 0.5 * jnp.sum(jnp.square(quads)),
+                    + 0.5 * jnp.sum(jnp.square(quads))
                 )
 
                 if prior:
-                    raise ValueError(
-                        "you did not want to impose a flat "
-                        "amplitude prior without a likelihood"
+                    # Soft log-potential:
+                    # ~0 for a << a_scale_max, → -∞ for a ≫ a_scale_max
+                    cutoff_lp = smooth_truncation_logprob(
+                        a,
+                        a_scale_max,
+                        a_scale_max * amplitude_cutoff_fraction,
+                    )
+                    numpyro.factor(
+                        "cutoff_lp",
+                        jnp.sum(cutoff_lp)
                     )
 
             if not prior:
@@ -988,6 +1065,10 @@ MODEL_VARIABLES_BY_MODE = [
     "theta",
     "df",
     "dg",
+    "df_unit",
+    "dg_unit",
+    "g_latent",
+    "f_latent"
 ]
 MODEL_DIMENSIONS = {k: ["mode"] for k in MODEL_VARIABLES_BY_MODE}
 MODEL_DIMENSIONS["h_det"] = ["ifo", "time_index"]
@@ -1068,6 +1149,9 @@ def get_arviz(
         "time_index": time_index,
         "time_index_1": time_index,
     }
+    # always include strain scale in constant_data
+    in_data = {"scale": scale or 1.0}
+
     if store_data:
         # get constant_data
         in_dims = {
@@ -1078,9 +1162,8 @@ def get_arviz(
             "fc": ["ifo"],
             "epoch": ["ifo"],
         }
-        in_data = {
-            k: np.array(v) for k, v in zip(in_dims.keys(), sampler._args)
-        }
+        in_data.update({k: np.array(v)
+                       for k, v in zip(in_dims.keys(), sampler._args)})
         in_data["epoch"] = np.array(epoch)
         in_data["scale"] = scale or 1.0
         # get injections, if provided
@@ -1090,7 +1173,8 @@ def get_arviz(
         dims.update(in_dims)
         obs_data = {"strain": in_data.pop("strain")}
     else:
-        in_data = None
+        # keep only 'scale' in constant_data when store_data is False
+        pass
 
     result = az.from_numpyro(
         sampler, dims=dims, coords=coords, constant_data=in_data

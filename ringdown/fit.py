@@ -196,7 +196,7 @@ class Fit(object):
             scale = max([np.std(d) for d in self.data.values()])
         else:
             scale = 1.0
-        return scale
+        return scale or 1.0
 
     def set_strain_scale(self, scale):
         if scale is None:
@@ -277,7 +277,7 @@ class Fit(object):
         data = {}
         i0s = self.start_indices
         for i, d in self.data.items():
-            data[i] = d.iloc[i0s[i] : i0s[i] + self.n_analyze]
+            data[i] = d.iloc[i0s[i]: i0s[i] + self.n_analyze]
         return data
 
     @property
@@ -289,7 +289,7 @@ class Fit(object):
         data = {}
         i0s = self.start_indices
         for i, d in self.conditioned_injections.items():
-            data[i] = d.iloc[i0s[i] : i0s[i] + self.n_analyze]
+            data[i] = d.iloc[i0s[i]: i0s[i] + self.n_analyze]
         return data
 
     @property
@@ -475,7 +475,8 @@ class Fit(object):
             # check for random seed, which is needed to subselect IMR samples
             if "seed" in imr_kws:
                 if "prng" in imr_kws:
-                    raise ValueError("two PRNG seed options provided in config")
+                    raise ValueError(
+                        "two PRNG seed options provided in config")
                 imr_kws["prng"] = imr_kws.pop("seed")
             elif "prng" not in imr_kws:
                 raise ValueError(
@@ -508,6 +509,15 @@ class Fit(object):
             # data was provided, just exit
             return fit
 
+        # add target
+        if config.has_section("target"):
+            kws = {k: try_parse(v) for k, v in config["target"].items()}
+            if not ("ra" in kws and "t0" not in kws):
+                # this is a Fit and not a FitSequence
+                fit.set_target(**kws)
+            else:
+                logger.info(f"ignoring invalid target section: {kws}")
+
         # load data
         if data_kws and not fit.has_data:
             fit.load_data(**data_kws)
@@ -521,15 +531,6 @@ class Fit(object):
                 if k != "ifos"
             }
             fit.fake_data(ifos=ifos, **kws)
-
-        # add target
-        if config.has_section("target"):
-            kws = {k: try_parse(v) for k, v in config["target"].items()}
-            if not ("ra" in kws and "t0" not in kws):
-                # this is a Fit and not a FitSequence
-                fit.set_target(**kws)
-            else:
-                logger.info(f"ignoring invalid target section: {kws}")
 
         # inject signal if requested
         if config.has_section("injection"):
@@ -571,7 +572,8 @@ class Fit(object):
 
         # condition data if requested
         if config.has_section("condition") and not no_cond:
-            cond_kws = {k: try_parse(v) for k, v in config["condition"].items()}
+            cond_kws = {k: try_parse(v)
+                        for k, v in config["condition"].items()}
             fit.condition_data(**cond_kws)
 
         # load or produce ACFs
@@ -662,7 +664,8 @@ class Fit(object):
             return config
         # data, injection, conditioning and acf options
         for sec, opts in self.info.items():
-            config[sec] = {k: utils.form_opt(v, key=k) for k, v in opts.items()}
+            config[sec] = {k: utils.form_opt(v, key=k)
+                           for k, v in opts.items()}
         config["target"] = {k: str(v) for k, v in self.info["target"].items()}
         # write file to disk if requested
         if path is not None:
@@ -790,6 +793,8 @@ class Fit(object):
         kws["times"] = {i: d.time.values for i, d in self.data.items()}
         kws["t0_default"] = self.t0
         kws["modes"] = self.modes
+        # propagate slide-based detector times to injection templates
+        kws["trigger_times"] = self.start_times
         return waveforms.get_detector_signals(**kws)
 
     def inject(self, no_noise=False, **kws) -> None:
@@ -861,12 +866,12 @@ class Fit(object):
         if "a_scale_max" in ms:
             ms["a_scale_max"] = ms["a_scale_max"] / self.strain_scale
 
-        logger.info("making model")
+        logger.info(f"making model: {ms}")
         model = make_model(self.modes.value, prior=prior, **ms)
 
-        logger.info("running {} mode fit".format(self.modes))
-        logger.info("prior run: {}".format(prior))
-        logger.info("model settings: {}".format(self._model_settings))
+        logger.info(f"running {self.modes} mode fit")
+        logger.info(f"prior run: {prior}")
+        logger.info(f"model settings: {self._model_settings}")
 
         return model
 
@@ -1293,7 +1298,7 @@ class Fit(object):
         delta_t: float | None = None,
         freq: float | None = None,
         f_samp: float | None = None,
-        f_min: float | None = None,
+        f_min: float = 0,
         f_max: float | None = None,
         delta_f: float | None = None,
         t0: float | None = None,
@@ -1682,13 +1687,14 @@ class Fit(object):
             settings.update(self.target.settings)
             del settings["target"]
         else:
+            # delegate pattern overrides to Target.construct
             self.target = Target.construct(
                 t0,
                 ra,
                 dec,
                 psi,
                 reference_ifo,
-                antenna_patterns,
+                antenna_patterns=antenna_patterns,
                 ifos=self.ifos,
                 duration=duration,
             )
@@ -1761,7 +1767,7 @@ class Fit(object):
         elif self.data and self.has_target:
             # set n_analyze to fit shortest data set
             i0s = self.start_indices
-            return min([len(d.iloc[i0s[i] :]) for i, d in self.data.items()])
+            return min([len(d.iloc[i0s[i]:]) for i, d in self.data.items()])
         else:
             return self._n_analyze
 
@@ -1791,7 +1797,8 @@ class Fit(object):
         """
         return {i: self.acfs[i].whiten(d) for i, d in datas.items()}
 
-    def compute_injected_snrs(self, optimal=True, network=True) -> dict | float:
+    def compute_injected_snrs(self, optimal=True, network=True,
+                              cumulative=False) -> dict | float:
         """Return a dictionary of injected SNRs for each detector.
 
         Arguments
@@ -1813,7 +1820,10 @@ class Fit(object):
             snrs = {i: 0.0 for i in self.ifos}
 
         winjs = self.whiten(self.analysis_injections)
-        opt_snrs = {ifo: np.linalg.norm(wi) for ifo, wi in winjs.items()}
+        if cumulative:
+            opt_snrs = {i: np.sqrt(np.cumsum(w**2)) for i, w in winjs.items()}
+        else:
+            opt_snrs = {i: np.linalg.norm(w) for i, w in winjs.items()}
 
         if optimal:
             snrs = opt_snrs
@@ -1821,10 +1831,17 @@ class Fit(object):
             wdata = self.whiten(self.analysis_data)
             snrs = {}
             for ifo, opt_snr in opt_snrs.items():
-                snrs[ifo] = np.dot(wdata[ifo], winjs[ifo]) / opt_snr
+                wdwh = wdata[ifo] * winjs[ifo]
+                if cumulative:
+                    snrs[ifo] = np.cumsum(wdwh) / opt_snr
+                else:
+                    snrs[ifo] = np.sum(wdwh) / opt_snr
 
         if network:
-            return np.linalg.norm(list(snrs.values()))
+            snr2 = 0
+            for s in snrs.values():
+                snr2 += s*s
+            return np.sqrt(snr2)
         else:
             return snrs
 
@@ -1894,6 +1911,7 @@ class Fit(object):
         set_target: bool = True,
         update_model: bool = True,
         duration: float | bool = "auto",
+        imr_kws: dict | None = None,
         data_kws: dict | None = None,
         peak_kws: dict | None = None,
         acf_kws: dict | None = None,
@@ -1915,6 +1933,7 @@ class Fit(object):
             approximant=approximant,
             reference_frequency=reference_frequency,
             psds=psds,
+            **(imr_kws or {})
         )
         imr = fit.imr_result
 

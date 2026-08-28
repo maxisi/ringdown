@@ -1,11 +1,14 @@
 repos:
   -   repo: https://github.com/pre-commit/pre-commit-hooks
       rev: v4.6.0  # Use the latest version from the pre-commit-hooks repository
+      exclude: ^ringdown/cli/ringdown_pp_pipe\.py$
       hooks:
         - id: trailing-whitespace
         - id: end-of-file-fixer
         - id: mixed-line-ending
   -   repo: https://github.com/pre-commit/mirrors-autopep8
       rev: v2.0.4  # Use the latest version from the mirrors-autopep8 repository
+      exclude: ^ringdown/cli/ringdown_pp_pipe\.py$
       hooks:
         - id: autopep8
+          exclude: ^ringdown/cli/ringdown_pp_pipe\.py$

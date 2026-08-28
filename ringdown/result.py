@@ -1,13 +1,12 @@
 """Module defining the core :class:`Result` class."""
 
-__all__ = ["Result", "ResultCollection"]
+__all__ = ["Result", "ResultCollection", "PPResult"]
 
 import os
 import numpy as np
 import arviz as az
 import scipy.linalg as sl
 from arviz.data.base import dict_to_dataset
-from . import qnms
 from . import indexing
 from . import data
 from .imr import IMRResult
@@ -22,6 +21,9 @@ from glob import glob
 from parse import parse
 import logging
 from scipy.stats import gaussian_kde
+import xarray as xr
+from .labeling import ParameterLabel, get_latex_from_key
+import h5py
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +46,7 @@ DEFAULT_COLLECTION_KEY = "run"
 class Result(az.InferenceData):
     """Result from a ringdown fit."""
 
-    def __init__(self, *args, config=None, produce_h_det=True, **kwargs):
+    def __init__(self, *args, config=None, produce_h_det=False, **kwargs):
         """Initialize a result from a ringdown fit.
 
         Arguments
@@ -85,6 +87,7 @@ class Result(az.InferenceData):
         # produce h_det (i.e., sum of all modes) if not already present
         if produce_h_det:
             self.h_det
+        self._fit = None
 
     @property
     def has_imr_result(self) -> bool:
@@ -114,14 +117,14 @@ class Result(az.InferenceData):
         self._imr_result.set_ringdown_reference(self)
 
     @property
-    def _df_parameters(self) -> dict[str, qnms.ParameterLabel]:
+    def _df_parameters(self) -> dict[str, ParameterLabel]:
         """Default parameters for DataFrames."""
         df_parameters = {}
         for m in _DATAFRAME_PARAMETERS:
             if m in getattr(self, "posterior", {}):
-                df_parameters[m] = qnms.ParameterLabel(m)
+                df_parameters[m] = ParameterLabel(m)
             elif m.upper() in getattr(self, "posterior", {}):
-                df_parameters[m.upper()] = qnms.ParameterLabel(m)
+                df_parameters[m.upper()] = ParameterLabel(m)
         return df_parameters
 
     @property
@@ -193,9 +196,15 @@ class Result(az.InferenceData):
         self._default_label_format.update(kws)
 
     @classmethod
-    def from_netcdf(cls, *args, config=None, **kwargs) -> "Result":
-        data = super().from_netcdf(*args, **kwargs)
-        return cls(data, config=config)
+    def from_netcdf(cls, *args, load_h_det_mode=True, produce_h_det=False,
+                    config=None, **kwargs) -> "Result":
+        group_kwargs = kwargs.pop("group_kwargs", {})
+        if not load_h_det_mode:
+            group_kwargs["posterior"] = {"drop_variables": ["h_det_mode"]}
+        data = super().from_netcdf(*args, group_kwargs=group_kwargs, **kwargs)
+        # if h_det_mode is not loaded, we cannot produce h_det
+        produce_h_det = produce_h_det and load_h_det_mode
+        return cls(data, produce_h_det=produce_h_det, config=config)
 
     from_netcdf.__doc__ = az.InferenceData.from_netcdf.__doc__
 
@@ -298,10 +307,13 @@ class Result(az.InferenceData):
 
     def get_fit(self, **kwargs):
         """Get a Fit object from the result."""
-        if self.config:
+        if self._fit is None and self.config:
             from .fit import Fit
 
-            return Fit.from_config(self._config_object, result=self, **kwargs)
+            self._fit = Fit.from_config(
+                self._config_object, result=self, **kwargs
+            )
+        return self._fit
 
     def draw_sample(
         self,
@@ -634,7 +646,7 @@ class Result(az.InferenceData):
     def ess(self) -> float:
         """Minimum effective sample size for all parameters in the result."""
         # check effective number of samples and rerun if necessary
-        ess = az.ess(self)
+        ess = az.ess(self.posterior)
         mess = ess.min()
         mess_arr = np.array([mess[k].values[()] for k in mess.keys()])
         return np.min(mess_arr)
@@ -658,7 +670,7 @@ class Result(az.InferenceData):
                 pars.append(p)
             else:
                 raise ValueError(f"Parameter {par} not found in posterior.")
-        self._df_parameters.update({p: qnms.ParameterLabel(p) for p in pars})
+        self._df_parameters.update({p: ParameterLabel(p) for p in pars})
 
     def get_parameter_key_map(self, modes: bool = True, **kws) -> dict:
         """Get a dictionary of parameter labels for the result."""
@@ -692,7 +704,7 @@ class Result(az.InferenceData):
         If `ignore_index`, the index will be reset rather than showing the
         location in the original set of samples.
 
-        The parameters are labeled using the `qnms.ParameterLabel` class.
+        The parameters are labeled using the `ParameterLabel` class.
 
         Arguments
         ---------
@@ -705,7 +717,7 @@ class Result(az.InferenceData):
             (def., `False`).
         **kws : dict
             additional keyword arguments to pass to the `get_label` method of
-            :class:`qnms.ParameterLabel`.
+            :class:`ParameterLabel`.
         """
         # set labeling options (e.g., whether to show p index)
         fmt = self.default_label_format.copy()
@@ -755,7 +767,7 @@ class Result(az.InferenceData):
             random number generator or seed (optional).
         **kws : dict
             additional keyword arguments to pass to the `get_label` method of
-            :class:`qnms.ParameterLabel`.
+            :class:`ParameterLabel`.
 
         Returns
         -------
@@ -800,7 +812,7 @@ class Result(az.InferenceData):
             :meth:`get_mode_parameter_dataframe`.
         **kws : dict
             additional keyword arguments to pass to the `get_mode_label` method
-            of :class:`qnms.ParameterLabel`.
+            of :class:`ParameterLabel`.
         """
         df = self.get_mode_parameter_dataframe(*args, **kws)
         return df[df["mode"] == indexing.get_mode_label(mode, **kws)]
@@ -914,7 +926,7 @@ class Result(az.InferenceData):
     ) -> "Result":
         """Reweight the posterior to a uniform amplitude prior.
 
-        The “primal” posterior has a density :math:`p(a, a_{\\rm scale}) =
+        The "primal" posterior has a density :math:`p(a, a_{\\rm scale}) =
         N(a; 0, a_{\\rm scale}) 1/a_{\\rm scale max}`. The target posterior
         we want has a density :math:`p(a, a_{\\rm scale}) \\propto
         \\frac{1}{|a|^{n-1}} \\frac{1}{a_{\\rm scale max}}` for :math:`n`
@@ -1178,6 +1190,166 @@ class Result(az.InferenceData):
                 raise ValueError("kind must be 'quantile' or 'zscore'.")
         return pd.Series(qs)
 
+    def get_marginal_quantiles(
+        self, reference_values: dict | None = None,
+        ess: int | bool = False,
+    ) -> xr.Dataset:
+        """Compute the marginal quantiles of the injection parameters.
+
+        Arguments
+        ---------
+        truth : list[str] | None
+            list of parameters to compute quantiles for (def., all parameters).
+
+        Returns
+        -------
+        quantiles : xr.Dataset
+            Dataset of marginal quantiles.
+        """
+        samples = self.posterior
+        if ess:
+            # thin chains to ESS or closest integer multiple of chains
+            if isinstance(ess, bool):
+                ess = self.ess
+            nchains = samples.chain.size
+            ess_per_chain = max(1, int(ess / nchains))
+            if ess_per_chain == 1:
+                logger.warning("Requested one sample per chain.")
+            thin = max(1, int(samples.draw.size / ess_per_chain))
+            # select every thin samples along the draw dimension for all chains
+            samples = samples.isel(draw=slice(None, None, thin))
+        d = ("chain", "draw")
+        qs = {}
+        for k, v in reference_values.items():
+            if v is None or k not in samples:
+                continue
+            if np.isscalar(v):
+                # compute quantile for scalar parameter
+                # counting number of samples below the reference value
+                qs[k] = (samples[k] <= v).mean(dim=d)
+            else:
+                # vector parameter
+                qs[k] = (samples[k] <= np.array(v)[None, None, :]).mean(dim=d)
+        return xr.Dataset(data_vars=qs)
+
+    def get_injection_marginal_quantiles(self, **kws) -> xr.Dataset:
+        """Compute the marginal quantiles of the injection parameters."""
+        if not self.config.get("injection", None):
+            return xr.Dataset()
+        return self.get_marginal_quantiles(self.config["injection"], **kws)
+
+    def get_injection_marginal_quantiles_series(self, downsample: int | bool =
+                                                False, **kws) -> pd.Series:
+        """Compute the marginal quantiles of the injection parameters."""
+        # set labeling options (e.g., whether to show p index)
+        fmt = self.default_label_format.copy()
+        fmt.update(kws)
+        # get quantile Dataset
+        qs = self.get_injection_marginal_quantiles(downsample=downsample)
+        # generate labeled dictionary of quantiles
+        qdict = {}
+        for k, q in qs.items():
+            if k in self._df_parameters:
+                par = self._df_parameters[k]
+                if "mode" in q.dims:
+                    for mode in q.mode.values:
+                        key_df = par.get_label(mode=mode, **fmt)
+                        qdict[key_df] = q.sel(mode=mode).values
+                else:
+                    key_df = par.get_label(**fmt)
+                    qdict[key_df] = q.values
+        return pd.Series(qdict, dtype=float)
+
+    def get_injection_parameters(
+        self,
+        include_opt_snr: bool = False,
+        include_mf_snr: bool = False,
+        latex: bool = False,
+        **kws,
+    ) -> pd.Series:
+        """Get injection parameters as a pandas Series.
+
+        Arguments
+        ---------
+        include_opt_snr : bool
+            include optimal SNR (def., `False`).
+        include_mf_snr : bool
+            include matched-filter SNR (def., `False`).
+        latex : bool
+            use LaTeX formatting for the labels (def., `False`).
+
+        Returns
+        -------
+        params : pd.Series
+            injection parameters as a pandas Series.
+        """
+        # set labeling options (e.g., whether to format as LaTeX)
+        fmt = self.default_label_format.copy()
+        fmt.update(kws)
+        fmt["latex"] = latex
+        # get injection parameters
+        inj = self.config.get("injection", {})
+        qdict = {}
+        for k, v in inj.items():
+            if k in self._df_parameters:
+                par = self._df_parameters[k]
+                if np.isscalar(v):
+                    key = par.get_label(**fmt)
+                    qdict[key] = v
+                else:
+                    for mode, val in zip(self.modes, v):
+                        key = par.get_label(mode=mode, **fmt)
+                        qdict[key] = val
+        # add SNRs if requested
+        if include_opt_snr:
+            qdict["snr_opt"] = self.compute_injected_snrs(optimal=True)
+        if include_mf_snr:
+            qdict["snr_mf"] = self.compute_injected_snrs(optimal=False)
+        return pd.Series(qdict, dtype=float)
+
+    @property
+    def injection(self) -> data.StrainStack:
+        """Injection waveforms as StrainStack."""
+        if "injection" in self.constant_data:
+            return data.StrainStack(self.constant_data.injection)
+        else:
+            return None
+
+    @property
+    def whitened_injection(self) -> data.StrainStack:
+        """Whiten the injection waveforms."""
+        if self.injection is None:
+            return None
+        return self.injection.whiten(self.cholesky_factors.values)
+
+    def compute_injected_snrs(
+        self, optimal: bool = True, network: bool = True
+    ) -> np.ndarray | float:
+        """Compute the injected SNRs for the result.
+
+        Arguments
+        ---------
+        optimal : bool
+            compute optimal SNR (def., `True`).
+        network : bool
+            compute network SNR (def., `True`).
+
+        Returns
+        -------
+        snr : np.ndarray | float
+            injected SNRs; if `network` is `True`, returns the quadrature sum
+            of the SNRs and the output will be a float; if `network` is `False`,
+            returns an array of SNRs for each detector.
+        """
+        if self.injection is None:
+            return None
+        data = None if optimal else self.observed_strain
+        snr = self.injection.compute_snr(self.cholesky_factors, data)
+        if network:
+            return float(np.linalg.norm(snr, axis=0))
+        else:
+            return snr
+
     # ------------------------------------------------------------------------
     # PLOTS
 
@@ -1185,10 +1357,30 @@ class Result(az.InferenceData):
         self,
         var_names: list[str] = ["a"],
         compact: bool = True,
+        injection: bool = True,
         *args,
         **kwargs,
     ):
-        """Alias for :func:`arviz.plot_trace`."""
+        """Alias for :func:`arviz.plot_trace`.
+
+        Arguments
+        ---------
+        var_names : list[str]
+            list of variable names to plot (def., `["a"]`).
+        compact : bool
+            use compact plot (def., `True`).
+        injection : bool
+            plot injection parameters (def., `True`).
+        *args, **kwargs : dict
+            additional arguments to pass to :func:`arviz.plot_trace`.
+        """
+        if injection:
+            injdict = self.info.get("injection", {})
+            lines = []
+            for k in var_names:
+                if k in injdict:
+                    lines.append((k, {}, np.atleast_1d(injdict[k])))
+            kwargs["lines"] = lines
         return az.plot_trace(
             self, compact=compact, var_names=var_names, *args, **kwargs
         )
@@ -1437,6 +1629,7 @@ class ResultCollection(utils.MultiIndexCollection):
         index: list | None = None,
         reference_mass: float | None = None,
         reference_time: float | None = None,
+        info: dict | None = None,
     ) -> None:
         _results = []
         for r in results:
@@ -1444,37 +1637,10 @@ class ResultCollection(utils.MultiIndexCollection):
                 _results.append(r)
             else:
                 _results.append(Result(r))
-        super().__init__(_results, index, reference_mass, reference_time)
+        super().__init__(_results, index, reference_mass, reference_time, info)
         self._targets = None
         self._imr_result = None
         self.collection_key = DEFAULT_COLLECTION_KEY
-
-    def __repr__(self):
-        return f"ResultCollection({self.index})"
-
-    def thin(self, n: int, start_loc: int = 0) -> "ResultCollection":
-        """Thin the collection by taking every `n`th result.
-
-        Arguments
-        ---------
-        n : int
-            number of results to skip between each result.
-        start_loc : int
-            starting location in the collection to thin from (def., 0).
-
-        Returns
-        -------
-        new_collection : ResultCollection
-            thinned collection.
-        """
-        results = self.results[start_loc::n]
-        index = self.index[start_loc::n]
-        return ResultCollection(
-            results=results,
-            index=index,
-            reference_mass=self.reference_mass,
-            reference_time=self.reference_time,
-        )
 
     @property
     def has_imr_result(self) -> bool:
@@ -1489,7 +1655,8 @@ class ResultCollection(utils.MultiIndexCollection):
             return self.results[0].imr_result
         return self._imr_result
 
-    def set_imr_result(self, imr_result: IMRResult) -> None:
+    def set_imr_result(self, imr_result: IMRResult,
+                       inherit: bool = True) -> None:
         """Set the reference IMR result for the collection.
 
         Arguments
@@ -1501,6 +1668,9 @@ class ResultCollection(utils.MultiIndexCollection):
         if old_imr_result is not None and not old_imr_result.empty:
             logger.warning("Overwriting existing IMR result.")
         self._imr_result = imr_result
+        if inherit:
+            for r in self.results:
+                r.set_imr_result(imr_result)
 
     @property
     def results(self) -> list[Result]:
@@ -1590,6 +1760,8 @@ class ResultCollection(utils.MultiIndexCollection):
         t0s : np.ndarray
             array of analysis start times.
         """
+        if reference_time and not isinstance(reference_time, bool):
+            self.set_reference_time(reference_time)
         if reference_mass:
             targets = self.targets
             if not isinstance(reference_mass, bool):
@@ -1630,7 +1802,10 @@ class ResultCollection(utils.MultiIndexCollection):
         path_input: str | list,
         index: list = None,
         config: str | list | None = None,
+        load_h_det_mode: bool = True,
+        produce_h_det: bool = False,
         progress: bool = True,
+        max_length: int | None = None,
         **kws,
     ):
         """Load a collection of results from NetCDF files.
@@ -1652,25 +1827,41 @@ class ResultCollection(utils.MultiIndexCollection):
             index, or used to glob for files.
         progress : bool
             show progress bar (def., `True`)
+        max_length : int
+            maximum number of results to load; if not provided, will load all
+            results (useful for debugging).
         **kws : dict
             additional keyword arguments to pass to the constructor, like
             reference_mass or reference_time
         """
-        index = index or []
+        paths = []
+        indxs = []
         cpaths = []
+        if index is not None:
+            index = [tuple(np.atleast_1d(idx)) for idx in index]
         if isinstance(path_input, str):
-            paths = sorted(glob(path_input))
-            logger.info(f"loading {len(paths)} results from {path_input}")
-            for path in paths:
+            all_paths = sorted(glob(path_input))
+            logger.info(f"loading {len(all_paths)} results from {path_input}")
+            for path in all_paths:
                 pattern = parse(path_input.replace("*", "{}"), path).fixed
                 idx = tuple([utils.try_parse(k) for k in pattern])
-                index.append(idx)
+                if index is None or idx in index:
+                    indxs.append(idx)
+                    paths.append(path)
+                else:
+                    logger.debug(f"skipping {idx} because it is not in index")
                 if isinstance(config, str):
                     cpath = config.replace("*", "{}").format(*pattern)
                     if os.path.exists(cpath):
                         cpaths.append(cpath)
         else:
             paths = path_input
+        if len(paths) == 0:
+            raise ValueError("No results found.")
+        if index is not None and len(index) != len(paths):
+            for idx in index:
+                if idx not in indxs:
+                    logger.warning(f"index {idx} not found")
         if config is not None:
             if len(cpaths) != len(paths):
                 raise ValueError(
@@ -1679,15 +1870,23 @@ class ResultCollection(utils.MultiIndexCollection):
                 )
         else:
             cpaths = [None] * len(paths)
+        if max_length is not None:
+            logger.info(f"Limiting to {max_length} results")
+            max_length = min(max_length, len(paths))
+            paths = paths[:max_length]
+            cpaths = cpaths[:max_length]
+            indxs = indxs[:max_length]
         results = []
         tqdm = utils.get_tqdm(progress)
         for path, cpath in tqdm(
             zip(paths, cpaths), total=len(paths), desc="results"
         ):
-            results.append(Result.from_netcdf(path, config=cpath))
+            results.append(Result.from_netcdf(path, config=cpath,
+                                              load_h_det_mode=load_h_det_mode,
+                                              produce_h_det=produce_h_det))
         info = kws.get("info", {})
         info["provenance"] = paths
-        return cls(results, index, **kws)
+        return cls(results, indxs, info=info, **kws)
 
     def to_netcdf(self, paths: str | None = None, **kws) -> None:
         """Save the collection of results to NetCDF files.
@@ -1845,6 +2044,36 @@ class ResultCollection(utils.MultiIndexCollection):
                 dfs.append(df)
         return pd.concat(dfs, ignore_index=True)
 
+    def get_injection_parameters_dataframe(self, **kws) -> pd.DataFrame:
+        """Get injection parameters as a pandas DataFrame."""
+        qs = {i: r.get_injection_parameters(**kws) for i, r in self.items()}
+        return pd.DataFrame(qs).T
+
+    def get_injection_marginal_quantiles_dataframe(self, **kws) -> pd.DataFrame:
+        """Compute the marginal quantiles of the injection parameters."""
+        qs = {
+            i: r.get_injection_marginal_quantiles_series(**kws)
+            for i, r in self.items()
+        }
+        return pd.DataFrame(qs).T
+
+    def compute_injected_snrs(
+        self,
+        optimal: bool = True,
+        network: bool = True,
+        progress: bool = False,
+    ) -> pd.Series | pd.DataFrame:
+        """Get the injected SNRs for the result."""
+        tqdm = utils.get_tqdm(progress)
+        snrs = {
+            i: r.compute_injected_snrs(optimal=optimal, network=network)
+            for i, r in tqdm(self.items(), desc="results", total=len(self))
+        }
+        if network:
+            return pd.Series(snrs)
+        else:
+            return pd.DataFrame(snrs).T
+
     def imr_consistency(self, *args, progress=False, **kwargs) -> pd.DataFrame:
         """Compute the IMR consistency for the collection.
         See :meth:`Result.imr_consistency` for details.
@@ -1920,16 +2149,6 @@ class ResultCollection(utils.MultiIndexCollection):
             }
         ).T
 
-    @property
-    def simplified_index(self) -> list:
-        """Simplified index for the collection, with unit-lenght tuples
-        converted to standalone items."""
-        if len(self) > 0 and len(self.index[0]) == 1:
-            index = [k[0] for k in self.index]
-        else:
-            index = self.index
-        return index
-
     def compute_posterior_snrs(self, **kws) -> np.ndarray:
         """Compute the posterior SNRs for each result in the collection.
         See :meth:`Result.compute_posterior_snrs` for details.
@@ -1983,7 +2202,7 @@ class ResultCollection(utils.MultiIndexCollection):
                 if optimal:
                     d = None
                 else:
-                    d = [dd[i0 : i0 + n] for i0, dd in zip(i0s, data)]
+                    d = [dd[i0: i0 + n] for i0, dd in zip(i0s, data)]
                 snr = wfs_sliced.compute_snr(
                     chol, data=d, network=network, cumulative=cumulative
                 )
@@ -2003,8 +2222,31 @@ class ResultCollection(utils.MultiIndexCollection):
                 snrs.append(snr)
         return np.stack(snrs)
 
+    @property
+    def ess(self) -> pd.Series:
+        """Effective sample size for each result in the collection."""
+        return pd.Series(
+            {k: r.ess for k, r in self.items()}
+        )
+
     # -----------------------------------------------------------------------
     # PLOTS
+
+    def to_pp_result(self, prior: Result | None = None, **kws) -> "PPResult":
+        """Convert the ResultCollection to a PPResult.
+
+        Arguments
+        ---------
+        prior : Result | None
+            prior result to use for the PP plot. If None, the prior will be
+            inferred from the data.
+
+        Returns
+        -------
+        pp_result : PPResult
+            PPResult object.
+        """
+        return PPResult.from_results_collection(self, prior, **kws)
 
     def plot_mass_spin(
         self,
@@ -2017,6 +2259,7 @@ class ResultCollection(utils.MultiIndexCollection):
         prng: int | np.random.Generator | None = None,
         index_label: str = None,
         hue: str = None,
+        hue_order: list | None = None,
         palette=None,
         hue_norm=None,
         dropna: bool = False,
@@ -2061,6 +2304,8 @@ class ResultCollection(utils.MultiIndexCollection):
             label for the index column in the DataFrame (optional).
         hue : str
             alias for index_label (optional).
+        hue_order : list
+            order of hue variable (optional).
         palette : str
             color palette for hue variable (optional).
         hue_norm : tuple
@@ -2105,6 +2350,7 @@ class ResultCollection(utils.MultiIndexCollection):
             {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max}
         )
         joint_kws = {} if joint_kws is None else joint_kws.copy()
+        joint_kws.setdefault("palette", palette)
         joint_kws.update(kws)
         marginal_kws = {} if marginal_kws is None else marginal_kws.copy()
         for k in ["x_min", "x_max", "y_min", "y_max"]:
@@ -2132,6 +2378,7 @@ class ResultCollection(utils.MultiIndexCollection):
             hue=index_label,
             palette=palette,
             hue_norm=hue_norm,
+            hue_order=hue_order,
             dropna=dropna,
             height=height,
             ratio=ratio,
@@ -2148,6 +2395,7 @@ class ResultCollection(utils.MultiIndexCollection):
         grid.plot_joint(utils.kdeplot, **joint_kws)
 
         marginal_kws.setdefault("color", color)
+        marginal_kws.setdefault("palette", joint_kws["palette"])
         if "fill" in joint_kws:
             marginal_kws.setdefault("fill", joint_kws["fill"])
 
@@ -2218,3 +2466,332 @@ class ResultCollection(utils.MultiIndexCollection):
         # Make the main axes active in the matplotlib state machine
         plt.sca(grid.ax_joint)
         return grid, df_rd
+
+
+class PPResult(object):
+    """PP results container with P–P plotting utilities."""
+
+    _truth_group = "truths"
+    _quantile_group = "quantiles"
+    _ess_group = "ess"
+
+    def __init__(
+        self,
+        quantiles: pd.DataFrame,
+        truth: pd.DataFrame,
+        prior: Result | None = None,
+        rundir: str | None = None,
+        info: dict | None = None,
+        ess: pd.Series | None = None,
+    ):
+        self.quantiles = quantiles
+        self.truths = truth
+        self.prior = prior
+        self.ess = ess
+        self.rundir = rundir or ""
+        self._info = info
+        self._config = None
+        self._null_cum_hists = {}
+        self._null_bands = {}
+
+    def __len__(self):
+        return len(self.quantiles)
+
+    def __str__(self):
+        return f"PPResult('{self.rundir}', N={len(self)})"
+
+    def __repr__(self):
+        return str(self)
+
+    @property
+    def config(self) -> configparser.ConfigParser | None:
+        if self._config is None:
+            # attempt to read in config from rundir
+            config_path = os.path.join(self.rundir, "config.ini")
+            if os.path.exists(config_path):
+                self._config = utils.load_config(config_path)
+        return self._config
+
+    @property
+    def info(self) -> dict:
+        if not self._info and self.config is not None:
+            # Convert ConfigParser to dict
+            self._info = {
+                s: dict(self.config.items(s)) for s in self.config.sections()
+            }
+        return self._info
+
+    @classmethod
+    def from_results_collection(
+        cls, results: ResultCollection, prior: Result | None = None,
+        downsample: int | bool = False, include_ess: bool = True,
+    ):
+        """Construct a PPResult from a ResultCollection."""
+        quantiles = results.get_injection_marginal_quantiles_dataframe(
+            downsample=downsample)
+        truth = results.get_injection_parameters_dataframe(
+            include_mf_snr=True, include_opt_snr=True
+        )
+        if "provenance" in results.info:
+            if isinstance(results.info["provenance"], str):
+                path = results.info["provenance"]
+            else:
+                # assume list of paths
+                path = results.info["provenance"][0]
+            if "engine" in path:
+                rundir = path.split("engine")[0]
+            else:
+                rundir = path
+        else:
+            rundir = ""
+        ess = results.ess if include_ess else None
+        return cls(quantiles, truth, prior=prior, rundir=rundir, ess=ess)
+
+    def to_hdf5(self, path: str | None = None) -> None:
+        """Save the PPResult to an HDF5 file.
+
+        The file is saved to path under different groups: "quantiles" and
+        "truths". The run directory is saved as an attribute of the file.
+
+        Arguments
+        ---------
+        path : str
+            path to the HDF5 file
+        """
+        if path is None:
+            path = os.path.join(self.rundir, "pp_result.h5")
+        self.quantiles.to_hdf(path, key=self._quantile_group, mode="w")
+        self.truths.to_hdf(path, key=self._truth_group, mode="a")
+        if self.ess is not None:
+            self.ess.to_hdf(path, key=self._ess_group, mode="a")
+        with h5py.File(path, "a") as f:
+            f.attrs["rundir"] = self.rundir
+            # JSON-encode the dict so it can be stored as a HDF5 attribute
+            f.attrs["config"] = json.dumps(self.info)
+        logger.info(f"Saved PP results: {path}")
+
+    @classmethod
+    def from_hdf5(cls, path: str) -> "PPResult":
+        """Read a PPResult from an HDF5 file."""
+        # Read DataFrames directly from the HDF5 file path
+        quantiles = pd.read_hdf(path, key=cls._quantile_group)
+        truth = pd.read_hdf(path, key=cls._truth_group)
+        # Read rundir and config attributes
+        with h5py.File(path, "r") as f:
+            rundir = f.attrs.get("rundir", "")
+            config_attr = f.attrs.get("config", "{}")
+        # JSON-decode the config attribute
+        if isinstance(config_attr, (bytes, bytearray)):
+            config_str = config_attr.decode("utf-8")
+        else:
+            config_str = config_attr
+        info = json.loads(config_str)
+        # Read effective sample size if present by checking HDF5 keys
+        ess = None
+        with pd.HDFStore(path, mode='r') as store:
+            hdf_key = f"/{cls._ess_group}"
+            if hdf_key in store.keys():
+                ess = store[cls._ess_group]
+        return cls(quantiles, truth, rundir=rundir, info=info, ess=ess)
+
+    @staticmethod
+    def _null_var(x, n):
+        """Returns the theoretical variance for the ECDF of n samples drawn
+        from a uniform distribution between 0 and 1.
+
+        The true CDF for a U[0, 1] distribution is F(x) = x, which means that
+        if ECDF_n(x) is the ECDF for n samples, then n * ECDF_n(x) is a
+        drawn from a Binomial distribution with n trials and probability
+        p = x. The variance of a Binomial distribution is
+        var(X) = n * p * (1 - p), so the variance of the ECDF is
+        var(F(x)) = x * (1 - x) / n.
+
+        Arguments
+        ---------
+        x : float
+            the value at which to evaluate the variance, 0 <= x <= 1
+        n : int
+            the number of samples drawn from the uniform distribution
+
+        Returns
+        -------
+        var : float
+            the variance of the difference of the ECDFs
+        """
+        return x * (1 - x) / n
+
+    def plot_quantiles(self, keys: list[str] | None = None,
+                       latex: bool = False,
+                       bins: int = 20,
+                       palette: str | list[str] | None = None,
+                       ax: None = None,
+                       legend: bool = True,
+                       legend_kws: dict | None = None,
+                       **kws):
+        """Plot the empirical quantiles of the injection marginal distribution.
+
+        Arguments
+        ---------
+        keys : list
+            list of parameters to plot (optional).
+        latex : bool
+            whether to use LaTeX labels for the parameters (optional).
+        bins : int
+            number of bins in the histogram (optional).
+        palette : str | list[str] | None
+            color palette for the histogram (optional).
+        ax : matplotlib.axes.Axes
+            matplotlib axes object (optional).
+        legend : bool
+            whether to plot the legend (def., True).
+        legend_kws : dict
+            keyword arguments for the legend (optional).
+
+        Returns
+        -------
+        ax : matplotlib.axes.Axes
+            matplotlib axes object.
+        """
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        if self.quantiles is None or self.quantiles.empty:
+            raise ValueError("no results loaded!")
+
+        # get quantile DataFrame for selected parameters, dropping NaNs
+        qdf = self.quantiles[keys] if keys is not None else self.quantiles
+        qdf = qdf.dropna()
+        if len(qdf) < len(self):
+            logger.warning(f"Dropped {len(self) - len(qdf)} rows with NaNs")
+        if latex:
+            qdf = qdf.copy()
+            qdf.rename(columns=get_latex_from_key, inplace=True)
+        # drop columns that have a single unique value
+        qdf = qdf.loc[:, qdf.nunique() > 1]
+
+        ax = sns.histplot(data=qdf, element='step', palette=palette,
+                          bins=bins, fill=False, ax=ax)
+        # theoretical uncertainty from Binomial distribution
+        n = len(qdf)
+        p = 1 / bins
+        mean = n*p
+        scale = np.sqrt(n*p*(1-p))
+
+        # plot theoretical uncertainty
+        ax.axhline(mean, color='gray', linestyle='--', zorder=-100)
+        for sigma in [1, 2, 3]:
+            ax.fill_between([0, 1],
+                            [mean-sigma*scale, mean-sigma*scale],
+                            [mean+sigma*scale, mean+sigma*scale],
+                            color='gray', alpha=0.1, zorder=-100)
+
+        ax.set_ylim(0)
+        ax.set_xlim(0, 1)
+        plt.xlabel('recovered quantile')
+        plt.ylabel('count')
+        # custom legend: one line per column following the histplot palette
+        if legend:
+            from matplotlib.lines import Line2D
+            colors = sns.color_palette(palette, n_colors=len(qdf.columns))
+            handles = [Line2D([], [], color=c) for c in colors]
+            labels = qdf.columns.tolist()
+            ncol = 2 if len(labels) > 16 else 1
+            lkws = dict(bbox_to_anchor=(1.05, 1), loc='upper left',
+                        frameon=False, ncol=ncol)
+            lkws.update(legend_kws or {})
+            ax.legend(handles=handles, labels=labels, **lkws)
+        return ax
+
+    def plot(
+        self,
+        keys: list[str] | None = None,
+        nmax: int | None = None,
+        nbins: int = 50,
+        ax: None = None,
+        bands: tuple[float, ...] = (3, 2, 1),
+        difference: bool = True,
+        latex: bool = False,
+        palette: str | list[str] | None = None,
+        legend: bool = True,
+        legend_kws: dict | None = None,
+        line_kws: dict | None = None,
+    ):
+        """P–P plot of injection marginal quantiles.
+
+        Arguments
+        ---------
+        keys : list
+            list of parameters to plot (optional).
+        nmax : int
+            maximum number of results to plot (optional).
+        nbins : int
+            number of bins in the histogram (def., `50`).
+        ax : matplotlib.axes.Axes
+            matplotlib axes object (optional).
+        bands : tuple
+            tuple of sigmas to plot for the null distribution
+            (def., `(3, 2, 1)`).
+        difference : bool
+            whether to plot the difference between the empirical and null
+            distributions (def., `True`).
+        latex : bool
+            whether to use LaTeX labels for the parameters (optional).
+        palette : str | list[str] | None
+            color palette for the histogram (optional).
+        legend : bool
+            whether to plot the legend (def., `True`).
+        legend_kws : dict
+            keyword arguments for the legend (optional).
+        line_kws : dict
+            keyword arguments for the PP lines (optional).
+
+        Returns
+        -------
+        ax : matplotlib.axes.Axes
+            matplotlib axes object.
+        """
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        if self.quantiles is None or self.quantiles.empty:
+            raise ValueError("no results loaded!")
+        # get quantile DataFrame for selected parameters, dropping NaNs
+        qdf = self.quantiles[keys] if keys is not None else self.quantiles
+        qdf = qdf.dropna()
+        if len(qdf) < len(self):
+            logger.warning(f"Dropped {len(self) - len(qdf)} rows with NaNs")
+        if latex:
+            qdf = qdf.copy()
+            qdf.rename(columns=get_latex_from_key, inplace=True)
+        # drop columns that have a single unique value
+        qdf = qdf.loc[:, qdf.nunique() > 1]
+        # get number of simulations to plot
+        N = len(qdf) if nmax is None else min(nmax, len(qdf))
+        # initialize figure
+        if ax is None:
+            _, ax = plt.subplots()
+        # plot null distribution
+        ks = np.linspace(0, 1, nbins + 1)
+        m = np.zeros_like(ks[1:]) if difference else ks[1:]
+        for sigma in bands:
+            half_band = sigma * np.sqrt(self._null_var(ks[1:], N))
+            ax.fill_between(ks[:-1], m + half_band, m - half_band, step="post",
+                            color="gray", alpha=0.15)
+        ax.step(ks[:-1], m, c="k", where="post")
+        # plot results
+        colors = sns.color_palette(palette, n_colors=len(qdf.columns))
+        m = ks[1:] if difference else 0
+        for k, c in zip(qdf.columns, colors):
+            y, _ = np.histogram(qdf[k].iloc[:N], bins=ks)
+            ax.step(ks[:-1], np.cumsum(y) / N - m, label=k, c=c, where="post",
+                    **(line_kws or {}))
+        ncol = 2 if len(qdf.columns) > 16 else 1
+        if legend:
+            lkws = dict(bbox_to_anchor=(1.05, 1), loc="upper left",
+                        frameon=False, ncol=ncol)
+            lkws.update(legend_kws or {})
+            ax.legend(**lkws)
+        ax.set_xlabel(r"$p$")
+        ax.set_ylabel(r"$p-p$" if difference else r"$p$")
+        ax.set_title(f"$N = {N}$")
+        return ax

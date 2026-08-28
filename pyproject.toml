@@ -16,7 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Astronomy"
 ]
-requires-python = ">=3.11, <3.12"
+requires-python = ">=3.11, <3.13"
 dependencies = [
     "numpy==2.2.6",
     "lalsuite==7.26.4",
@@ -30,21 +30,30 @@ dependencies = [
     "parse>=1.20",
     "jaxlib==0.4.38; sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "tables~=3.10",
-    "scipy==1.15",
+    "scipy>=1.15,<1.16",
 ]
 
 [project.scripts]
 ringdown_fit = "ringdown.cli.ringdown_fit:main"
 ringdown_pipe = "ringdown.cli.ringdown_pipe:main"
 ringdown_scan = "ringdown.cli.ringdown_scan:main"
+ringdown_pp_pipe = "ringdown.cli.ringdown_pp_pipe:main"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
+[project.optional-dependencies]
+extra = [
+    "gwpy==3.0.10",
+]
+
 [tool.uv]
 dev-dependencies = [
     "ringdown",
+    "jupyter",
+    "pre-commit",
+    "pytest"
 ]
 
 [tool.uv.sources]

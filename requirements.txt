@@ -6,11 +6,12 @@ pandas~=2.2
 qnm==0.4.4
 seaborn~=0.13
 jupyterlab
+tqdm
 ipywidgets
 ipykernel
-numpyro~=0.17
+numpyro==0.19.0
 jax>=0.4.25,<0.6.1
 parse>=1.20
 jaxlib==0.4.38; sys_platform == 'darwin' and platform_machine == 'x86_64'
 tables~=3.10
-scipy==1.15
+scipy>=1.15,<1.16

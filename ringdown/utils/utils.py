@@ -144,6 +144,7 @@ def string_to_tuple(s):
 def load_config(config_input):
     if isinstance(config_input, str):
         if os.path.exists(config_input):
+            logger.info(f"Loading config from {config_input}")
             raw_config = ConfigParser()
             raw_config.read(config_input)
 
@@ -212,11 +213,11 @@ class MultiIndexCollection(object):
         return self.data[i]
 
     def __repr__(self):
-        return f"MultiIndexCollection({self.index})"
+        return f"{self.__class__.__name__}({self.index})"
 
     def add(self, key, value):
         # Update value if key already exists
-        if key in self.keys:
+        if key in self.keys():
             index = self.index.index(key)
             self.data[index] = value
         else:
@@ -232,6 +233,56 @@ class MultiIndexCollection(object):
 
     def get(self, key):
         return self.data[self.index.index(key)]
+
+    @property
+    def simplified_index(self) -> list:
+        """Simplified index for the collection, with unit-length tuples
+        converted to standalone items."""
+        if len(self) > 0 and self._key_size == 1:
+            index = [k[0] for k in self.index]
+        else:
+            index = self.index
+        return index
+
+    def select(self, index: list | None = None,
+               simple_index: bool = False) -> "MultiIndexCollection":
+        """Select a subset of the collection."""
+        if index is None:
+            index = self.index
+        elif simple_index:
+            index = [tuple(idx) for idx in index]
+        # Determine positions to keep
+        if len(index) != len(set(index)):
+            raise ValueError("Index must be unique.")
+        # Create new collection with proper slicing
+        return self.__class__(
+            [self.get(i) for i in index],
+            index=index,
+            reference_mass=self.reference_mass,
+            reference_time=self.reference_time,
+        )
+
+    def thin(self, n: int, start_loc: int = 0) -> "MultiIndexCollection":
+        """Thin the collection by taking every `n`th result.
+
+        Arguments
+        ---------
+        n : int
+            number of results to skip between each result.
+        start_loc : int
+            starting location in the collection to thin from (def., 0).
+
+        Returns
+        -------
+        new_collection : MultiIndexCollection
+            thinned collection.
+        """
+        return self.__class__(
+            self.data[start_loc::n],
+            index=self.index[start_loc::n],
+            reference_mass=self.reference_mass,
+            reference_time=self.reference_time,
+        )
 
     @property
     def as_dict(self):
@@ -263,7 +314,10 @@ class MultiIndexCollection(object):
     @property
     def _key_size(self):
         if len(self) > 0:
-            return len(self.index[0])
+            try:
+                return len(self.index[0])
+            except TypeError:
+                return 0
         else:
             return 0
 
@@ -319,8 +373,8 @@ def get_bilby_dict(d):
     """Parse bilby-style data dict string.
     """
     if isinstance(d, str):
-        chars_to_remove = "'{}"
+        chars_to_remove = " '{}"
         translation_table = str.maketrans('', '', chars_to_remove)
         d = {k.translate(translation_table): v.translate(translation_table)
-             for k, v in [i.split(':') for i in d.split(',')]}
+             for k, v in [i.split(':') for i in d.split(',') if ':' in i] }
     return d

@@ -63,23 +63,10 @@ def get_parser():
         help="Maximum number of tasks request through SLURM.",
     )
     p.add_argument(
-        "--device-count",
-        type=int,
-        default=None,
-        help="Number of GPUs/CPUs to use for each task "
-        "(default: 1 for GPUs and 4 for CPUs)",
-    )
-    p.add_argument(
         "--platform",
         choices=["cpu", "gpu"],
         default="cpu",
         help="Platform to run on (default 'cpu').",
-    )
-    p.add_argument(
-        "--omp-num-threads",
-        type=int,
-        default=1,
-        help="Number of threads for numpy.",
     )
     p.add_argument("-C", "--constraints", help="SLURM constraints.")
     p.add_argument("-t", "--time", help="SLURM time directive.")
@@ -96,11 +83,7 @@ def main(args=None):
         logging.getLogger().setLevel(logging.INFO)
 
     # load config file
-    config_path = os.path.abspath(args.config)
-    if not os.path.isfile(config_path):
-        raise FileNotFoundError(f"unable to load: {config_path}")
-    logging.info(f"Loading config from {config_path}")
-    config = rd.utils.load_config(config_path)
+    config = rd.utils.load_config(os.path.abspath(args.config))
 
     # determine run directory
     outdir = args.outdir or config.get(PIPE_SECTION, "outdir", fallback=None)
@@ -164,17 +147,19 @@ def main(args=None):
 
     # determine how many devices to use, will default to 1 for GPUs and
     # 4 for CPUs
-    if args.device_count is not None:
-        NDEVICE = args.device_count
+    if "RINGDOWN_DEVICE_COUNT" in os.environ:
+        NDEVICE = int(os.environ["RINGDOWN_DEVICE_COUNT"])
     elif args.platform == "gpu":
         NDEVICE = 1
     else:
         NDEVICE = 4
 
+    # Set the environment variable so child processes inherit it
+    os.environ["RINGDOWN_DEVICE_COUNT"] = str(NDEVICE)
+    
     task_opts = [
         "-o {result}",
         f"--platform {args.platform}",
-        f"--device-count {NDEVICE}",
         "--verbose",
     ]
 
