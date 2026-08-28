@@ -21,7 +21,7 @@ classifiers = [
 requires-python = ">=3.12, <3.14"
 dependencies = [
     "numpy==2.2.6",
-    "lalsuite==7.26.4",
+    "lalsuite==7.26.15",
     "h5py~=3.16",
     "arviz~=0.19",
     "pandas~=2.2",
