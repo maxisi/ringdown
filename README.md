@@ -22,19 +22,36 @@ For the latest and greatest version, you can install directly from the git repo:
 pip install git+https://github.com/maxisi/ringdown.git
 ```
 
-Additionally, you may follow the [JAX documentation](https://jax.readthedocs.io/en/latest/installation.html) to install JAX with GPU support.
+### GPU support
+
+The default install provides a CPU build of JAX. To run on NVIDIA GPUs, upgrade JAX after installing `ringdown`:
+
+```shell
+pip install --upgrade "jax[cuda]>=0.4.25,<0.6.1"
+```
+
+See the [JAX documentation](https://jax.readthedocs.io/en/latest/installation.html) for CUDA version details and other accelerators.
 
 ### Complete Environments
 
-A complete [conda](https://docs.conda.io/en/latest/) environment that includes all the prerequisites (and more!) to install `ringdown` can be found in  `environment.yml` in the current directory:
+The recommended way to set up a complete environment (including Jupyter and development tools) is with [uv](https://docs.astral.sh/uv/) from a clone of this repository:
+
+```shell
+uv sync
+```
+
+You can also easily install all optional dependencies:
+
+```shell
+uv sync --all-extras
+```
+
+Alternatively, you can use [conda](https://docs.conda.io/en/latest/) with `environment.yml`:
 
 ```shell
 conda env create -f environment.yml
 conda activate ringdown
-pip install ringdown
 ```
-
-will leave the shell in an environment that includes `jupyterlab` ready to explore the `ringdown` package.  
 
 The `environment.yml` file enables running `ringdown` in JupyterHub services like [MyBinder](https://mybinder.org/) by pointing MyBinder at this repository or clicking the button at the top of this README.
 
@@ -67,12 +84,12 @@ To run on a GPU with single precision you can instead do:
 # from jax import config
 # config.update("jax_enable_x64", False)
 
-# import numpyro and set it up to use 4 CPU devices
+# import numpyro and set it up to use the GPU
 import numpyro
 numpyro.set_platform('gpu')
 ```
 
-You will see significant performance enhancements when running ona GPU with 32-bit precision. If you have multiple GPUs, `numpyro` can use them in parallel to run different chains, just as with CPUs. Sampling one chain for a GW150914-like system takes O(s) on an Nvidia A100 GPU.
+You will see significant performance enhancements when running on a GPU with 32-bit precision. If you have multiple GPUs, `numpyro` can use them in parallel to run different chains, just as with CPUs. Sampling one chain for a GW150914-like system takes O(s) on an Nvidia A100 GPU.
 
 ⚠️ _Caveat emptor:_ depending on the autocovariance function (ACF), using `float32` can cause numerical problems when computing the likelihood; _ringdown_ will automatically rescale the strain in an attempt to prevent this, but you should use this feature at your own risk.
 
