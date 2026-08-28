@@ -3,7 +3,7 @@ channels:
   - conda-forge
 dependencies:
   - python=3.12
-  - numpy=2.4.6
+  - numpy=2.5.2
   - lalsuite=7.26
   - h5py=3.16
   - arviz=0.19
