@@ -76,6 +76,7 @@ class IMRResult(pd.DataFrame):
     _g_key = "g_{mode}"
 
     _meta = ["attrs", "_psds", "_ringdown_fit", "_ringdown_result"]
+    _metadata = ["_psds", "_waveforms", "_ringdown_fit", "_ringdown_result"]
 
     def __init__(self, *args, attrs=None, psds=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -102,12 +103,12 @@ class IMRResult(pd.DataFrame):
     @property
     def has_ringdown_fit(self) -> bool:
         """Check if ringdown fit is present."""
-        return self.__dict__["_ringdown_fit"] is not None
+        return self.__dict__.get("_ringdown_fit") is not None
 
     @property
     def has_ringdown_result(self) -> bool:
         """Check if ringdown result is present."""
-        return self.__dict__["_ringdown_result"] is not None
+        return self.__dict__.get("_ringdown_result") is not None
 
     @property
     def has_ringdown_reference(self) -> bool:
@@ -148,7 +149,7 @@ class IMRResult(pd.DataFrame):
     @property
     def psds(self) -> dict[data.PowerSpectrum]:
         """Power Spectral Densities used in the analysis."""
-        return self.__dict__["_psds"] or {}
+        return self.__dict__.get("_psds") or {}
 
     def set_psds(self, psds: dict | str, ifos: list | None = None) -> None:
         """Set the PSDs used in the analysis.
@@ -968,6 +969,9 @@ class IMRResult(pd.DataFrame):
         df = super().copy(*args, **kwargs)
         if self.has_ringdown_reference:
             df.set_ringdown_reference(self.ringdown_reference)
+        psds = self.__dict__.get("_psds")
+        if psds is not None:
+            df.__dict__["_psds"] = dict(psds)
         return df
 
     def to_inference_data(

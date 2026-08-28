@@ -2666,8 +2666,7 @@ class PPResult(object):
         if len(qdf) < len(self):
             logger.warning(f"Dropped {len(self) - len(qdf)} rows with NaNs")
         if latex:
-            qdf = qdf.copy()
-            qdf.rename(columns=get_latex_from_key, inplace=True)
+            qdf = qdf.rename(columns=get_latex_from_key)
         # drop columns that have a single unique value
         qdf = qdf.loc[:, qdf.nunique() > 1]
 
@@ -2763,8 +2762,7 @@ class PPResult(object):
         if len(qdf) < len(self):
             logger.warning(f"Dropped {len(self) - len(qdf)} rows with NaNs")
         if latex:
-            qdf = qdf.copy()
-            qdf.rename(columns=get_latex_from_key, inplace=True)
+            qdf = qdf.rename(columns=get_latex_from_key)
         # drop columns that have a single unique value
         qdf = qdf.loc[:, qdf.nunique() > 1]
         # get number of simulations to plot
