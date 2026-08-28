@@ -10,7 +10,7 @@ tqdm
 ipywidgets
 ipykernel
 numpyro==0.19.0
-jax>=0.4.25,<0.6.1
+jax>=0.4.25,<0.10.3
 parse>=1.20
 jaxlib==0.4.38; sys_platform == 'darwin' and platform_machine == 'x86_64'
 tables~=3.10
