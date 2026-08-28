@@ -12,18 +12,26 @@ logger = logging.getLogger(__name__)
 
 
 def get_tqdm(progress: bool = True):
-    """Return the appropriate tqdm based on the execution environment.
+    """Return a tqdm implementation for the current environment.
+
+    Uses the notebook widget bar when running under ipykernel *and*
+    ipywidgets is installed; otherwise falls back to the text bar so
+    notebooks without that extra do not crash.
     """
     if not progress:
         def custom_tqdm(args, **kwargs):
             return args
         return custom_tqdm
     if 'ipykernel' in sys.modules:
-        # Running in Jupyter Notebook/Lab
-        from tqdm.notebook import tqdm
-    else:
-        # Running in a terminal or other non-notebook environment
-        from tqdm import tqdm
+        try:
+            from ipywidgets import FloatProgress  # noqa: F401
+            from tqdm.notebook import tqdm
+            return tqdm
+        except ImportError:
+            logger.debug(
+                "ipywidgets not available; using text tqdm in the notebook"
+            )
+    from tqdm import tqdm
     return tqdm
 
 
