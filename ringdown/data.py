@@ -854,7 +854,7 @@ class PowerSpectrum(FrequencySeries):
         kws['nperseg'] = kws.get('nperseg', fs)
         # default to median-averaged, not mean-averaged to handle outliers.
         kws['average'] = kws.get('average', 'median')
-        freq, psd = sig.welch(data, fs=fs, **kws)
+        freq, psd = sig.welch(np.asarray(data), fs=fs, **kws)
         _meta = {a: getattr(data, a, None) for a in getattr(data, '_meta', [])}
         p = cls(psd, index=freq, **_meta)
         if f_min is not None or f_max is not None:
@@ -1284,7 +1284,7 @@ class AutoCovariance(TimeSeries):
         dt = getattr(d, 'delta_t', delta_t)
         n = n or len(d)
         if method.lower() == 'td':
-            rho = sig.correlate(d, d, **kws)
+            rho = sig.correlate(np.asarray(d), np.asarray(d), **kws)
             rho = np.fft.ifftshift(rho)
             rho = rho[:n] / len(d)
         elif method.lower() == 'fd':

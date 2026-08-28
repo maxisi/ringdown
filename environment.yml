@@ -16,7 +16,7 @@ dependencies:
   - ipykernel
   - parse>=1.20
   - pytables>=3.10,<4
-  - scipy>=1.15,<1.16
+  - scipy>=1.16,<1.19
   - pip
   # Temporary: conda-forge jax/jaxlib are still 0.10.2. Keep numpyro on pip
   # too so conda does not pull that older jax. Move both back to conda when
