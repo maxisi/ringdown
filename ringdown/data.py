@@ -36,7 +36,7 @@ class Series(pd.Series):
         """Load data from disk.
 
         If ``kind`` is `gwosc` assumes input is an strain HDF5 file downloaded
-        from `GWOSC <https://www.gw-openscience.org>`_.  If ``kind`` is `frame`
+        from `GWOSC <https://gwosc.org>`_.  If ``kind`` is `frame`
         and the keyword `channel` is given, then attempt to load the given
         path(s) using gwpy's frame file reading.  Otherwise, it is a wrapper
         around :func:`pandas.read_hdf` or :func:`pandas.read_csv` functions,

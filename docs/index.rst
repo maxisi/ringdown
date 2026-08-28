@@ -22,7 +22,7 @@ This documentation is being actively developed. Usage examples can be found :doc
 Example
 -------
 
-You can get an analysis going with just a few lines of code. For example, assuming you have already downloaded GW150914 data from `GWOSC <https://www.gw-openscience.org>`_::
+You can get an analysis going with just a few lines of code. For example, assuming you have already downloaded GW150914 data from `GWOSC <https://gwosc.org>`_::
 
     import ringdown as rd
     fit = rd.Fit(modes=[(1,-2,2,2,0), (1,-2,2,2,1)])

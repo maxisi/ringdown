@@ -14,8 +14,8 @@ on:
       - igwn
 
 jobs:
-  build:
-
+  fast:
+    name: lint and unit tests
     runs-on: ubuntu-latest
 
     steps:
@@ -28,10 +28,9 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        python -m pip install flake8 pytest coverage pytest-xdist nbmake pytest-cov
+        python -m pip install flake8 pytest pytest-xdist pytest-cov
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         pip install .
-        python -m ipykernel install --user --name ringdown
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
@@ -40,17 +39,27 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Unit tests
       run: |
-        # Run the unit tests
         pytest -n=auto --cov=ringdown --cov-report=xml
+
+  slow:
+    name: CLI config tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+        cache: 'pip'
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install .
     - name: Test fit
-      run: |
-        # test config file interface
-        bash tests/test_fit_config.sh
+      run: bash tests/test_fit_config.sh
     - name: Test pipe
-      run: |
-        # test pipe
-        bash tests/test_pipe_config.sh
+      run: bash tests/test_pipe_config.sh
     - name: Test scan
-      run: |
-        # test scan
-        bash tests/test_scan_config.sh
+      run: bash tests/test_scan_config.sh

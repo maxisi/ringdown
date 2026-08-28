@@ -4,10 +4,8 @@
 name: test example notebooks
 
 on:
-  push:
-    branches:
-      - main
-      - igwn
+  schedule:
+    - cron: '0 4 * * 0'  # weekly, Sunday 04:00 UTC
   pull_request:
     branches:
       - main
