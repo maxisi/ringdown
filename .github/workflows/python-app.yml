@@ -57,6 +57,24 @@ jobs:
         python -m pip install --upgrade pip
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         pip install .
+    - name: Restore GWOSC example data
+      id: gwosc-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          data/H-H1_LOSC_4_V2-1126259446-32.hdf5
+          data/L-L1_LOSC_4_V2-1126259446-32.hdf5
+        key: gwosc-gw150914-losc-4k-32s-v2
+    - name: Download GWOSC example data
+      run: bash tests/download_example_data.sh
+    - name: Save GWOSC example data
+      if: steps.gwosc-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          data/H-H1_LOSC_4_V2-1126259446-32.hdf5
+          data/L-L1_LOSC_4_V2-1126259446-32.hdf5
+        key: gwosc-gw150914-losc-4k-32s-v2
     - name: Test fit
       run: bash tests/test_fit_config.sh
     - name: Test pipe
