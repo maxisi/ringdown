@@ -10,3 +10,7 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10 # Limits the number of open pull requests Dependabot will raise at any time
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
