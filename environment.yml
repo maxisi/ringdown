@@ -4,19 +4,21 @@ channels:
   - defaults
 dependencies:
   - python=3.12
-  - numpy=1.26.4
-  - lalsuite=7.23
+  - numpy=2.2.6
+  - lalsuite=7.26
   - h5py=3.11
   - arviz=0.19
   - pandas=2.2
-  - qnm=0.4.3
+  - qnm=0.4.4
   - seaborn=0.13
   - jupyterlab
   - tqdm
   - ipywidgets
   - ipykernel
-  - numpyro=0.15
-  - jax=0.4
-  - parse
+  - numpyro=0.19.0
+  - jax>=0.4.25,<0.6.1
+  - parse>=1.20
+  - pytables>=3.10,<4
+  - scipy>=1.15,<1.16
   - pip:
     - git+https://github.com/maxisi/ringdown.git
