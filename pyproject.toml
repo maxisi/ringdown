@@ -48,6 +48,11 @@ extra = [
     "gwpy==3.0.10",
 ]
 
+[project.urls]
+Homepage = "https://github.com/maxisi/ringdown"
+Documentation = "https://ringdown.readthedocs.io"
+Issues = "https://github.com/maxisi/ringdown/issues"
+
 [tool.uv]
 dev-dependencies = [
     "ringdown",
@@ -61,6 +66,11 @@ ringdown = { workspace = true }
 
 [tool.hatch.version]
 source = "vcs"
+# Ignore non-version tags such as igwn-signoff-YYYYMMDD.
+tag-pattern = 'v(?P<version>\d+\.\d+\.\d+)'
+
+[tool.hatch.version.raw-options]
+git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--match", "v[0-9]*"]
 
 [tool.ruff]
 line-length = 80
