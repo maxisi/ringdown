@@ -8,7 +8,7 @@ the :class:`Fit <ringdown.fit.Fit>` class, which contains all information and
 settings required to set up and execute an analysis. Several examples of its use
 are provided in the :doc:`gallery`.
 
-The :class:`Fit <ringdown.fit.Fit>` object interfaces with a of `numpyro
+The :class:`Fit <ringdown.fit.Fit>` object interfaces with a `numpyro
 <https://num.pyro.ai>`_ model for sampling.
 
 Auxiliary to :mod:`fit <ringdown.fit>`, the :mod:`data <ringdown.data>` and
@@ -22,6 +22,6 @@ for generic manipulation of strain data, e.g., `GWpy <https://gwpy.github.io>`_,
 related operations.
 
 The above functionality can be used to build your own workflows. Additionally,
-`ringdown` ships with a single executable ``ringdown_fit`` which can be used to
+`ringdown` ships with several executables, including ``ringdown_fit``, which can be used to
 automatically set up and run a ringdown fit starting from a configuration file.
 This can easily be used to create automated workflows if desired.

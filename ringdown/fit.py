@@ -120,8 +120,6 @@ class Fit(object):
         list of detector names.
     t0 : float
         target geocenter start time.
-    sky : tuple
-        tuple with source right ascension, declination and polarization angle.
     analysis_data : dict
         dictionary of truncated analysis data that will be fed to the sampler.
     info : dict
@@ -1079,9 +1077,6 @@ class Fit(object):
             if True, run with numpyro.validation_enabled() to get verbose error
             messages
 
-        return_model: bool
-            returns numpyro model instead of running it (def. `False`).
-
         **kwargs :
             arguments passed to sampler.
         """
@@ -1217,7 +1212,7 @@ class Fit(object):
 
         ifos : list
             list of detector keys (e.g., ``['H1', 'L1']``), not required if
-            `path_input` is a dictionary.
+            `path` is a dictionary.
 
         channel : dict, str
             dictionary of channel names indexed by interferometer keys, or
@@ -1230,8 +1225,9 @@ class Fit(object):
         frametype : dict, str
             dictionary of frame types indexed by interferometer keys, or frame
             type string replacement pattern, e.g., `'H1_HOFT_C00'`, with same
-            replacement rules as for `channel` and `path`. Only used when `kind
-            = 'discover'`.
+            replacement rules as for `channel` and `path`. Only used to
+            facilitate NDS frame discovery when fetching data through
+            `channel` without a local `path`.
 
         slide : dict
             optional dictionary of time slides to apply to each detector, e.g.,
@@ -1637,12 +1633,11 @@ class Fit(object):
         to be included in the segment, beginning from the first sample
         identified from `t0`.
 
-        Alternatively, the `n_analyze` argument can be specified directly. If
-        neither `duration` nor `n_analyze` are provided, the duration will be
+        If `duration` is not provided, the duration will be
         set based on the shortest available data series in the `Fit` object.
 
         .. warning::
-          Failing to explicitly specify `duration` or `n_analyze` risks
+          Failing to explicitly specify `duration` risks
           inadvertently extremely long analysis segments, with correspondingly
           long run times.
 

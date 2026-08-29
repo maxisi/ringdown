@@ -27,7 +27,11 @@ copyright = '2021, Maximiliano Isi, Will M. Farr'
 author = 'Maximiliano Isi, Will M. Farr'
 
 # The full version, including alpha/beta/rc tags
-release = 'July 12, 2021'
+try:
+    from importlib.metadata import version as _version
+    release = _version('ringdown')
+except Exception:
+    release = '1.1.0'
 
 # -- Mock imports ---------------------------------------------------
 

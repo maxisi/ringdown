@@ -1,5 +1,5 @@
 Configuration
-===========
+=============
 
 In order to run Jax on a CPU with four cores and use double precision, you can do the following:
 
@@ -24,11 +24,12 @@ To run on a GPU with single precision you can instead do:
 
 .. code-block:: python
 
-   # import jax and set it up to use double precision
-   from jax import config
-   config.update("jax_enable_x64", False)
+   # set jax to use single precision
+   # (this is the default so no need to run the lines below)
+   # from jax import config
+   # config.update("jax_enable_x64", False)
 
-   # import numpyro and set it up to use 4 CPU devices
+   # import numpyro and set it up to use the GPU
    import numpyro
    numpyro.set_platform('gpu')
 

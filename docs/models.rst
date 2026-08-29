@@ -1,7 +1,7 @@
 Models
 ======
 
-The :class:`Fit <ringdown.fit.Fit>` object interfaces with a of `numpyro
+The :class:`Fit <ringdown.fit.Fit>` object interfaces with a `numpyro
 <https://num.pyro.ai>`_ model for sampling. This model defines the likelihood,
 prior and signal templates and is constructed according to a number of options
 per the :ref:`modindex`. The model can run in three broad configurations.
@@ -19,11 +19,13 @@ time. The signal model is thus
 
 although this is internally parameterized in terms of cosine and sine
 quadratures, :math:`A_x = A \cos \phi` and :math:`A_y = A \sin \phi`, for
-efficiency. Importantly, label switching problems are avoided by defining
-:math:`f_n < f_{n+1}` or :math:`\gamma_n < \gamma_{n+1}`.
+efficiency. Label switching problems can be avoided by imposing
+:math:`f_n < f_{n+1}` or :math:`\gamma_n < \gamma_{n+1}` through the
+``mode_ordering`` option (disabled by default).
 
-Priors are flat in :math:`A_n, \phi_n, f_n, \gamma_n`, modulo the
-:math:`f_n < f_{n+1}` or :math:`\gamma_n < \gamma_{n+1}` restriction.
+Priors are flat in :math:`\phi_n, f_n, \gamma_n`, modulo any ``mode_ordering``
+restriction; the default amplitude prior is Gaussian on the quadratures, and
+can be made flat in :math:`A_n` with the ``flat_amplitude_prior`` option.
 
 |:point_right:| **See this model in action!** :doc:`examples/single_damped_sinusoid`.
 
@@ -38,7 +40,7 @@ harmonic numbers (:math:`\ell` and :math:`0 \leq |m| \leq \ell`), and overtone
 number (:math:`n`).
 
 The waveform is such that the two GW polarizations for each
-:math:`j \equiv (+1, -2, \ell, |m|, n)` mode are given by six
+:math:`j \equiv (+1, -2, \ell, |m|, n)` mode are given by four
 parameters :math:`A_j, \epsilon_j, \theta_j,\phi_j` following
 
 .. math::
@@ -67,21 +69,24 @@ angle; these are currently fixed, and their only effect is to scale the relative
 amplitudes at different detectors (otherwise, they are degenerate with the mode
 amplitudes and phases).
 
-In the ``mchi`` model, the mode frequencies and damping rates are parameterized
+In this configuration, selected by passing a list of mode index tuples as
+``modes`` (an integer instead yields the generic damped sinusoids above), the
+mode frequencies and damping rates are parameterized
 by two parameters: the Kerr black-hole mass :math:`M` and dimensionless spin
 magnitude :math:`\chi`. To replicate this functional dependence efficiently, the
 model makes use of fitting coefficients precomputed through the `qnm
 <https://qnm.readthedocs.io/en/latest/>`_ package.
 
-The priors are uniform in :math:`M` and :math:`\chi`. The priors can also be
-made uniform on :math:`A_j` and :math:`\epsilon_j` using the ``flat_A`` and
-``flat_A_ellip`` options (see :meth:`Fit.update_prior
-<ringdown.fit.Fit.update_prior>`); by default, however, they correspond to
+The priors are uniform in :math:`M` and :math:`\chi`. The prior can also be
+made uniform on :math:`A_j` using the ``flat_amplitude_prior`` option (see
+:meth:`Fit.update_model <ringdown.fit.Fit.update_model>`); by default,
+however, they correspond to
 Gaussian priors on the cosine and sine quadratures of each polarization (see
 Appendix of `Isi & Farr (2021) <https://arxiv.org/abs/2107.05609>`_).
 
 This model supports deviations from the Kerr spectrum, which can be turned on
-via the ``df`` and ``dg`` options. This activates deviation
+via the ``df_min``/``df_max`` and ``dg_min``/``dg_max`` options (both the
+minimum and maximum of a pair must be set). This activates deviation
 parameters :math:`\delta f_j` and :math:`\delta\gamma_j` that modify the
 frequencies and damping times such that
 
@@ -103,8 +108,9 @@ modes. This is equivalent to assuming all :math:`m=+2` and :math:`m=-2`
 components are equally excited, so that the ellipticity of the observed signal
 is only a function of the viewing angle (see appendix in `Isi & Farr (2021)
 <https://arxiv.org/abs/2107.05609>`_); we might expect this in the case of
-nonprecessing systems, which possess equatorial reflection symmetry (hence the
-naming ``aligned``).
+nonprecessing systems, which possess equatorial reflection symmetry. This
+configuration is enabled by passing the ``cosi``, ``cosi_min`` or ``cosi_max``
+options.
 
 In this more restricted version of the mass-spin model above, the polarizations are given by
 

@@ -49,7 +49,7 @@ class Series(pd.Series):
         path : str
             path to file, or None if fetching remote data.
         kind : str
-            kind of file to load: `gwsoc`, `hdf` or `csv`.
+            kind of file to load: `gwosc`, `frame`, `hdf` or `csv`.
         channel : str
             channel name to use when reading GW frame files (not required
             otherwise).

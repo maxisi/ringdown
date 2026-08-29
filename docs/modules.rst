@@ -67,7 +67,7 @@ Target module
    :show-inheritance:
 
 Utilities module
--------------
+----------------
 
 .. automodule:: ringdown.utils
    :members:

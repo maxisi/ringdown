@@ -408,9 +408,10 @@ def make_model(
     ---------
     modes : int or list[tuple]
         If integer, the number of damped sinusoids to use.  If list of tuples,
-        each entry should be of the form `(p, s, ell, m)`, where `p` is `1` for
-        prograde `-1` for retrograde; `s` is the spin weight (`-2` for the
-        usual GW modes); and `ell` and `m` refer to the usual angular numbers.
+        each entry should be of the form `(p, s, ell, m, n)`, where `p` is `1`
+        for prograde `-1` for retrograde; `s` is the spin weight (`-2` for the
+        usual GW modes); `ell` and `m` refer to the usual angular numbers; and
+        `n` is the overtone number.
 
     a_scale_max : float
         The maximum value of the amplitude scale parameter. This is used to
@@ -498,7 +499,7 @@ def make_model(
         that transitions from 1 to 0 over [a_scale_max * (1 -
         amplitude_cutoff_fraction), a_scale_max]. Larger values make the
         transition region wider, while smaller values make it narrower. Default
-        is 0.5, which means the transition occurs over the upper half of the
+        is 0.1, which means the transition occurs over the upper 10% of the
         amplitude range.
 
     Returns
