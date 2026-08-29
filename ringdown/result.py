@@ -139,6 +139,12 @@ class Result(xr.DataTree):
             setattr(new, k, getattr(self, k))
         return new
 
+    def _repr_html_(self) -> str:
+        """HTML representation with attributes collapsed by default, since
+        the ``config`` attribute can hold a very large JSON string."""
+        with xr.set_options(display_expand_attrs=False):
+            return super()._repr_html_()
+
     @property
     def has_imr_result(self) -> bool:
         """Check if an IMR result is loaded."""
