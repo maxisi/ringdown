@@ -1007,9 +1007,9 @@ class Fit(object):
                     d = tuple(chain_draw + list(MODEL_DIMENSIONS.get(k, ())))
                     # get coordinates
                     c = {c: coord[c] for c in d if c not in chain_draw}
-                    # get data array replacing first dimension (samples) with
-                    # chain and draw
-                    v = np.reshape(v, tuple(shape + list(v.shape[1:])))
+                    # get data array replacing first dimension (samples)
+                    # with chain and draw (converting JAX arrays to numpy)
+                    v = np.asarray(v).reshape(tuple(shape + list(v.shape[1:])))
                     result.posterior[k] = xr.DataArray(v, coords=c, dims=d)
                     logger.info(f"added {k} to posterior")
 

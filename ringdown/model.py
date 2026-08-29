@@ -1186,6 +1186,11 @@ def get_arviz(
         constant_data=in_data,
         log_likelihood=True,
     )
+    # from_numpyro converts the posterior samples to numpy but leaves JAX
+    # arrays in other groups (sample_stats, log_likelihood, observed sites);
+    # convert everything to numpy to avoid device-pinned data and spurious
+    # x64-truncation warnings in downstream xarray operations
+    result = result.map_over_datasets(xr.Dataset.as_numpy)
     result.attrs.update(attrs or {})
 
     if store_data:
