@@ -1506,6 +1506,14 @@ class Result(xr.DataTree):
                 aes = dict(kwargs.get("aes") or {})
                 aes.setdefault("color", extra_dims)
                 kwargs["aes"] = aes
+        # draw the traces semi-transparent by default so overlapping chains
+        # remain distinguishable; user-provided visuals take precedence
+        visuals = dict(kwargs.get("visuals") or {})
+        if visuals.get("trace", True) is not False:
+            trace_visuals = dict(visuals.get("trace") or {})
+            trace_visuals.setdefault("alpha", 0.7)
+            visuals["trace"] = trace_visuals
+        kwargs["visuals"] = visuals
         with _stock_matplotlib_axes():
             pc = plot_trace_dist(self, *args, var_names=var_names, **kwargs)
             if injection:
