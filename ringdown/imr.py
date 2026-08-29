@@ -76,6 +76,7 @@ class IMRResult(pd.DataFrame):
     _g_key = "g_{mode}"
 
     _meta = ["attrs", "_psds", "_ringdown_fit", "_ringdown_result"]
+    _metadata = ["_psds", "_waveforms", "_ringdown_fit", "_ringdown_result"]
 
     def __init__(self, *args, attrs=None, psds=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -102,12 +103,12 @@ class IMRResult(pd.DataFrame):
     @property
     def has_ringdown_fit(self) -> bool:
         """Check if ringdown fit is present."""
-        return self.__dict__["_ringdown_fit"] is not None
+        return self.__dict__.get("_ringdown_fit") is not None
 
     @property
     def has_ringdown_result(self) -> bool:
         """Check if ringdown result is present."""
-        return self.__dict__["_ringdown_result"] is not None
+        return self.__dict__.get("_ringdown_result") is not None
 
     @property
     def has_ringdown_reference(self) -> bool:
@@ -148,7 +149,7 @@ class IMRResult(pd.DataFrame):
     @property
     def psds(self) -> dict[data.PowerSpectrum]:
         """Power Spectral Densities used in the analysis."""
-        return self.__dict__["_psds"] or {}
+        return self.__dict__.get("_psds") or {}
 
     def set_psds(self, psds: dict | str, ifos: list | None = None) -> None:
         """Set the PSDs used in the analysis.
@@ -197,7 +198,8 @@ class IMRResult(pd.DataFrame):
     @property
     def approximant(self) -> str | None:
         """Waveform approximant used in analysis."""
-        config_approx = self.attrs.get("config", {}).get("waveform-approximant")
+        config_approx = self.attrs.get(
+            "config", {}).get("waveform-approximant")
         return self.attrs.get("approximant", config_approx)
 
     def set_approximant(self, approximant: str) -> None:
@@ -529,7 +531,8 @@ class IMRResult(pd.DataFrame):
             for _, sample in tqdm(
                 df.iterrows(), total=len(df), ncols=None, desc="peak time"
             ):
-                h = waveforms.Coalescence.from_parameters(time, **sample, **kws)
+                h = waveforms.Coalescence.from_parameters(
+                    time, **sample, **kws)
                 tp = h.get_invariant_peak_time()
                 tp_dict = {}
                 for ifo in ifos:
@@ -806,9 +809,9 @@ class IMRResult(pd.DataFrame):
         for _, sample in tqdm(df.iterrows(), **tqdm_kws):
             if np.array([self.reference_frequency < self.minimum_frequency[ifo] for ifo in ifos]).any():
                 h = waveforms.get_detector_signals(
-                times=time, ifos=ifos, f_low=self.minimum_frequency['waveform'],
-                **sample, **kws
-            )
+                    times=time, ifos=ifos, f_low=self.minimum_frequency['waveform'],
+                    **sample, **kws
+                )
             else:
                 h = waveforms.get_detector_signals(
                     times=time, ifos=ifos, **sample, **kws
@@ -853,7 +856,7 @@ class IMRResult(pd.DataFrame):
             new_time_dict = {}
             for i, t in time_dict.items():
                 i0_dict[i] = np.argmin(abs(t - start_times[i]))
-                new_time_dict[i] = t[i0_dict[i] : i0_dict[i] + n]
+                new_time_dict[i] = t[i0_dict[i]: i0_dict[i] + n]
             h = h.slice(i0_dict, n)
             time_dict = new_time_dict
 
@@ -968,6 +971,9 @@ class IMRResult(pd.DataFrame):
         df = super().copy(*args, **kwargs)
         if self.has_ringdown_reference:
             df.set_ringdown_reference(self.ringdown_reference)
+        psds = self.__dict__.get("_psds")
+        if psds is not None:
+            df.__dict__["_psds"] = dict(psds)
         return df
 
     def to_inference_data(
@@ -1176,10 +1182,11 @@ class IMRResult(pd.DataFrame):
                 logger.info(f"no group provided; using {group}")
             config = pe.config.get(group, {}).get("config", {})
             p = {
-                i: data.PowerSpectrum(p).fill_low_frequencies().gate().interpolate_to_index()
+                i: data.PowerSpectrum(p).fill_low_frequencies(
+                ).gate().interpolate_to_index()
                 for i, p in pe.psd.get(group, {}).items()
             }
-            attrs = (attrs or {}).update({"config": config})
+            attrs = {**(attrs or {}), "config": config}
             return cls(pe.samples_dict[group], attrs=attrs, psds=p)
 
         if os.path.splitext(path)[1] in [".hdf5", ".h5"]:
@@ -1212,13 +1219,14 @@ class IMRResult(pd.DataFrame):
                             )
                 if "psds" in f[group]:
                     p = {
-                        i: data.PowerSpectrum(p).fill_low_frequencies().gate().interpolate_to_index()
+                        i: data.PowerSpectrum(p).fill_low_frequencies(
+                        ).gate().interpolate_to_index()
                         for i, p in f[group]["psds"].items()
                     }
                 else:
                     p = {}
                 if posterior_key in f[group]:
-                    attrs = (attrs or {}).update({"config": c})
+                    attrs = {**(attrs or {}), "config": c}
                     return cls(f[group][posterior_key][()], attrs=attrs, psds=p)
                 else:
                     raise ValueError("no {posterior_key} found")

@@ -384,5 +384,5 @@ def get_bilby_dict(d):
         chars_to_remove = " '{}"
         translation_table = str.maketrans('', '', chars_to_remove)
         d = {k.translate(translation_table): v.translate(translation_table)
-             for k, v in [i.split(':') for i in d.split(',') if ':' in i] }
+             for k, v in [i.split(':') for i in d.split(',') if ':' in i]}
     return d

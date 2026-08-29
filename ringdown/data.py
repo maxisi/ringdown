@@ -254,12 +254,14 @@ class Series(pd.Series):
         """
         kws = self._DEF_INTERP_KWS.copy()
         kws.update(**kwargs)
-        if any(np.iscomplex(self.values)):
-            re_interp_func = interp1d(self.index, self.values.real, **kws)
-            im_interp_func = interp1d(self.index, self.values.imag, **kws)
+        x = np.asarray(self.index)
+        y = np.asarray(self.values)
+        if np.iscomplexobj(y):
+            re_interp_func = interp1d(x, y.real, **kws)
+            im_interp_func = interp1d(x, y.imag, **kws)
             interp = re_interp_func(new_index) + 1j*im_interp_func(new_index)
         else:
-            interp_func = interp1d(self.index, self.values, **kws)
+            interp_func = interp1d(x, y, **kws)
             interp = interp_func(new_index)
         attrs = {a: getattr(self, a, None) for a in getattr(self, '_meta', [])}
         return self._constructor(interp, index=new_index, **attrs)
@@ -496,6 +498,7 @@ class Data(TimeSeries):
     """
 
     _meta = ['ifo', 'attrs']
+    _metadata = ['ifo']
 
     def __init__(self, *args, ifo=None, attrs=None,  **kwargs):
         if ifo is not None:
@@ -645,7 +648,7 @@ class Data(TimeSeries):
         dts = np.diff(d.time)
         if min(dts) != max(dts):
             logger.info("time series out of order")
-            d.sort_index(inplace=True, ascending=True)
+            d = d.sort_index(ascending=True)
         return d
 
     def get_acf(self, **kws):
@@ -682,6 +685,7 @@ class PowerSpectrum(FrequencySeries):
     """
 
     _meta = ['ifo', 'attrs']
+    _metadata = ['ifo']
 
     def __init__(self, *args, delta_f=None, ifo=None, attrs=None,
                  fill_power_of_two=True, enforce_uniform_spacing=True,
@@ -716,11 +720,15 @@ class PowerSpectrum(FrequencySeries):
             args = [None]
         self.ifo = ifo or getattr(args[0], 'ifo', None)
         self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
-        x = self.index[-1]
-        if fill_power_of_two and not self.empty and not utils.isp2(x):
+        if fill_power_of_two and not self.empty and not utils.isp2(
+                self.index[-1]):
             logger.info("completing power spectrum to next power of two")
             self.fill_power_of_two()
-        self.sort_index(inplace=True, ascending=True)
+        if not self.empty and not self.index.is_monotonic_increasing:
+            s = self.sort_index(ascending=True)
+            super().__init__(s.to_numpy(), index=s.index, name=self.name)
+            self.ifo = ifo or getattr(args[0], 'ifo', None)
+            self.attrs = attrs or getattr(args[0], 'attrs', {}) or {}
 
     @property
     def _constructor(self):
@@ -760,7 +768,7 @@ class PowerSpectrum(FrequencySeries):
         fmax = self.freq[-1]
         new_fmax = utils.np2(fmax)
         if fmax % 2 and np.isclose(new_fmax - fmax, self.delta_f):
-            self[new_fmax] = self.iloc[-1]
+            self.loc[new_fmax] = self.iloc[-1]
 
     def fill_low_frequencies(self, f_min: float = 0.,
                              fill_value: float | None = None,
@@ -854,7 +862,7 @@ class PowerSpectrum(FrequencySeries):
         kws['nperseg'] = kws.get('nperseg', fs)
         # default to median-averaged, not mean-averaged to handle outliers.
         kws['average'] = kws.get('average', 'median')
-        freq, psd = sig.welch(data, fs=fs, **kws)
+        freq, psd = sig.welch(np.asarray(data), fs=fs, **kws)
         _meta = {a: getattr(data, a, None) for a in getattr(data, '_meta', [])}
         p = cls(psd, index=freq, **_meta)
         if f_min is not None or f_max is not None:
@@ -1235,6 +1243,7 @@ class AutoCovariance(TimeSeries):
     """
 
     _meta = ['ifo', 'attrs']
+    _metadata = ['ifo']
 
     def __init__(self, *args, delta_t=None, ifo=None, attrs=None,
                  **kwargs):
@@ -1284,7 +1293,7 @@ class AutoCovariance(TimeSeries):
         dt = getattr(d, 'delta_t', delta_t)
         n = n or len(d)
         if method.lower() == 'td':
-            rho = sig.correlate(d, d, **kws)
+            rho = sig.correlate(np.asarray(d), np.asarray(d), **kws)
             rho = np.fft.ifftshift(rho)
             rho = rho[:n] / len(d)
         elif method.lower() == 'fd':

@@ -131,7 +131,9 @@ class Result(az.InferenceData):
     def strain_scale(self) -> float:
         """Scale factor for strain data."""
         s = self.get("constant_data", {}).get("scale", 1.0)
-        return float(s)
+        # ArviZ stores scalars in constant_data as length-1 arrays
+        # (dummy dim scale_dim_0). NumPy 2.4+ rejects float() on those.
+        return float(np.asarray(s).item())
 
     @property
     def h_det(self):
@@ -2664,8 +2666,7 @@ class PPResult(object):
         if len(qdf) < len(self):
             logger.warning(f"Dropped {len(self) - len(qdf)} rows with NaNs")
         if latex:
-            qdf = qdf.copy()
-            qdf.rename(columns=get_latex_from_key, inplace=True)
+            qdf = qdf.rename(columns=get_latex_from_key)
         # drop columns that have a single unique value
         qdf = qdf.loc[:, qdf.nunique() > 1]
 
@@ -2761,8 +2762,7 @@ class PPResult(object):
         if len(qdf) < len(self):
             logger.warning(f"Dropped {len(self) - len(qdf)} rows with NaNs")
         if latex:
-            qdf = qdf.copy()
-            qdf.rename(columns=get_latex_from_key, inplace=True)
+            qdf = qdf.rename(columns=get_latex_from_key)
         # drop columns that have a single unique value
         qdf = qdf.loc[:, qdf.nunique() > 1]
         # get number of simulations to plot

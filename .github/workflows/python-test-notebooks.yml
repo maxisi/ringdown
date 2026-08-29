@@ -12,16 +12,64 @@ on:
       - igwn
 
 jobs:
+  data:
+    name: prefetch example data
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.13"
+    - name: Restore GW150914 PE samples (Zenodo)
+      id: pe-cache
+      uses: actions/cache/restore@v6
+      with:
+        path: docs/examples/IGWN-GWTC2p1-v2-GW150914_095045_PEDataRelease_mixed_cosmo.h5
+        key: zenodo-gwtc2p1-gw150914-pe-mixed-cosmo
+    - name: Restore GWOSC strain download cache
+      id: gwosc-strain-cache
+      uses: actions/cache/restore@v6
+      with:
+        # astropy >= 8 caches under ~/.cache/astropy, older under ~/.astropy/cache
+        path: |
+          ~/.cache/astropy/download
+          ~/.astropy/cache/download
+        key: gwosc-astropy-download-cache
+    - name: Download example data
+      if: steps.pe-cache.outputs.cache-hit != 'true' || steps.gwosc-strain-cache.outputs.cache-hit != 'true'
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install astropy gwosc
+        bash tests/download_notebook_data.sh
+    # save even if a later download failed, so partial progress is kept
+    - name: Save GW150914 PE samples (Zenodo)
+      if: always() && steps.pe-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: docs/examples/IGWN-GWTC2p1-v2-GW150914_095045_PEDataRelease_mixed_cosmo.h5
+        key: zenodo-gwtc2p1-gw150914-pe-mixed-cosmo
+    - name: Save GWOSC strain download cache
+      if: always() && steps.gwosc-strain-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: |
+          ~/.cache/astropy/download
+          ~/.astropy/cache/download
+        key: gwosc-astropy-download-cache
+
   build:
+    needs: data
 
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v7
-    - name: Set up Python 3.12
+    - name: Set up Python 3.13
       uses: actions/setup-python@v7
       with:
-        python-version: "3.12"
+        python-version: "3.13"
         cache: 'pip'
     - name: Install dependencies
       run: |
@@ -30,7 +78,22 @@ jobs:
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         pip install .
         python -m ipykernel install --user --name ringdown
+    - name: Restore GW150914 PE samples (Zenodo)
+      uses: actions/cache/restore@v6
+      with:
+        path: docs/examples/IGWN-GWTC2p1-v2-GW150914_095045_PEDataRelease_mixed_cosmo.h5
+        key: zenodo-gwtc2p1-gw150914-pe-mixed-cosmo
+    - name: Restore GWOSC strain download cache
+      uses: actions/cache/restore@v6
+      with:
+        path: |
+          ~/.cache/astropy/download
+          ~/.astropy/cache/download
+        key: gwosc-astropy-download-cache
     - name: Test examples
+      env:
+        # have gwpy read/write GWOSC downloads in the astropy download cache
+        GWPY_CACHE: "1"
       run: |
         # test notebooks
         pytest -n=0 --nbmake --nbmake-timeout=1200 docs/examples

@@ -2,12 +2,12 @@ name: ringdown
 channels:
   - conda-forge
 dependencies:
-  - python=3.12
-  - numpy=2.2.6
+  - python=3.13
+  - numpy=2.5.2
   - lalsuite=7.26
   - h5py=3.16
   - arviz=0.19
-  - pandas=2.2
+  - pandas=3.0
   - qnm=0.4.4
   - seaborn=0.13
   - jupyterlab
@@ -16,7 +16,7 @@ dependencies:
   - ipykernel
   - parse>=1.20
   - pytables>=3.10,<4
-  - scipy>=1.15,<1.16
+  - scipy>=1.16,<1.19
   - pip
   # Temporary: conda-forge jax/jaxlib are still 0.10.2. Keep numpyro on pip
   # too so conda does not pull that older jax. Move both back to conda when

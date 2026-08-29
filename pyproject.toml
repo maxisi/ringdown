@@ -16,22 +16,23 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Astronomy"
 ]
-requires-python = ">=3.12, <3.14"
+requires-python = ">=3.12, <3.15"
 dependencies = [
-    "numpy==2.2.6",
+    "numpy==2.5.2",
     "lalsuite==7.26.15",
     "h5py~=3.16",
     "arviz~=0.19",
-    "pandas~=2.2",
+    "pandas~=3.0",
     "qnm==0.4.4",
     "seaborn~=0.13",
     "numpyro==0.21.0",
     "jax==0.11.1",
     "parse>=1.20",
     "tables~=3.10",
-    "scipy>=1.15,<1.16",
+    "scipy>=1.16,<1.19",
 ]
 
 [project.scripts]
@@ -46,7 +47,7 @@ build-backend = "hatchling.build"
 
 [project.optional-dependencies]
 extra = [
-    "gwpy==3.0.10",
+    "gwpy~=4.0",
 ]
 
 [project.urls]

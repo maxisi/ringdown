@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13"]
+        python-version: ["3.12", "3.13", "3.14"]
 
     steps:
     - uses: actions/checkout@v7
@@ -33,7 +33,7 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest pytest-xdist pytest-cov
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        pip install .
+        pip install '.[extra]'
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
@@ -50,10 +50,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v7
-    - name: Set up Python 3.12
+    - name: Set up Python 3.13
       uses: actions/setup-python@v7
       with:
-        python-version: "3.12"
+        python-version: "3.13"
         cache: 'pip'
     - name: Install dependencies
       run: |

@@ -7,7 +7,7 @@ from .. import indexing
 
 
 class Ringdown(Signal):
-    _metadata = ["modes"]
+    _metadata = Signal._metadata + ["modes"]
     _MODELS = ["ringdown"]
 
     def __init__(self, *args, modes=None, **kwargs):
