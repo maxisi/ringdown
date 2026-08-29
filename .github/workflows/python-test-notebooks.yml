@@ -43,14 +43,15 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install astropy gwosc
         bash tests/download_notebook_data.sh
+    # save even if a later download failed, so partial progress is kept
     - name: Save GW150914 PE samples (Zenodo)
-      if: steps.pe-cache.outputs.cache-hit != 'true'
+      if: always() && steps.pe-cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@v6
       with:
         path: docs/examples/IGWN-GWTC2p1-v2-GW150914_095045_PEDataRelease_mixed_cosmo.h5
         key: zenodo-gwtc2p1-gw150914-pe-mixed-cosmo
     - name: Save GWOSC strain download cache
-      if: steps.gwosc-strain-cache.outputs.cache-hit != 'true'
+      if: always() && steps.gwosc-strain-cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@v6
       with:
         path: |

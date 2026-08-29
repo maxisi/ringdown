@@ -22,20 +22,44 @@ else
         -o "$PE_FILE" "$PE_URL"
 fi
 
-# GWOSC strain into the astropy download cache, resolving the URLs with
-# gwosc exactly as gwpy will at notebook runtime
-python - <<'EOF'
-from astropy.utils.data import download_file, is_url_in_cache
+# Resolve the strain file URLs with gwosc, exactly as gwpy will at notebook
+# runtime; the gwosc.org metadata API can time out from CI runners, so fall
+# back to the known archive URLs for the segment requested by
+# fit_from_imr_result.ipynb (4 s at 16 kHz around trigger 1126259462.391).
+URLS_FILE="$(mktemp)"
+if python - > "$URLS_FILE" <<'EOF'
 from gwosc.locate import get_urls
-
-# segment requested by fit_from_imr_result.ipynb: 4 s at 16 kHz centered
-# on the GW150914 trigger time from the GWTC-2.1 config (1126259462.391)
 start, end = 1126259460, 1126259465
 for ifo in ("H1", "L1"):
     for url in get_urls(ifo, start, end, sample_rate=16384, format="hdf5"):
-        if is_url_in_cache(url):
-            print(f"already cached: {url}")
-        else:
-            print(f"downloading: {url}")
-            download_file(url, cache=True, show_progress=False)
+        print(url)
 EOF
+then
+    echo "resolved strain URLs with gwosc"
+else
+    echo "gwosc API unreachable; falling back to pinned URLs" >&2
+    cat > "$URLS_FILE" <<'EOF'
+https://gwosc.org/archive/data/O1_16KHZ/1126170624/H-H1_LOSC_16_V1-1126256640-4096.hdf5
+https://gwosc.org/archive/data/O1_16KHZ/1126170624/L-L1_LOSC_16_V1-1126256640-4096.hdf5
+EOF
+fi
+
+# Download each file with curl (retries + resumable, unlike astropy's own
+# downloader) and import it into the astropy cache under its URL key.
+TMP_DL="$(mktemp -d)"
+trap 'rm -rf "$TMP_DL"' EXIT
+while read -r url; do
+    [ -z "$url" ] && continue
+    if python -c "import sys; from astropy.utils.data import is_url_in_cache; sys.exit(0 if is_url_in_cache(sys.argv[1]) else 1)" "$url"; then
+        echo "already cached: $url"
+        continue
+    fi
+    f="$TMP_DL/$(basename "$url")"
+    echo "Downloading $url"
+    # abort if stalled below 10 kB/s for 60 s, then retry resumes (-C -)
+    curl --fail --location --retry 10 --retry-delay 15 --retry-all-errors \
+        --connect-timeout 30 --speed-limit 10000 --speed-time 60 \
+        --continue-at - -o "$f" "$url"
+    python -c "import sys; from astropy.utils.data import import_file_to_cache; import_file_to_cache(sys.argv[1], sys.argv[2]); print('cached:', sys.argv[1])" "$url" "$f"
+    rm -f "$f"
+done < "$URLS_FILE"
