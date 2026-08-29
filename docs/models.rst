@@ -44,18 +44,18 @@ The waveform is such that the two GW polarizations for each
 parameters :math:`A_j, \epsilon_j, \theta_j,\phi_j` following
 
 .. math::
-   \begin{eqnarray}
+   \begin{aligned}
    h^{(+)}_{j} &= h^c_{j}\, \cos \theta_{j} - \epsilon_{j} h^s_{j}\, \sin\theta_{j}\, , \\
    h^{(\times)}_j &= h^c_{j}\, \sin \theta_j + \epsilon_j h^s_{j}\, \cos\theta_j\, ,
-   \end{eqnarray}
+   \end{aligned}
 
 for cosine and sine quadratures
 
 .. math::
-   \begin{eqnarray}
+   \begin{aligned}
    h^c_j &\equiv A_j\, e^{-t/\tau_j} \cos(\omega_j t - \phi_j) \, , \\
    h^s_j &\equiv A_j\, e^{-t/\tau_j} \sin(\omega_j t - \phi_j) \, .
-   \end{eqnarray}
+   \end{aligned}
 
 For each detector the template will thus be
 
@@ -91,10 +91,10 @@ parameters :math:`\delta f_j` and :math:`\delta\gamma_j` that modify the
 frequencies and damping times such that
 
 .. math::
-   \begin{eqnarray}
+   \begin{aligned}
    f_j &= f_j(M,\chi) \exp(\delta f_j) \, , \\
    \gamma_j &= \gamma_j(M,\chi) \exp(\delta \gamma_j) \, .
-   \end{eqnarray}
+   \end{aligned}
 
 |:point_right:| **See this model in action!** :doc:`examples/GW190521`.
 
@@ -115,10 +115,10 @@ options.
 In this more restricted version of the mass-spin model above, the polarizations are given by
 
 .. math::
-   \begin{eqnarray}
+   \begin{aligned}
    h^{(+)} &= \sum_{\ell |m| n} Y^+_{\ell |m| n}(\cos\iota) A_{\ell |m| n} \cos(\omega_{\ell |m| n} t - \phi_{\ell |m| n})\exp(-\gamma_{\ell |m| n} t)\, , \\
    h^{(\times)} &= \sum_{\ell |m| n} Y^\times_{\ell |m| n}(\cos\iota) A_{\ell |m| n} \sin(\omega_{\ell |m| n} t - \phi_{\ell |m| n}) \exp(-\gamma_{\ell |m| n} t)\, .
-   \end{eqnarray}
+   \end{aligned}
 
 where :math:`Y^{+/\times}_{\ell |m| n}(\cos\iota)` are given in Eq. (31) of
 `Isi (2022) <https://arxiv.org/abs/2208.03372>`_. Other options for this model
