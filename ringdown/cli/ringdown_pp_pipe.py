@@ -286,7 +286,7 @@ def main(args=None):
         "rng = np.random.default_rng({})".format(seed),
         "",
         "# stack samples",
-        "data = prior.posterior.stack(sample=('chain', 'draw'))",
+        "data = prior.posterior.dataset.stack(sample=('chain', 'draw'))",
         "# reoder samples randomly",
         "random_subset = rng.permutation(np.arange(len(data['sample'])))",
         "data = data.isel(sample=random_subset)",

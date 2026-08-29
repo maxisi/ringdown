@@ -6,7 +6,8 @@ import os
 import numpy as np
 import arviz as az
 import scipy.linalg as sl
-from arviz.data.base import dict_to_dataset
+from arviz_base import dict_to_dataset
+from arviz_stats.utils import ELPDData
 from . import indexing
 from . import data
 from .imr import IMRResult
@@ -17,6 +18,8 @@ from .config import WHITENED_LOGLIKE_KEY
 import pandas as pd
 import json
 import configparser
+from html import escape as _html_escape
+from contextlib import contextmanager
 from glob import glob
 from parse import parse
 import logging
@@ -26,6 +29,33 @@ from .labeling import ParameterLabel, get_latex_from_key
 import h5py
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _stock_matplotlib_axes():
+    """Temporarily restore matplotlib's stock Axes as the default
+    (rectilinear) projection.
+
+    Some libraries (notably gwpy) register their own Axes subclass as the
+    default projection, which breaks arviz-plots' backend detection: it
+    infers the plotting backend from the module of the axes class, and
+    tries to import e.g. ``arviz_plots.backend.gwpy``.
+    """
+    import matplotlib.axes
+    from matplotlib.projections import (
+        get_projection_class,
+        register_projection,
+    )
+
+    prev = get_projection_class("rectilinear")
+    hijacked = prev is not matplotlib.axes.Axes
+    if hijacked:
+        register_projection(matplotlib.axes.Axes)
+    try:
+        yield
+    finally:
+        if hijacked:
+            register_projection(prev)
 
 _DATAFRAME_PARAMETERS = [
     "m",
@@ -43,8 +73,42 @@ _DATAFRAME_PARAMETERS = [
 DEFAULT_COLLECTION_KEY = "run"
 
 
-class Result(az.InferenceData):
+def _dict_to_details_html(d: dict) -> str:
+    """Recursively render a dictionary as collapsible HTML
+    ``<details>`` elements (used to display the ``config`` attribute
+    in notebook representations)."""
+    items = []
+    for k, v in d.items():
+        key = _html_escape(str(k))
+        if isinstance(v, dict) and v:
+            items.append(
+                f"<details style='margin-left:1em'>"
+                f"<summary style='cursor:pointer'>{key}</summary>"
+                f"{_dict_to_details_html(v)}</details>"
+            )
+        else:
+            items.append(
+                f"<div style='margin-left:1em'>{key}: "
+                f"{_html_escape(str(v))}</div>"
+            )
+    return "".join(items)
+
+
+class Result(xr.DataTree):
     """Result from a ringdown fit."""
+
+    # ringdown-specific attributes caching derived quantities; xarray
+    # re-creates nodes with ``type(self)()`` so these must be carried
+    # through copies explicitly (see :meth:`copy`)
+    _result_attrs = (
+        "_whitened_templates",
+        "_target",
+        "_modes",
+        "_imr_result",
+        "_default_label_format",
+        "_config_dict",
+        "_fit",
+    )
 
     def __init__(self, *args, config=None, produce_h_det=False, **kwargs):
         """Initialize a result from a ringdown fit.
@@ -52,25 +116,25 @@ class Result(az.InferenceData):
         Arguments
         ---------
         *args : list
-            arguments to pass to the `az.InferenceData` constructor.
+            a single :class:`xarray.DataTree` to wrap (e.g., as returned by
+            :func:`arviz.from_numpyro`), or arguments to pass to the
+            :class:`xarray.DataTree` constructor.
         config : str
             path to configuration file (optional).
         produce_h_det : bool
             produce h_det from modes if not already present (def., `True`).
         **kwargs : dict
-            additional keyword arguments to pass to the `az.InferenceData`
-            constructor.
+            additional keyword arguments to pass to the
+            :class:`xarray.DataTree` constructor.
         """
         # get config file input if provided
-        if len(args) == 1 and isinstance(args[0], az.InferenceData):
-            # modeled after from_netcdf
-            # https://python.arviz.org/en/stable/_modules/arviz/data/inference_data.html#
-            # az.InferenceData(fit.result.attrs, **{k: getattr(fit.result, k)
-            # for k in fit.result._groups})
+        if len(args) == 1 and isinstance(args[0], xr.DataTree):
+            tree = args[0]
             super().__init__(
-                args[0].attrs,
-                **{k: getattr(args[0], k) for k in args[0]._groups},
+                dataset=tree.to_dataset(),
+                children=dict(tree.children),
             )
+            self.attrs.update(tree.attrs)
         else:
             super().__init__(*args, **kwargs)
         self._whitened_templates = None
@@ -88,6 +152,41 @@ class Result(az.InferenceData):
         if produce_h_det:
             self.h_det
         self._fit = None
+
+    def copy(self, *args, **kwargs) -> "Result":
+        """Copy the result, preserving ringdown-specific metadata (e.g., the
+        cached configuration); see :meth:`xarray.DataTree.copy`."""
+        new = super().copy(*args, **kwargs)
+        for k in self._result_attrs:
+            setattr(new, k, getattr(self, k))
+        return new
+
+    def _repr_html_(self) -> str:
+        """HTML representation with attributes collapsed by default, and
+        the ``config`` attribute (a large JSON string) rendered as nested
+        collapsible sections instead of a raw JSON blob."""
+        with xr.set_options(display_expand_attrs=False):
+            html_repr = super()._repr_html_()
+        config = self.attrs.get("config")
+        if isinstance(config, str):
+            try:
+                config_dict = json.loads(config)
+            except ValueError:
+                return html_repr
+            if isinstance(config_dict, dict) and config_dict:
+                # xarray renders each attribute as an HTML-escaped string
+                # inside a <dd> element; swap that exact blob for the
+                # collapsible view, leaving the repr untouched if the
+                # expected substring is not found
+                old = f"<dd>{_html_escape(config)}</dd>"
+                new = (
+                    "<dd><details><summary style='cursor:pointer'>"
+                    f"({len(config_dict)} sections)</summary>"
+                    f"{_dict_to_details_html(config_dict)}</details></dd>"
+                )
+                if old in html_repr:
+                    html_repr = html_repr.replace(old, new, 1)
+        return html_repr
 
     @property
     def has_imr_result(self) -> bool:
@@ -200,22 +299,40 @@ class Result(az.InferenceData):
     @classmethod
     def from_netcdf(cls, *args, load_h_det_mode=True, produce_h_det=False,
                     config=None, **kwargs) -> "Result":
-        group_kwargs = kwargs.pop("group_kwargs", {})
+        """Load a result from a netCDF file, as written by
+        :meth:`Result.to_netcdf`; files written by pre-1.x arviz
+        (``InferenceData``) are also supported.
+
+        Arguments
+        ---------
+        *args :
+            arguments to pass to :func:`xarray.open_datatree`, typically
+            the path to the file.
+        load_h_det_mode : bool
+            whether to load the potentially-large ``h_det_mode`` posterior
+            variable (def., `True`).
+        produce_h_det : bool
+            produce h_det from modes if not already present (def., `False`).
+        config : str
+            path to configuration file (optional).
+        **kwargs : dict
+            additional keyword arguments to pass to
+            :func:`xarray.open_datatree`.
+        """
         if not load_h_det_mode:
-            group_kwargs["posterior"] = {"drop_variables": ["h_det_mode"]}
-        data = super().from_netcdf(*args, group_kwargs=group_kwargs, **kwargs)
+            drop = list(kwargs.pop("drop_variables", None) or [])
+            kwargs["drop_variables"] = drop + ["h_det_mode"]
+        data = xr.open_datatree(*args, **kwargs)
         # if h_det_mode is not loaded, we cannot produce h_det
         produce_h_det = produce_h_det and load_h_det_mode
         return cls(data, produce_h_det=produce_h_det, config=config)
 
-    from_netcdf.__doc__ = az.InferenceData.from_netcdf.__doc__
-
     @classmethod
     def from_zarr(cls, *args, **kwargs):
-        data = super().from_zarr(*args, **kwargs)
+        """Load a result from a zarr store via
+        :func:`xarray.open_datatree`."""
+        data = xr.open_datatree(*args, engine="zarr", **kwargs)
         return cls(data)
-
-    from_zarr.__doc__ = az.InferenceData.from_zarr.__doc__
 
     @property
     def config(self) -> dict[str, dict[str, str]]:
@@ -569,19 +686,7 @@ class Result(az.InferenceData):
             raise KeyError("No observed strain found in result.")
 
     @property
-    def waic(self) -> az.ELPDData:
-        """Returns the 'widely applicable information criterion' predictive
-        accuracy metric for the fit.
-
-        See https://arxiv.org/abs/1507.04544 for definitions and discussion.  A
-        larger WAIC indicates that the model has better predictive accuarcy on
-        the fitted data set."""
-        if WHITENED_LOGLIKE_KEY not in self.get("log_likelihood", {}):
-            self._generate_whitened_residuals()
-        return az.waic(self, var_name=WHITENED_LOGLIKE_KEY)
-
-    @property
-    def loo(self) -> az.ELPDData:
+    def loo(self) -> ELPDData:
         """Returns a leave-one-out estimate of the predictive accuracy of the
         model.
 
@@ -617,7 +722,9 @@ class Result(az.InferenceData):
         }
         resid = np.stack([residuals_whitened[i] for i in ifo_list], axis=-1)
         keys = ("time_index", "chain", "draw", "ifo")
-        self.posterior["whitened_residual"] = (keys, resid)
+        self.posterior["whitened_residual"] = xr.DataArray(
+            resid, dims=keys
+        )
         keys = ("chain", "draw", "ifo", "time_index")
         self.posterior["whitened_residual"] = (
             self.posterior.whitened_residual.transpose(*keys)
@@ -627,14 +734,10 @@ class Result(az.InferenceData):
             self.log_likelihood[WHITENED_LOGLIKE_KEY] = lnlike
         else:
             # We assume that log-likelihood isn't created yet.
-            self.add_groups(
-                dict(
-                    log_likelihood=dict_to_dataset(
-                        {WHITENED_LOGLIKE_KEY: lnlike},
-                        coords=self.posterior.coords,
-                        dims={WHITENED_LOGLIKE_KEY: list(keys)},
-                    )
-                )
+            self["log_likelihood"] = dict_to_dataset(
+                {WHITENED_LOGLIKE_KEY: lnlike},
+                coords=self.posterior.coords,
+                dims={WHITENED_LOGLIKE_KEY: list(keys)},
             )
 
     @property
@@ -648,7 +751,7 @@ class Result(az.InferenceData):
     def ess(self) -> float:
         """Minimum effective sample size for all parameters in the result."""
         # check effective number of samples and rerun if necessary
-        ess = az.ess(self.posterior)
+        ess = az.ess(self.posterior.dataset)
         mess = ess.min()
         mess_arr = np.array([mess[k].values[()] for k in mess.keys()])
         return np.min(mess_arr)
@@ -657,10 +760,10 @@ class Result(az.InferenceData):
     def stacked_samples(self):
         """Stacked samples for all parameters in the result."""
         if "chain" in self.posterior.dims and "draw" in self.posterior.dims:
-            return self.posterior.stack(sample=("chain", "draw"))
+            return self.posterior.dataset.stack(sample=("chain", "draw"))
         else:
             logger.info("No chain or draw dimensions found in posterior.")
-            return self.posterior
+            return self.posterior.dataset
 
     def set_dataframe_parameters(self, parameters: list[str]) -> None:
         """Set the parameters to be included in DataFrames derived
@@ -984,7 +1087,7 @@ class Result(az.InferenceData):
         idxs = prng.choice(samples.sizes["sample"], nsamp, p=w, replace=False)
         # create updated result
         new_result = self.copy()
-        new_result.posterior = samples.isel(sample=idxs)
+        new_result["posterior"] = samples.isel(sample=idxs)
         return new_result
 
     def imr_consistency(
@@ -1363,29 +1466,65 @@ class Result(az.InferenceData):
         *args,
         **kwargs,
     ):
-        """Alias for :func:`arviz.plot_trace`.
+        """Trace and distribution plots for the posterior, via
+        :func:`arviz_plots.plot_trace_dist`.
 
         Arguments
         ---------
         var_names : list[str]
             list of variable names to plot (def., `["a"]`).
         compact : bool
-            use compact plot (def., `True`).
+            unused; retained for backward compatibility.
         injection : bool
             plot injection parameters (def., `True`).
         *args, **kwargs : dict
-            additional arguments to pass to :func:`arviz.plot_trace`.
+            additional arguments to pass to
+            :func:`arviz_plots.plot_trace_dist`.
         """
-        if injection:
-            injdict = self.info.get("injection", {})
-            lines = []
-            for k in var_names:
-                if k in injdict:
-                    lines.append((k, {}, np.atleast_1d(injdict[k])))
-            kwargs["lines"] = lines
-        return az.plot_trace(
-            self, compact=compact, var_names=var_names, *args, **kwargs
-        )
+        from arviz_plots import plot_trace_dist, add_lines
+
+        kwargs.setdefault("backend", "matplotlib")
+        # map color to the extra (non chain/draw) dimensions by default so
+        # that, e.g., a given mode gets the same color in every panel, as
+        # in arviz 0.x (the arviz-plots default also cycles colors over
+        # variables, breaking cross-panel consistency); user-provided
+        # aesthetics take precedence
+        group = kwargs.get("group", "posterior")
+        sample_dims = kwargs.get("sample_dims") or ["chain", "draw"]
+        if isinstance(sample_dims, str):
+            sample_dims = [sample_dims]
+        names = [var_names] if isinstance(var_names, str) else var_names
+        if group in self.children:
+            ds = self[group].dataset
+            plotted = [v for v in names or ds.data_vars if v in ds.data_vars]
+            extra_dims = []
+            for v in plotted:
+                for d in ds[v].dims:
+                    if d not in sample_dims and d not in extra_dims:
+                        extra_dims.append(d)
+            if extra_dims:
+                aes = dict(kwargs.get("aes") or {})
+                aes.setdefault("color", extra_dims)
+                kwargs["aes"] = aes
+        # draw the traces semi-transparent by default so overlapping chains
+        # remain distinguishable; user-provided visuals take precedence
+        visuals = dict(kwargs.get("visuals") or {})
+        if visuals.get("trace", True) is not False:
+            trace_visuals = dict(visuals.get("trace") or {})
+            trace_visuals.setdefault("alpha", 0.7)
+            visuals["trace"] = trace_visuals
+        kwargs["visuals"] = visuals
+        with _stock_matplotlib_axes():
+            pc = plot_trace_dist(self, *args, var_names=var_names, **kwargs)
+            if injection:
+                injdict = {
+                    k: np.atleast_1d(v)
+                    for k, v in self.info.get("injection", {}).items()
+                    if k in var_names
+                }
+                if injdict:
+                    add_lines(pc, values=injdict)
+        return pc
 
     def plot_mass_spin(
         self,

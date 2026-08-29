@@ -3,7 +3,6 @@
 __all__ = ["Fit", "FitSequence"]
 
 import numpy as np
-import arviz as az
 import json
 import configparser
 import copy as cp
@@ -108,10 +107,10 @@ class Fit(object):
     target : Target
         information about truncation time at geocenter and, if applicable,
         source right ascension, declination and polarization angle.
-    result : Result, arviz.data.inference_data.InferenceData
-        if model has been run, arviz object containing fit result
-    prior : Result, arviz.data.inference_data.InferenceData
-        if model prior has been run, arviz object containing prior
+    result : Result, xarray.DataTree
+        if model has been run, object containing fit result
+    prior : Result, xarray.DataTree
+        if model prior has been run, object containing prior
     modes : list
         if applicable, list of (p, s, l, m, n) tuples identifying modes to be
         fit (else, None).
@@ -132,7 +131,7 @@ class Fit(object):
         creating a configuration file through :meth:`Fit.to_config`.
     injections : dict
         dictionary containing injected signals, indexed by detector name.
-    imr_result : Result, arviz.data.inference_data.InferenceData
+    imr_result : Result, xarray.DataTree
         reference IMR posterior, if one has been loaded.
     auto_scale : bool
         whether to automatically scale strain data when sampling using single
@@ -607,7 +606,7 @@ class Fit(object):
             fit.inject(**inj_kws)
 
         if result:
-            if isinstance(result, az.InferenceData):
+            if isinstance(result, xr.DataTree):
                 fit.result = Result(result)
             elif isinstance(result, str) and os.path.exists(result):
                 logger.warning(
@@ -616,10 +615,10 @@ class Fit(object):
                 )
                 try:
                     if result.endswith(".nc"):
-                        fit.result = Result(az.from_netcdf(result))
-                    elif result.endswith(".json"):
-                        fit.result = Result(az.from_json(result))
+                        fit.result = Result.from_netcdf(result)
                     else:
+                        # NOTE: JSON results are no longer supported since
+                        # the arviz 1.x transition (netCDF only)
                         logger.error(f"unknown result format: {result}")
                 except Exception as e:
                     logger.error(f"unable to read result from {result}: {e}")
@@ -944,7 +943,7 @@ class Fit(object):
                     sampler.run(prng, *run_input, **run_kws)
 
                 # turn sampler into Result object and store
-                # (recall that Result is a wrapper for arviz.InferenceData)
+                # (recall that Result subclasses xarray.DataTree)
                 logger.info("creating arViz object")
                 result = get_arviz(
                     sampler,
@@ -1008,9 +1007,9 @@ class Fit(object):
                     d = tuple(chain_draw + list(MODEL_DIMENSIONS.get(k, ())))
                     # get coordinates
                     c = {c: coord[c] for c in d if c not in chain_draw}
-                    # get data array replacing first dimension (samples) with
-                    # chain and draw
-                    v = np.reshape(v, tuple(shape + list(v.shape[1:])))
+                    # get data array replacing first dimension (samples)
+                    # with chain and draw (converting JAX arrays to numpy)
+                    v = np.asarray(v).reshape(tuple(shape + list(v.shape[1:])))
                     result.posterior[k] = xr.DataArray(v, coords=c, dims=d)
                     logger.info(f"added {k} to posterior")
 

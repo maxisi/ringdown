@@ -17,7 +17,8 @@ from .result import Result
 from .utils.swsh import construct_sYlm, calc_YpYc
 
 import arviz as az
-from arviz.data.base import dict_to_dataset
+import xarray as xr
+from arviz_base import dict_to_dataset
 import logging
 
 logger = logging.getLogger(__name__)
@@ -199,9 +200,9 @@ def rd_design_matrix(
         The design matrix; shape (nifo, nt, nquads*nmode).
     """
     if aligned:
-        logger.warning("aligned model is not reviewed for LVK use")
+        logger.debug("aligned model is not reviewed for LVK use")
     if single_polarization:
-        logger.warning("single_polarization model is not reviewed for LVK use")
+        logger.debug("single_polarization model is not reviewed for LVK use")
 
     # times should be originally shaped (nifo, nt)
     # take it to (nifo, nt, 1) where the last dimension is the mode
@@ -1112,8 +1113,8 @@ def get_arviz(
 
     Returns
     -------
-    dataset : arviz.InferenceData
-        The arviz dataset.
+    dataset : Result
+        The result dataset, a :class:`xarray.DataTree` subclass.
     """
     samples = sampler.get_samples()
     params_in_model = samples.keys()
@@ -1176,9 +1177,20 @@ def get_arviz(
         # keep only 'scale' in constant_data when store_data is False
         pass
 
+    # NOTE: as of arviz 1.x, from_numpyro no longer computes the pointwise
+    # log likelihood by default, so request it explicitly
     result = az.from_numpyro(
-        sampler, dims=dims, coords=coords, constant_data=in_data
+        sampler,
+        dims=dims,
+        coords=coords,
+        constant_data=in_data,
+        log_likelihood=True,
     )
+    # from_numpyro converts the posterior samples to numpy but leaves JAX
+    # arrays in other groups (sample_stats, log_likelihood, observed sites);
+    # convert everything to numpy to avoid device-pinned data and spurious
+    # x64-truncation warnings in downstream xarray operations
+    result = result.map_over_datasets(xr.Dataset.as_numpy)
     result.attrs.update(attrs or {})
 
     if store_data:
@@ -1187,21 +1199,16 @@ def get_arviz(
             logger.info("added strain to observed data")
             # make sure we have the right coordinates
             result.observed_data.coords.update(coords)
-            result.observed_data["strain"] = (
-                in_dims["strain"],
-                obs_data["strain"],
+            result.observed_data["strain"] = xr.DataArray(
+                obs_data["strain"], dims=in_dims["strain"]
             )
         else:
             logger.info("creating observed data in arviz dataset")
             # We assume that observed_data isn't created yet.
-            result.add_groups(
-                dict(
-                    observed_data=dict_to_dataset(
-                        obs_data,
-                        coords=coords,
-                        dims={"strain": in_dims["strain"]},
-                    )
-                )
+            result["observed_data"] = dict_to_dataset(
+                obs_data,
+                coords=coords,
+                dims={"strain": in_dims["strain"]},
             )
     return Result(result)
 

@@ -4,7 +4,9 @@ import h5py
 import os
 import numpy as np
 import pandas as pd
+import xarray as xr
 import arviz as az
+from arviz_stats.utils import ELPDData
 from . import indexing
 from . import qnms
 from . import waveforms
@@ -893,7 +895,7 @@ class IMRResult(pd.DataFrame):
             time_axis=1,
         )
 
-    def _generate_whitened_residuals(self, **kws) -> az.InferenceData:
+    def _generate_whitened_residuals(self, **kws) -> tuple:
         """Generate ringdown whitened residuals and log likelihoods from
         IMR waveforms and ringdown data slice.
 
@@ -950,7 +952,7 @@ class IMRResult(pd.DataFrame):
 
         return res_dict, lnlike_dict, dims, coords
 
-    def compute_ringdown_loo(self, **kws) -> az.ELPDData:
+    def compute_ringdown_loo(self, **kws) -> ELPDData:
         """Returns a leave-one-out estimate of the predictive accuracy of the
         model.
 
@@ -987,7 +989,7 @@ class IMRResult(pd.DataFrame):
         modes: list[str] | None = None,
         prng: np.random.RandomState | int | None = None,
         wf_kws: dict = {},
-    ) -> az.InferenceData:
+    ) -> xr.DataTree:
         """Produce ArviZ InferenceData object from the IMRResult.
 
         Arguments
@@ -1018,8 +1020,8 @@ class IMRResult(pd.DataFrame):
 
         Returns
         -------
-        idata : az.InferenceData
-            ArviZ InferenceData object containing the posterior samples.
+        idata : xarray.DataTree
+            DataTree object containing the posterior samples.
         """
         if nsamp is not None:
             logger.info(f"subselecting {nsamp} samples for InferenceData")
@@ -1124,14 +1126,15 @@ class IMRResult(pd.DataFrame):
         else:
             obs_data_dict = {}
 
-        return az.from_dict(
-            posterior=posterior,
-            constant_data=constant_data,
-            coords=coords,
-            dims=dims,
-            log_likelihood=ll,
-            observed_data=obs_data_dict,
-        )
+        groups = {
+            "posterior": posterior,
+            "constant_data": constant_data,
+            "log_likelihood": ll,
+            "observed_data": obs_data_dict,
+        }
+        # drop empty groups (from_dict would create empty datasets for them)
+        groups = {k: v for k, v in groups.items() if v}
+        return az.from_dict(groups, coords=coords, dims=dims)
 
     _FAVORED_APPROXIMANT = "NRSur7dq4"
 
