@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import ringdown as rd
 from ringdown.waveforms.core import Signal
 from ringdown.waveforms.ringdown import Ringdown
@@ -106,3 +107,16 @@ def test_signal_parameters_survive_slicing():
     assert isinstance(rsl, Ringdown)
     assert rsl.parameters.get("geocent_time") == 1.0
     assert len(rsl.modes) == 1
+
+
+def test_gwpy_timeseries_value_and_times():
+    # Series.read(kind='frame') and Series.fetch copy GWpy .value / .times
+    pytest.importorskip("gwpy")
+    from gwpy.timeseries import TimeSeries
+
+    ts = TimeSeries([0.0, 1.0, 2.0], sample_rate=4)
+    d = rd.Data(ts.value, index=np.array(ts.times), ifo="H1")
+    assert isinstance(d, rd.Data)
+    assert d.ifo == "H1"
+    assert len(d) == 3
+    assert np.allclose(d.to_numpy(), [0.0, 1.0, 2.0])
