@@ -18,6 +18,7 @@ from .config import WHITENED_LOGLIKE_KEY
 import pandas as pd
 import json
 import configparser
+from contextlib import contextmanager
 from glob import glob
 from parse import parse
 import logging
@@ -27,6 +28,33 @@ from .labeling import ParameterLabel, get_latex_from_key
 import h5py
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _stock_matplotlib_axes():
+    """Temporarily restore matplotlib's stock Axes as the default
+    (rectilinear) projection.
+
+    Some libraries (notably gwpy) register their own Axes subclass as the
+    default projection, which breaks arviz-plots' backend detection: it
+    infers the plotting backend from the module of the axes class, and
+    tries to import e.g. ``arviz_plots.backend.gwpy``.
+    """
+    import matplotlib.axes
+    from matplotlib.projections import (
+        get_projection_class,
+        register_projection,
+    )
+
+    prev = get_projection_class("rectilinear")
+    hijacked = prev is not matplotlib.axes.Axes
+    if hijacked:
+        register_projection(matplotlib.axes.Axes)
+    try:
+        yield
+    finally:
+        if hijacked:
+            register_projection(prev)
 
 _DATAFRAME_PARAMETERS = [
     "m",
@@ -1407,15 +1435,16 @@ class Result(xr.DataTree):
         from arviz_plots import plot_trace_dist, add_lines
 
         kwargs.setdefault("backend", "matplotlib")
-        pc = plot_trace_dist(self, *args, var_names=var_names, **kwargs)
-        if injection:
-            injdict = {
-                k: np.atleast_1d(v)
-                for k, v in self.info.get("injection", {}).items()
-                if k in var_names
-            }
-            if injdict:
-                add_lines(pc, values=injdict)
+        with _stock_matplotlib_axes():
+            pc = plot_trace_dist(self, *args, var_names=var_names, **kwargs)
+            if injection:
+                injdict = {
+                    k: np.atleast_1d(v)
+                    for k, v in self.info.get("injection", {}).items()
+                    if k in var_names
+                }
+                if injdict:
+                    add_lines(pc, values=injdict)
         return pc
 
     def plot_mass_spin(
