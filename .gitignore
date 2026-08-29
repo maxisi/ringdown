@@ -150,3 +150,6 @@ dmypy.json
 *.dat.gz
 *.dat.txt
 *.nc
+
+# test fixtures
+!tests/data/legacy_result_arviz0.nc
