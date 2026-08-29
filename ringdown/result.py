@@ -1484,6 +1484,28 @@ class Result(xr.DataTree):
         from arviz_plots import plot_trace_dist, add_lines
 
         kwargs.setdefault("backend", "matplotlib")
+        # map color to the extra (non chain/draw) dimensions by default so
+        # that, e.g., a given mode gets the same color in every panel, as
+        # in arviz 0.x (the arviz-plots default also cycles colors over
+        # variables, breaking cross-panel consistency); user-provided
+        # aesthetics take precedence
+        group = kwargs.get("group", "posterior")
+        sample_dims = kwargs.get("sample_dims") or ["chain", "draw"]
+        if isinstance(sample_dims, str):
+            sample_dims = [sample_dims]
+        names = [var_names] if isinstance(var_names, str) else var_names
+        if group in self.children:
+            ds = self[group].dataset
+            plotted = [v for v in names or ds.data_vars if v in ds.data_vars]
+            extra_dims = []
+            for v in plotted:
+                for d in ds[v].dims:
+                    if d not in sample_dims and d not in extra_dims:
+                        extra_dims.append(d)
+            if extra_dims:
+                aes = dict(kwargs.get("aes") or {})
+                aes.setdefault("color", extra_dims)
+                kwargs["aes"] = aes
         with _stock_matplotlib_axes():
             pc = plot_trace_dist(self, *args, var_names=var_names, **kwargs)
             if injection:
