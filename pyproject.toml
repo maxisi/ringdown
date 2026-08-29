@@ -24,7 +24,7 @@ dependencies = [
     "numpy==2.5.2",
     "lalsuite==7.26.15",
     "h5py~=3.16",
-    "arviz>=0.23,<1",
+    "arviz[matplotlib,h5netcdf]~=1.3",
     "pandas~=3.0",
     "qnm==0.4.4",
     "seaborn~=0.13",
