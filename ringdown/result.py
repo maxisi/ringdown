@@ -18,6 +18,7 @@ from .config import WHITENED_LOGLIKE_KEY
 import pandas as pd
 import json
 import configparser
+from html import escape as _html_escape
 from contextlib import contextmanager
 from glob import glob
 from parse import parse
@@ -70,6 +71,27 @@ _DATAFRAME_PARAMETERS = [
 ]
 
 DEFAULT_COLLECTION_KEY = "run"
+
+
+def _dict_to_details_html(d: dict) -> str:
+    """Recursively render a dictionary as collapsible HTML
+    ``<details>`` elements (used to display the ``config`` attribute
+    in notebook representations)."""
+    items = []
+    for k, v in d.items():
+        key = _html_escape(str(k))
+        if isinstance(v, dict) and v:
+            items.append(
+                f"<details style='margin-left:1em'>"
+                f"<summary style='cursor:pointer'>{key}</summary>"
+                f"{_dict_to_details_html(v)}</details>"
+            )
+        else:
+            items.append(
+                f"<div style='margin-left:1em'>{key}: "
+                f"{_html_escape(str(v))}</div>"
+            )
+    return "".join(items)
 
 
 class Result(xr.DataTree):
@@ -140,10 +162,31 @@ class Result(xr.DataTree):
         return new
 
     def _repr_html_(self) -> str:
-        """HTML representation with attributes collapsed by default, since
-        the ``config`` attribute can hold a very large JSON string."""
+        """HTML representation with attributes collapsed by default, and
+        the ``config`` attribute (a large JSON string) rendered as nested
+        collapsible sections instead of a raw JSON blob."""
         with xr.set_options(display_expand_attrs=False):
-            return super()._repr_html_()
+            html_repr = super()._repr_html_()
+        config = self.attrs.get("config")
+        if isinstance(config, str):
+            try:
+                config_dict = json.loads(config)
+            except ValueError:
+                return html_repr
+            if isinstance(config_dict, dict) and config_dict:
+                # xarray renders each attribute as an HTML-escaped string
+                # inside a <dd> element; swap that exact blob for the
+                # collapsible view, leaving the repr untouched if the
+                # expected substring is not found
+                old = f"<dd>{_html_escape(config)}</dd>"
+                new = (
+                    "<dd><details><summary style='cursor:pointer'>"
+                    f"({len(config_dict)} sections)</summary>"
+                    f"{_dict_to_details_html(config_dict)}</details></dd>"
+                )
+                if old in html_repr:
+                    html_repr = html_repr.replace(old, new, 1)
+        return html_repr
 
     @property
     def has_imr_result(self) -> bool:
