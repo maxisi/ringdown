@@ -140,15 +140,11 @@ def main(args=None, defout=DEFOUT):
         result = fit.result
 
     ext = os.path.splitext(out)[-1]
-    if ext.lower() == ".nc":
-        result.to_netcdf(out)
-    else:
-        # NOTE: JSON output is no longer supported since the arviz 1.x
-        # transition (netCDF only)
-        raise ValueError(
-            f"unsupported output format {ext!r}: only netCDF (.nc) output "
-            "is supported"
-        )
+    if ext.lower() != ".nc":
+        logging.warning(f"unsupported output format {ext!r}: only netCDF (.nc) output is supported")
+        out = out + ".nc"
+    
+    result.to_netcdf(out)
 
     print(f"Saved ringdown fit: {out}")
 
