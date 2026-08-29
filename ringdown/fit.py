@@ -99,11 +99,6 @@ class Fit(object):
     acfs : dict
         dictionary containing autocovariance functions corresponding to data,
         if already computed.
-    start_times : dict
-        target truncation time for each detector.
-    antenna_patterns : dict
-        dictionary of tuples (Fp, Fc) with plus and cross antenna patterns
-        for each detector (only applicable depending on model).
     target : Target
         information about truncation time at geocenter and, if applicable,
         source right ascension, declination and polarization angle.
@@ -114,14 +109,6 @@ class Fit(object):
     modes : list
         if applicable, list of (p, s, l, m, n) tuples identifying modes to be
         fit (else, None).
-    n_modes : int
-        number of modes to be fit.
-    ifos : list
-        list of detector names.
-    t0 : float
-        target geocenter start time.
-    analysis_data : dict
-        dictionary of truncated analysis data that will be fed to the sampler.
     info : dict
         information that can be used to reproduce a fit (e.g., data provenance,
         or conditioning options), stored as dictionary of dictionaries whose
@@ -233,6 +220,7 @@ class Fit(object):
 
     @property
     def start_times(self):
+        """Target truncation time for each detector."""
         if self.has_target:
             start_times = self.target.get_detector_times_dict(self.ifos)
         else:
@@ -241,6 +229,9 @@ class Fit(object):
 
     @property
     def antenna_patterns(self):
+        """Dictionary of tuples (Fp, Fc) with plus and cross antenna patterns
+        for each detector (only applicable depending on model).
+        """
         if self.has_target:
             aps = self.target.get_antenna_patterns_dict(self.ifos)
         else:

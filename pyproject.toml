@@ -49,18 +49,30 @@ build-backend = "hatchling.build"
 extra = [
     "gwpy~=4.0",
 ]
+# Mirrors docs/requirements_docs.txt, which Read the Docs installs directly
+# (see .readthedocs.yml); keep the two in sync.
+docs = [
+    "sphinx",
+    "sphinx-autobuild",
+    "ipykernel",
+    "nbsphinx",
+    "sphinx-gallery",
+    "sphinxemoji",
+    "sphinx-argparse",
+]
 
 [project.urls]
 Homepage = "https://github.com/maxisi/ringdown"
 Documentation = "https://ringdown.readthedocs.io"
 Issues = "https://github.com/maxisi/ringdown/issues"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "ringdown",
     "jupyter",
     "pre-commit",
-    "pytest"
+    "pytest",
+    "nbmake>=1.5.5",
 ]
 
 [tool.uv.sources]

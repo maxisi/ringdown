@@ -271,7 +271,7 @@ class MultiIndexCollection(object):
         )
 
     def thin(self, n: int, start_loc: int = 0) -> "MultiIndexCollection":
-        """Thin the collection by taking every `n`th result.
+        """Thin the collection by taking every `n`-th result.
 
         Arguments
         ---------

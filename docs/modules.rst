@@ -33,6 +33,14 @@ Result module
    :undoc-members:
    :show-inheritance:
 
+IMR module
+----------
+
+.. automodule:: ringdown.imr
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Waveforms module
 ----------------
 
@@ -58,6 +66,14 @@ Indexing module
    :undoc-members:
    :show-inheritance:
 
+Labeling module
+---------------
+
+.. automodule:: ringdown.labeling
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Target module
 -------------
 
@@ -74,3 +90,13 @@ Utilities module
    :undoc-members:
    :show-inheritance:
    :imported-members:
+
+.. automodule:: ringdown.utils.stats
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: ringdown.utils.swsh
+   :members:
+   :undoc-members:
+   :show-inheritance:

@@ -62,6 +62,11 @@ extensions = [
     'sphinxarg.ext',
 ]
 
+# Prefix section labels with the document name so identical section titles
+# on different pages (e.g. the "Positional Arguments" sections that
+# sphinx-argparse generates on every executable page) do not collide.
+autosectionlabel_prefix_document = True
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
 

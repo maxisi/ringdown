@@ -593,10 +593,12 @@ class TargetCollection(utils.MultiIndexCollection):
     ) -> "TargetCollection":
         """Construct a collection of targets from a set of keyword arguments.
         There are three ways to specify the start times:
-            1- listing the times explicitly
-            2- listing time differences with respect to a reference time
-            3- providing start, stop, step instructions to construct start
-            times (potentially relative to a reference time)
+
+            1. listing the times explicitly
+            2. listing time differences with respect to a reference time
+            3. providing start, stop, step instructions to construct start
+               times (potentially relative to a reference time)
+
         Time steps/differences can be specified in seconds or M, if a
         reference mass is provided (in solar masses).
 

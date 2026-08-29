@@ -10,7 +10,7 @@ ringdown
 
 `ringdown` contains basic utilities to manipulate strain data and easily set up your own inference analyses quickly. The current implementation relies on `numpyro <https://num.pyro.ai>`_ for sampling multidimensional posterior probability densities.
 
-This documentation is being actively developed. Usage examples can be found :doc:`here <gallery>` and API documentation in the :ref:`modindex`.
+This documentation is being actively developed. Usage examples can be found :doc:`here <gallery>` and API documentation in the :ref:`modindex`. A summary of changes between versions is kept in the `changelog <https://github.com/maxisi/ringdown/blob/main/CHANGES.md>`_.
 
 .. image:: https://badge.fury.io/py/ringdown.svg
     :target: https://badge.fury.io/py/ringdown
@@ -69,7 +69,11 @@ Contents
    models
    configuration
    gallery
+   config_file
    exe_ringdown_fit
+   exe_ringdown_pipe
+   exe_ringdown_scan
+   exe_ringdown_pp_pipe
    modules
 
 Indices and tables
