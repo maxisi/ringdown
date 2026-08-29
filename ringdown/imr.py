@@ -1186,7 +1186,7 @@ class IMRResult(pd.DataFrame):
                 ).gate().interpolate_to_index()
                 for i, p in pe.psd.get(group, {}).items()
             }
-            attrs = (attrs or {}).update({"config": config})
+            attrs = {**(attrs or {}), "config": config}
             return cls(pe.samples_dict[group], attrs=attrs, psds=p)
 
         if os.path.splitext(path)[1] in [".hdf5", ".h5"]:
@@ -1226,7 +1226,7 @@ class IMRResult(pd.DataFrame):
                 else:
                     p = {}
                 if posterior_key in f[group]:
-                    attrs = (attrs or {}).update({"config": c})
+                    attrs = {**(attrs or {}), "config": c}
                     return cls(f[group][posterior_key][()], attrs=attrs, psds=p)
                 else:
                     raise ValueError("no {posterior_key} found")

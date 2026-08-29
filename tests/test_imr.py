@@ -25,3 +25,40 @@ def test_imr_result_construct_and_copy():
     assert isinstance(sliced, IMRResult)
     assert sliced.attrs.get("foo") == 1
     assert "H1" in sliced.psds
+
+
+def test_from_pesummary_keeps_config(tmp_path):
+    # regression test: attrs handling used to drop the config entirely
+    # (dict.update returns None), leaving trigger_time etc. unset
+    import h5py
+
+    path = str(tmp_path / "pe.h5")
+    samples = np.array(
+        [(30.0, 20.0, 1126259462.4), (31.0, 21.0, 1126259462.4)],
+        dtype=[("mass_1", float), ("mass_2", float),
+               ("geocent_time", float)],
+    )
+    with h5py.File(path, "w") as f:
+        g = f.create_group("C01:IMRPhenomXPHM")
+        g["posterior_samples"] = samples
+        c = g.create_group("config_file").create_group("config")
+        c["trigger_time"] = 1126259462.391
+        c["duration"] = 4.0
+
+    result = IMRResult.from_pesummary(path)
+    assert result.config
+    assert result.trigger_time == 1126259462.391
+    assert result.duration == 4.0
+
+    # explicit attrs are merged with the config, not dropped,
+    # and the caller's dict is not mutated
+    attrs = {"foo": 1}
+    result = IMRResult.from_pesummary(path, attrs=attrs)
+    assert result.attrs.get("foo") == 1
+    assert result.config
+    assert attrs == {"foo": 1}
+
+    # the construct() wrapper also keeps the config
+    result = IMRResult.construct(path)
+    assert result.config
+    assert result.trigger_time == 1126259462.391
