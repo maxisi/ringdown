@@ -200,9 +200,9 @@ def rd_design_matrix(
         The design matrix; shape (nifo, nt, nquads*nmode).
     """
     if aligned:
-        logger.warning("aligned model is not reviewed for LVK use")
+        logger.debug("aligned model is not reviewed for LVK use")
     if single_polarization:
-        logger.warning("single_polarization model is not reviewed for LVK use")
+        logger.debug("single_polarization model is not reviewed for LVK use")
 
     # times should be originally shaped (nifo, nt)
     # take it to (nifo, nt, 1) where the last dimension is the mode
