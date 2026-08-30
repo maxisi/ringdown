@@ -1,0 +1,89 @@
+name: Claude Docs Sync
+
+on:
+  push:
+    branches: [main]
+    # Skip pushes that can't make docs stale (also prevents this workflow
+    # from re-triggering on its own merged docs-fix PRs).
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - ".github/**"
+      - "tests/**"
+  # Manual run: audit docs against an arbitrary commit range.
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "Base SHA to diff from (defaults to HEAD~1)"
+        required: false
+        default: ""
+
+concurrency:
+  group: claude-docs-sync
+  cancel-in-progress: false
+
+jobs:
+  docs-sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude Docs Sync
+        id: docs-sync
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            BASE SHA: ${{ github.event.inputs.base || github.event.before }}
+            HEAD SHA: ${{ github.sha }}
+
+            A push just landed on the main branch of this scientific Python
+            package. Your job: check whether the Sphinx docs in docs/ still
+            accurately reflect the code after this change, and if they do
+            not, open a pull request with a minimal docs fix.
+
+            Do all the work yourself in this session: do NOT spawn subagents
+            or background tasks, and do not schedule wakeups.
+
+            Steps:
+            1. Inspect the change: `git log --oneline BASE..HEAD` and
+               `git diff BASE..HEAD`. If BASE is blank, all zeros, or
+               unknown to git, use `git diff HEAD~1..HEAD` instead.
+            2. Decide whether the change has documentation impact: changed
+               or removed public APIs, renamed/added parameters or config
+               options, changed defaults, changed CLI executables
+               (ringdown_fit, ringdown_pipe, ...), changed behavior that
+               docs/*.rst pages or docs/examples describe. Note that API
+               reference pages are autodoc-generated from docstrings, so
+               docstring changes usually need no docs edit; look for stale
+               *prose*, config examples, and hand-written signatures.
+            3. If the docs are still accurate (or the change has no doc
+               impact), finish WITHOUT creating anything. Most pushes
+               should end this way.
+            4. If docs are stale, first check for an existing open PR:
+               `gh pr list --state open --search "docs-sync"`. If one
+               exists, push your fix as a new commit to that PR's branch
+               instead of opening another PR.
+            5. Otherwise make the MINIMAL edits to docs/ that bring it back
+               in sync with the code — fix only what this diff made stale,
+               no rewrites, no style changes, do not touch code. Then:
+               - git config user.name "Claude Docs Sync"
+               - git config user.email "noreply@anthropic.com"
+               - create branch docs-sync/<short HEAD sha>, commit, push it
+               - open a PR against main with `gh pr create`, titled
+                 "Docs: sync with <short sha> <subject>", whose body lists
+                 what was stale and cites the commit that made it stale.
+
+            Only fix genuine inaccuracies you are confident about. If you
+            are unsure whether a passage is stale, leave it alone.
+          claude_args: '--allowedTools "Edit,Write,Bash(git:*),Bash(gh pr list:*),Bash(gh pr create:*),Bash(gh pr view:*)" --max-turns 50'
