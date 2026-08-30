@@ -11,6 +11,9 @@ on:
       - main
       - igwn
 
+permissions:
+  contents: read
+
 jobs:
   data:
     name: prefetch example data

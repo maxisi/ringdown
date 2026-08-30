@@ -12,6 +12,9 @@ on:
       - main
       - igwn
 
+permissions:
+  contents: read
+
 jobs:
   fast:
     name: lint and unit tests
