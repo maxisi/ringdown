@@ -38,9 +38,33 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           show_full_output: true
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
-          claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment" --max-turns 30'
+          # Direct review prompt (the code-review plugin stalls in CI: its
+          # eligibility subagent runs async and the session exits early).
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request for bugs. Do the entire review yourself in
+            this session: do NOT spawn subagents or background tasks, and do not
+            schedule wakeups.
+
+            Steps:
+            1. Get the diff with `gh pr diff` and read the PR description with
+               `gh pr view`.
+            2. For each changed file, read enough surrounding code in the
+               repository checkout to understand the context.
+            3. Look for: logic errors, off-by-one errors, unhandled edge cases
+               (empty inputs, zero/negative values, boundary conditions),
+               incorrect API usage, type errors, security issues, and
+               regressions in behavior. This is a scientific Python package
+               (numpy/jax/numpyro); watch for numerical and indexing mistakes.
+            4. Post each confirmed finding as an inline comment using the
+               mcp__github_inline_comment__create_inline_comment tool, with a
+               short explanation and a suggested fix.
+
+            Only report genuine bugs you are confident about — no style nits,
+            no praise comments. If there are no findings, finish without
+            posting anything.
+          claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr view:*),Bash(gh pr diff:*)" --max-turns 30'
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
