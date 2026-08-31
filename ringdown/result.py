@@ -14,6 +14,7 @@ from .imr import IMRResult
 from .target import Target, TargetCollection
 from . import utils
 from .utils import stats
+from .utils.swsh import construct_sYlm
 from .config import WHITENED_LOGLIKE_KEY
 import pandas as pd
 import json
@@ -56,6 +57,7 @@ def _stock_matplotlib_axes():
     finally:
         if hijacked:
             register_projection(prev)
+
 
 _DATAFRAME_PARAMETERS = [
     "m",
@@ -1089,25 +1091,55 @@ class Result(xr.DataTree):
         new_result = self.copy()
         new_result["posterior"] = samples.isel(sample=idxs)
         return new_result
-    
-    def get_generic_amplitude(self):
 
-        if 'cosi' not in self.posterior.keys(): 
-            raise KeyError('Must be result of fit using aligned model')
+    def get_generic_amplitude(self) -> xr.DataArray:
+        """Compute the generic-model amplitudes implied by an aligned-model
+        fit.
+
+        In the aligned model, the angular factors are factored out of the
+        mode amplitudes, so the sampled amplitude ``a`` is not directly
+        comparable to the generic-model amplitude, which absorbs them. The
+        equivalent generic-model amplitude is
+
+        .. math::
+            A_{\\rm generic} = A_{\\rm aligned} \\left(
+            \\left| {}_{-2}Y_{\\ell m}(\\iota) \\right| +
+            \\left| {}_{-2}Y_{\\ell m}(\\pi - \\iota) \\right| \\right)
+
+        which relies on the equatorial symmetry enforced by the aligned
+        model.
+
+        Returns
+        -------
+        a : xr.DataArray
+            generic-model amplitudes with dimensions (chain, draw, mode).
+        """
+        if "cosi" in self.posterior:
+            cosi = self.posterior.cosi.values
+        elif "cosi" in self.config.get("model", {}):
+            # inclination was fixed in the fit rather than sampled
+            cosi = self.config["model"]["cosi"]
+        elif "apx" in self.posterior:
+            raise ValueError(
+                "result comes from a generic-polarization fit, so its "
+                "amplitudes are already generic"
+            )
         else:
-            A_j = [] # collect the computed generic amplitudes per mode, to be stacked at the end
-                
-            for mode in self.modes:
-                ### C is the "amplitude" returned by the aligned model, with angular factors still factored out
-                C = self.posterior.a.sel(mode=bytes('1,-2,{},{},{}'.format(mode.l, mode.m, mode.n), 'utf-8')).values
-                cosi = self.posterior.cosi.values
-                swsh = utils.swsh.construct_sYlm(-2, mode.l, mode.m)
-                ylm_p = swsh(cosi)
-                ylm_m = swsh(-cosi)
-                A = C * (np.abs(ylm_p) + np.abs(ylm_m))
-                A_j.append(A)
-            
-            return np.stack(A_j, axis=-1)
+            raise KeyError(
+                "no inclination information found: 'cosi' is neither in "
+                "the posterior nor fixed in the configuration; an "
+                "aligned-model result is required"
+            )
+        amplitudes = []
+        for mode in self.modes:
+            a = self.posterior.a.sel(mode=mode.get_coordinate())
+            swsh = construct_sYlm(-2, mode.l, mode.m)
+            ylm_p = np.abs(np.asarray(swsh(cosi)))
+            ylm_m = np.abs(np.asarray(swsh(-cosi)))
+            amplitudes.append(a * (ylm_p + ylm_m))
+        return xr.concat(amplitudes, dim="mode").transpose(
+            "chain", "draw", "mode"
+        )
 
     def imr_consistency(
         self,
