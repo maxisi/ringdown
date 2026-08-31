@@ -1,8 +1,11 @@
 """Tests for sampler keyword handling in :mod:`ringdown.fit`."""
 
+from configparser import ConfigParser
+
 import pytest
 
 from ringdown import fit as rdfit
+from ringdown.cli import ringdown_fit
 
 
 def _patch_device(monkeypatch, backend, device_count):
@@ -50,3 +53,33 @@ def test_explicit_chain_method_is_respected(monkeypatch, kws):
     _patch_device(monkeypatch, "gpu", 1)
     _, sampler_kws, _ = rdfit.get_sampling_kwargs(num_chains=4, **kws)
     assert sampler_kws["chain_method"] == "sequential"
+
+
+def test_cpu_device_count_is_clamped(monkeypatch, tmp_path):
+    device_counts = []
+
+    class Fit:
+        result = type("Result", (), {"to_netcdf": lambda *_: None})()
+        prior = result
+
+        def run(self, **kwargs):
+            pass
+
+    monkeypatch.setattr(ringdown_fit.os, "cpu_count", lambda: 2)
+    monkeypatch.setattr(
+        ringdown_fit.rd.utils, "load_config", lambda _: ConfigParser()
+    )
+    monkeypatch.setattr(
+        ringdown_fit.rd.Fit, "from_config", lambda _: Fit()
+    )
+    monkeypatch.setattr(ringdown_fit.numpyro, "set_platform", lambda _: None)
+    monkeypatch.setattr(
+        ringdown_fit.numpyro, "set_host_device_count", device_counts.append
+    )
+    monkeypatch.setattr(ringdown_fit.jax_config, "update", lambda *_: None)
+
+    ringdown_fit.main([
+        "--device-count", "4", "--output", str(tmp_path / "fit.nc"), "input.ini"
+    ])
+
+    assert device_counts == [2]
