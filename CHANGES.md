@@ -5,6 +5,13 @@ Notable user-facing changes to `ringdown`. For a full history, see the
 
 ## Unreleased
 
+- On accelerators (GPU/TPU), `chain_method` now defaults to `'vectorized'`
+  whenever there are fewer devices than chains, rather than letting NumPyro
+  fall back to drawing chains sequentially. Pass `chain_method` explicitly
+  (in `sampler_kws` or the `[run]` config section) to override.
+- Fixed the CLI `--device-count` clamp: requesting more CPU devices than
+  available cores logged a warning but then skipped
+  `numpyro.set_host_device_count` entirely, leaving JAX on a single device.
 - Migrated to arviz 1.x (#154): `Result` now subclasses `xarray.DataTree`
   instead of wrapping `arviz.InferenceData`. Most idioms carry over; notable
   changes:
