@@ -10,7 +10,9 @@ on:
       - "**.md"
       - ".github/**"
       - "tests/**"
-  # Manual run: audit docs against an arbitrary commit range.
+  # claude-code-action does not support push events ("Unsupported event
+  # type: push"), so the relay-push job below re-dispatches each push as a
+  # workflow_dispatch run. Manual runs can audit an arbitrary commit range.
   workflow_dispatch:
     inputs:
       base:
@@ -23,7 +25,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Relay push events into workflow_dispatch runs, carrying the push's
+  # before-SHA so the docs audit diffs the whole push, not just HEAD~1.
+  # (workflow_dispatch created with GITHUB_TOKEN is exempt from GitHub's
+  # no-recursive-workflows rule.)
+  relay-push:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Re-dispatch as workflow_dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run claude-docs-sync.yml \
+            --repo "${{ github.repository }}" \
+            --ref main \
+            -f base="${{ github.event.before }}"
+
   docs-sync:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -44,7 +66,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
-            BASE SHA: ${{ github.event.inputs.base || github.event.before }}
+            BASE SHA: ${{ github.event.inputs.base }}
             HEAD SHA: ${{ github.sha }}
 
             A push just landed on the main branch of this scientific Python
