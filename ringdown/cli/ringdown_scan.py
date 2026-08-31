@@ -127,8 +127,7 @@ def main(args=None):
                 f"({cpu_count})."
             )
             args.device_count = cpu_count
-        else:
-            numpyro.set_host_device_count(args.device_count)
+        numpyro.set_host_device_count(args.device_count)
 
     ##########################################################################
     # RUN FIT

@@ -67,6 +67,22 @@ def get_sampling_kwargs(**kwargs):
     sampler_kws = kws.pop("sampler", {})
     sampler_kws.update({k: v for k, v in kws.items() if k in SAMPLER_ARGS})
 
+    # NumPyro's default `chain_method='parallel'` silently degrades to
+    # sequential sampling whenever there are fewer devices than chains, which
+    # is the norm on GPU (where the CLI defaults to a single device); on
+    # accelerators a single device can run all chains at once instead
+    if "chain_method" not in sampler_kws:
+        num_chains = sampler_kws.get("num_chains", 1)
+        # NB: NumPyro compares against `local_device_count`, so match it
+        device_count = jax.local_device_count()
+        backend = jax.default_backend()
+        if num_chains > device_count and backend != "cpu":
+            sampler_kws["chain_method"] = "vectorized"
+            logger.info(
+                f"defaulting to chain_method='vectorized' for {num_chains} "
+                f"chains on {device_count} {backend.upper()} device(s)"
+            )
+
     # assume leftover arguments will be passed to run method
     run_kws = {
         k: v

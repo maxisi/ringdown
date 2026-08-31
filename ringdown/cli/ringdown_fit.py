@@ -118,8 +118,7 @@ def main(args=None, defout=DEFOUT):
                 f"({cpu_count})."
             )
             args.device_count = cpu_count
-        else:
-            numpyro.set_host_device_count(args.device_count)
+        numpyro.set_host_device_count(args.device_count)
 
     if os.path.exists(out):
         if args.force:
@@ -141,9 +140,10 @@ def main(args=None, defout=DEFOUT):
 
     ext = os.path.splitext(out)[-1]
     if ext.lower() != ".nc":
-        logging.warning(f"unsupported output format {ext!r}: only netCDF (.nc) output is supported")
+        logging.warning(
+            f"unsupported output format {ext!r}: only netCDF (.nc) output is supported")
         out = out + ".nc"
-    
+
     result.to_netcdf(out)
 
     print(f"Saved ringdown fit: {out}")
