@@ -121,6 +121,7 @@ def test_get_generic_amplitude_requires_aligned_fit():
     with pytest.raises(KeyError, match="aligned-model"):
         result.get_generic_amplitude()
     result.posterior["apx"] = result.posterior.a
+    result.attrs["config"] = json.dumps({"model": {"cosi": None}})
     with pytest.raises(ValueError, match="generic"):
         result.get_generic_amplitude()
 

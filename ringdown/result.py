@@ -1116,7 +1116,7 @@ class Result(xr.DataTree):
         """
         if "cosi" in self.posterior:
             cosi = self.posterior.cosi.values
-        elif "cosi" in self.config.get("model", {}):
+        elif self.config.get("model", {}).get("cosi") is not None:
             # inclination was fixed in the fit rather than sampled
             cosi = self.config["model"]["cosi"]
         elif "apx" in self.posterior:
