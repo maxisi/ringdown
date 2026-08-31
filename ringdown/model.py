@@ -172,8 +172,8 @@ def rd_design_matrix(
         M = \\begin{pmatrix}
             F_+ Y_{\\ell m}^+ \\cos\\omega t + F_\\times Y_{\\ell m}^\\times
             \\sin\\omega t \\\\
-            F_+ Y_{\\ell m}^+ \\sin\\omega t + F_\\times Y_{\\ell m}^\\times
-            \\sin\\omega t \\\\
+            F_+ Y_{\\ell m}^+ \\sin\\omega t - F_\\times Y_{\\ell m}^\\times
+            \\cos\\omega t \\\\
         \\end{pmatrix}
 
     This function effects that summation to return a design matrix
