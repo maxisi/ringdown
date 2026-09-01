@@ -111,7 +111,7 @@ def _aligo_covariance(n_t, det=0):
 def _make_data(n_det, n_t, n_modes, seed=42, white=False):
     """Times, strains, Cholesky factors and antenna patterns.
 
-    The strain is (by default coloured) noise plus an injected ringdown, so
+    The strain is (by default colored) noise plus an injected ringdown, so
     that the likelihood is informative rather than a pure-noise plateau.
     With ``white=True`` the noise covariance is the identity, which isolates
     the algebra from the conditioning of ``C``.
@@ -161,7 +161,7 @@ def _make_data(n_det, n_t, n_modes, seed=42, white=False):
 # -----------------------------------------------------------------------
 
 def _sequential_reference(dms, ls, strains, n_det, prior):
-    """Sequential per-detector marginalization (pre-rewrite behaviour).
+    """Sequential per-detector marginalization (pre-rewrite behavior).
 
     Emits one ``logl_{i}`` factor per detector and returns the running
     posterior mean and precision Cholesky, which the predictive draw

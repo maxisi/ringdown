@@ -1,0 +1,336 @@
+==============================================================
+host        : workergpu162
+date        : Mon Aug 31 07:26:34 PM EDT 2026
+job         : 6969321
+cpus        : 16   mem: 65536
+gpus        : 1
+cwd         : /mnt/home/misi/src/ringdown
+==============================================================
+Mon Aug 31 19:26:34 2026
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.178.04             Driver Version: 580.178.04     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H100 PCIe               Off |   00000000:1A:00.0 Off |                    0 |
+| N/A   31C    P0             45W /  350W |       0MiB /  81559MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+--- driver / CUDA ---
+name, driver_version, compute_cap, memory.total [MiB]
+NVIDIA H100 PCIe, 580.178.04, 9.0, 81559 MiB
+==============================================================
+
+=== ENVIRONMENT [leg gpu-f64] ===
+  hostname             workergpu162
+  jax_backend          gpu
+  jax_devices          ['cuda:0']
+  jax_device_kinds     ['NVIDIA H100 PCIe']
+  jax_enable_x64       True
+  dtype                float64
+  cpu_model            Intel(R) Xeon(R) Platinum 8362 CPU @ 2.80GHz
+  cpu_affinity_count   16
+  nvidia_smi           NVIDIA H100 PCIe, 580.178.04, 81559 MiB, 9.0, 1755 MHz
+  threads              {'OMP_NUM_THREADS': '16', 'MKL_NUM_THREADS': '16', 'OPENBLAS_NUM_THREADS': '16', 'XLA_FLAGS': None, 'JAX_PLATFORMS': 'cuda'}
+  versions             jax=0.11.1 jaxlib=0.11.1 numpyro=0.21.0 cublas=12.9.2.10 cusolver=11.7.5.82
+  gpu_state            4 %, 345 MHz, 1755 MHz, 32, 46.98 W, 467 MiB
+
+=== CORRECTNESS: prototypes vs unmodified ringdown.model.make_model ===
+    tolerance 1e-11 on the potential and on EVERY gradient component
+  (1, 205,1)  current=0.0e+00[OK ] whiten_seq=0.0e+00[OK ] R1_unroll_concat=2.5e-16[OK ] R1_unroll_sep=0.0e+00[OK ] R1_vmap=2.5e-16[OK ]
+  (2, 205,2)  current=0.0e+00[OK ] whiten_seq=0.0e+00[OK ] R1_unroll_concat=1.3e-16[OK ] R1_unroll_sep=0.0e+00[OK ] R1_vmap=2.6e-16[OK ]
+  (3, 205,3)  current=0.0e+00[OK ] whiten_seq=1.7e-16[OK ] R1_unroll_concat=1.7e-16[OK ] R1_unroll_sep=1.7e-16[OK ] R1_vmap=1.7e-16[OK ]
+  (2,1024,4)  current=0.0e+00[OK ] whiten_seq=0.0e+00[OK ] R1_unroll_concat=0.0e+00[OK ] R1_unroll_sep=0.0e+00[OK ] R1_vmap=0.0e+00[OK ]
+
+=== FLOAT64 REFERENCE DUMP for the float32 accuracy test ===
+  modes        a_scale_max  cond(A^-1)   float64 potential (pt0)
+  220_221      1e-20         1.000e+00   current=-215.499703  R1_unroll_sep=-215.499703  R1_vmap=-215.499703
+  220_221      1e+00         8.589e+00   current=-214.414093  R1_unroll_sep=-214.414093  R1_vmap=-214.414093
+  220_221      1e+03         2.260e+05   current=-178.050088  R1_unroll_sep=-178.050088  R1_vmap=-178.050088
+  220_221      1e+06         1.027e+05   current=-122.954540  R1_unroll_sep=-122.954540  R1_vmap=-122.954540
+  degenerate   1e+00         1.293e+01   current=-213.204095  R1_unroll_sep=-213.204095  R1_vmap=-213.204095
+  degenerate   1e+03         1.216e+07   current=-192.766738  R1_unroll_sep=-192.766738  R1_vmap=-192.766738
+  -> /mnt/home/misi/src/ringdown/h100_bench/results_6969321.f64ref.npz (270 arrays)
+
+=== PER-GRADIENT DEVICE TIME (us/grad) [leg gpu-f64] ===
+  --- (n_det=2, n_analyze=205, n_modes=2)  k=8 ---
+    current                    1340.5 us    1.00x   trsm=42 potrf=2
+    whiten_seq                  592.0 us    2.26x   trsm=18 potrf=2
+    R1_unroll_concat            463.8 us    2.89x   trsm=8 potrf=1
+    R1_unroll_sep               477.3 us    2.81x   trsm=10 potrf=1
+    R1_vmap                     506.2 us    2.65x   trsm=7 potrf=1
+    floor_no_likelihood          26.5 us   50.66x
+  --- (n_det=2, n_analyze=1024, n_modes=4)  k=16 ---
+    current                    4374.8 us    1.00x   trsm=42 potrf=2
+    R1_unroll_concat           2489.7 us    1.76x   trsm=8 potrf=1
+    R1_unroll_sep              1574.5 us    2.78x   trsm=10 potrf=1
+    R1_vmap                    2051.6 us    2.13x   trsm=7 potrf=1
+    floor_no_likelihood          31.8 us  137.58x
+  --- (n_det=3, n_analyze=1024, n_modes=8)  k=32 ---
+    current                    7191.4 us    1.00x   trsm=66 potrf=3
+    R1_unroll_concat           3643.8 us    1.97x   trsm=10 potrf=1
+    R1_unroll_sep              2530.0 us    2.84x   trsm=13 potrf=1
+    R1_vmap                    2179.3 us    3.30x   trsm=7 potrf=1
+    floor_no_likelihood          50.7 us  141.97x
+
+=== VECTORIZED-CHAIN SCALING [gpu-f64], point (2, 205, 2), 250+250 per chain ===
+  variant            method      chains    wall_s    s/chain   vs_1chain ms/chain-iter
+  current            vectorized       1     10.31     10.315       1.00x        20.629
+  current            default          4     37.19      9.298                   18.596  There are not enough devices to run parallel chains: ex
+  R1_unroll_sep      vectorized       1      6.66      6.660       1.00x        13.320
+  R1_unroll_sep      vectorized       4     13.55      3.389       1.97x         6.777
+  R1_unroll_sep      vectorized      16     17.15      1.072       6.21x         2.144
+  R1_unroll_sep      vectorized      64     21.55      0.337      19.78x         0.673
+  R1_vmap            vectorized       1      6.09      6.094       1.00x        12.187
+  R1_vmap            vectorized       4      9.17      2.292       2.66x         4.585
+  R1_vmap            vectorized      16     13.67      0.854       7.13x         1.709
+  R1_vmap            vectorized      64     18.59      0.290      20.98x         0.581
+
+=== TRIANGULAR-SOLVE RHS SWEEP (forward only, unbatched) [gpu-f64] ===
+    A6000/f64 reference: flat ~75-132 us for RHS 1..16 at n=205, then
+    a 3.5x THRESHOLD at RHS>=17 (not an odd/even effect -- verifier),
+    with an anomalously fast point at exactly 32.
+  n=205:
+     k=8:    57.7  k=9:    70.1  k=10:    70.7  k=11:    70.2  k=12:    70.6  k=13:    83.4  k=14:    83.4  k=15:    83.1
+     k=16:    83.8  k=17:   125.0  k=18:   119.9  k=19:   124.9  k=20:   119.6  k=21:   124.7  k=22:   119.6  k=23:   124.7
+     k=24:   116.7  k=25:   122.3  k=26:   116.6  k=27:   122.3  k=28:   116.3  k=29:   122.4  k=30:   116.3  k=31:   123.0
+     k=32:    90.2  k=33:   125.5  k=34:   120.1  k=35:   125.5  k=36:   119.8  k=37:   125.3  k=38:   119.5  k=39:   125.5
+     k=40:   117.2
+     largest single-step jump: k=16 -> k=17  x1.49
+  n=1024:
+     k=8:   204.9  k=9:   259.9  k=12:   260.3  k=16:   315.9  k=17:   601.1  k=18:   574.6  k=24:   547.7  k=32:   380.8
+     k=33:   592.8  k=40:   550.1
+     largest single-step jump: k=16 -> k=17  x1.90
+
+=== COMPILE TIME [gpu-f64] ===
+  isolated jit(grad) 2,205,2      current                  0.54 s
+  isolated jit(grad) 2,205,2      whiten_seq               0.51 s
+  isolated jit(grad) 2,205,2      R1_unroll_concat         0.47 s
+  isolated jit(grad) 2,205,2      R1_unroll_sep            0.45 s
+  isolated jit(grad) 2,205,2      R1_vmap                  0.43 s
+  isolated jit(grad) 2,205,2      floor_no_likelihood      0.34 s
+  isolated jit(grad) 3,1024,8     current                  0.93 s
+  isolated jit(grad) 3,1024,8     whiten_seq               0.90 s
+  isolated jit(grad) 3,1024,8     R1_unroll_concat         0.75 s
+  isolated jit(grad) 3,1024,8     R1_unroll_sep            0.71 s
+  isolated jit(grad) 3,1024,8     R1_vmap                  0.73 s
+  isolated jit(grad) 3,1024,8     floor_no_likelihood      0.34 s
+  MCMC R1_vmap        N=250   6.06s N=1000  15.11s -> compile ~ 3.05s   6.032 ms/iter
+
+------------------------------------------------------------------------------
+=== LEG: GPU float32 -- a PRODUCTION mode (ringdown_fit.py `float32` flag) ===
+  $ /mnt/home/misi/src/ringdown/.venv/bin/python /mnt/home/misi/src/ringdown/h100_bench/bench.py --no-sub --out /mnt/home/misi/src/ringdown/h100_bench/results_6969321.gpu_f32.json --platform gpu --x64 0 --ref /mnt/home/misi/src/ringdown/h100_bench/results_6969321.f64ref.npz --sections env,f32acc,devtime,rhs,compile,chains --deadline 600
+  |
+  | === ENVIRONMENT [leg gpu-f32] ===
+  |   hostname             workergpu162
+  |   jax_backend          gpu
+  |   jax_devices          ['cuda:0']
+  |   jax_device_kinds     ['NVIDIA H100 PCIe']
+  |   jax_enable_x64       False
+  |   dtype                float32
+  |   cpu_model            Intel(R) Xeon(R) Platinum 8362 CPU @ 2.80GHz
+  |   cpu_affinity_count   16
+  |   nvidia_smi           NVIDIA H100 PCIe, 580.178.04, 81559 MiB, 9.0, 1755 MHz
+  |   threads              {'OMP_NUM_THREADS': '16', 'MKL_NUM_THREADS': '16', 'OPENBLAS_NUM_THREADS': '16', 'XLA_FLAGS': None, 'JAX_PLATFORMS': 'cuda'}
+  |   versions             jax=0.11.1 jaxlib=0.11.1 numpyro=0.21.0 cublas=12.9.2.10 cusolver=11.7.5.82
+  |   gpu_state            4 %, 1755 MHz, 1755 MHz, 37, 75.38 W, 1597 MiB
+  |   *** WARNING: 1 OTHER compute process(es) on this GPU; absolute timings will be contended. ***
+  |
+  | === FLOAT32 ACCURACY / ROBUSTNESS vs the float64 reference ===
+  |     A6000 reference (GPU_BENCHMARKS 3.2): at cond(A)~26 the f32
+  |     GRADIENT is only good to ~5e-4 (current) / ~7e-5 (R1) while the
+  |     potential looks fine at ~5e-7; and `current` goes NaN at
+  |     cond(A) >= 5e6 where R1 still returns a finite value.
+  |   case                 variant              rel_err_U rel_err_grad all_finite
+  |   220_221|1e-20        current               5.89e-08    9.72e-07     True
+  |   220_221|1e-20        R1_unroll_sep         4.00e-08    9.72e-07     True
+  |   220_221|1e-20        R1_vmap               1.51e-07    9.72e-07     True
+  |   220_221|1            current               2.94e-06    4.88e-04     True
+  |   220_221|1            R1_unroll_sep         1.55e-07    9.63e-04     True
+  |   220_221|1            R1_vmap               2.98e-07    9.64e-04     True
+  |   220_221|1000         current                    nan         nan    False
+  |   220_221|1000         R1_unroll_sep         7.01e-05    4.50e+01     True
+  |   220_221|1000         R1_vmap               6.82e-05    1.26e+01     True
+  |   220_221|1e+06        current                    nan         nan    False
+  |   220_221|1e+06        R1_unroll_sep         1.23e-05    1.74e+00     True
+  |   220_221|1e+06        R1_vmap               1.35e-05    1.72e+00     True
+  |   degenerate|1         current               2.10e-06    1.43e-02     True
+  |   degenerate|1         R1_unroll_sep         1.23e-06    3.04e-03     True
+  |   degenerate|1         R1_vmap               1.38e-06    3.03e-03     True
+  |   degenerate|1000      current                    nan         nan    False
+  |   degenerate|1000      R1_unroll_sep         6.16e-03    3.56e+02     True
+  |   degenerate|1000      R1_vmap               6.32e-03    2.35e+02     True
+  |
+  | === PER-GRADIENT DEVICE TIME (us/grad) [leg gpu-f32] ===
+  |   --- (n_det=2, n_analyze=205, n_modes=2)  k=8 ---
+  |     current                    1060.7 us    1.00x   trsm=42 potrf=2
+  |     whiten_seq                  438.4 us    2.42x   trsm=18 potrf=2
+  |     R1_unroll_concat            375.3 us    2.83x   trsm=8 potrf=1
+  |     R1_unroll_sep               341.3 us    3.11x   trsm=10 potrf=1
+  |     R1_vmap                     462.3 us    2.29x   trsm=7 potrf=1
+  |     floor_no_likelihood          24.0 us   44.12x
+  |   --- (n_det=2, n_analyze=1024, n_modes=4)  k=16 ---
+  |     current                    5272.4 us    1.00x   trsm=42 potrf=2
+  |     R1_unroll_concat           1554.4 us    3.39x   trsm=8 potrf=1
+  |     R1_unroll_sep              1680.1 us    3.14x   trsm=10 potrf=1
+  |     R1_vmap                    2053.9 us    2.57x   trsm=7 potrf=1
+  |     floor_no_likelihood          24.1 us  219.07x
+  |   --- (n_det=3, n_analyze=1024, n_modes=8)  k=32 ---
+  |     current                    8119.6 us    1.00x   trsm=66 potrf=3
+  |     R1_unroll_concat           2304.6 us    3.52x   trsm=10 potrf=1
+  |     R1_unroll_sep              2508.6 us    3.24x   trsm=13 potrf=1
+  |     R1_vmap                    2174.6 us    3.73x   trsm=7 potrf=1
+  |     floor_no_likelihood          32.0 us  253.98x
+  |
+  | === VECTORIZED-CHAIN SCALING [gpu-f32], point (2, 205, 2), 250+250 per chain ===
+  |   variant            method      chains    wall_s    s/chain   vs_1chain ms/chain-iter
+  |   current            vectorized       1      9.88      9.881       1.00x        19.761
+  |   current            default          4     33.97      8.493                   16.987  There are not enough devices to run parallel chains: ex
+  |   R1_unroll_sep      vectorized       1      4.32      4.320       1.00x         8.641
+  |   R1_unroll_sep      vectorized      16     15.07      0.942       4.59x         1.884
+  |   R1_unroll_sep      vectorized      64     19.17      0.300      14.42x         0.599
+  |   R1_vmap            vectorized       1      5.34      5.342       1.00x        10.683
+  |   R1_vmap            vectorized       4     12.77      3.193       1.67x         6.386
+  |   R1_vmap            vectorized      16     12.32      0.770       6.94x         1.540
+  |   R1_vmap            vectorized      64     17.30      0.270      19.77x         0.540
+  |
+  | === TRIANGULAR-SOLVE RHS SWEEP (forward only, unbatched) [gpu-f32] ===
+  |     A6000/f64 reference: flat ~75-132 us for RHS 1..16 at n=205, then
+  |     a 3.5x THRESHOLD at RHS>=17 (not an odd/even effect -- verifier),
+  |     with an anomalously fast point at exactly 32.
+  |   n=205:
+  |      k=8:    51.6  k=9:    80.5  k=12:    78.6  k=14:    78.8  k=16:    78.3  k=17:    79.2  k=18:    79.9  k=20:    79.7
+  |      k=24:    79.1  k=28:    78.6  k=32:    78.3  k=33:    79.5  k=36:    81.1  k=40:    81.1
+  |      largest single-step jump: k=8 -> k=9  x1.56
+  |
+  | === COMPILE TIME [gpu-f32] ===
+  |   isolated jit(grad) 2,205,2      current                  0.51 s
+  |   isolated jit(grad) 2,205,2      whiten_seq               0.52 s
+  |   isolated jit(grad) 2,205,2      R1_unroll_concat         0.48 s
+  |   isolated jit(grad) 2,205,2      R1_unroll_sep            0.45 s
+  |   isolated jit(grad) 2,205,2      R1_vmap                  0.44 s
+  |   isolated jit(grad) 2,205,2      floor_no_likelihood      0.39 s
+  |   MCMC R1_vmap        N=250   5.43s N=1000  13.05s -> compile ~ 2.90s   5.079 ms/iter
+  |
+  | === LEG gpu-f32 DONE in 278.0 s -> /mnt/home/misi/src/ringdown/h100_bench/results_6969321.gpu_f32.json ===
+  |   (leg wall 279.6 s, exit 0)
+
+------------------------------------------------------------------------------
+=== LEG: host CPU float64, all allocated cores, per-gradient timings (JAX_PLATFORMS=cpu set BEFORE `import jax`; ONE CPU device, as in the A6000 study) ===
+  $ /mnt/home/misi/src/ringdown/.venv/bin/python /mnt/home/misi/src/ringdown/h100_bench/bench.py --no-sub --out /mnt/home/misi/src/ringdown/h100_bench/results_6969321.cpu_f64.json --platform cpu --sections env,devtime --deadline 300
+  |
+  | === ENVIRONMENT [leg cpu-f64] ===
+  |   hostname             workergpu162
+  |   jax_backend          cpu
+  |   jax_devices          ['cpu:0']
+  |   jax_device_kinds     ['cpu']
+  |   jax_enable_x64       True
+  |   dtype                float64
+  |   cpu_model            Intel(R) Xeon(R) Platinum 8362 CPU @ 2.80GHz
+  |   cpu_affinity_count   16
+  |   nvidia_smi           NVIDIA H100 PCIe, 580.178.04, 81559 MiB, 9.0, 1755 MHz
+  |   threads              {'OMP_NUM_THREADS': '16', 'MKL_NUM_THREADS': '16', 'OPENBLAS_NUM_THREADS': '16', 'XLA_FLAGS': None, 'JAX_PLATFORMS': 'cpu'}
+  |   versions             jax=0.11.1 jaxlib=0.11.1 numpyro=0.21.0 cublas=12.9.2.10 cusolver=11.7.5.82
+  |
+  | === PER-GRADIENT DEVICE TIME (us/grad) [leg cpu-f64] ===
+  |   --- (n_det=2, n_analyze=205, n_modes=2)  k=8 ---
+  |     current                     603.6 us    1.00x   trsm=42 potrf=2
+  |     whiten_seq                  228.0 us    2.65x   trsm=18 potrf=2
+  |     R1_unroll_concat            197.2 us    3.06x   trsm=8 potrf=1
+  |     R1_unroll_sep               228.2 us    2.64x   trsm=10 potrf=1
+  |     R1_vmap                     255.7 us    2.36x   trsm=7 potrf=1
+  |     floor_no_likelihood          51.4 us   11.74x
+  |   --- (n_det=2, n_analyze=1024, n_modes=4)  k=16 ---
+  |     current                   11002.2 us    1.00x   trsm=42 potrf=2
+  |     R1_unroll_concat           3595.9 us    3.06x   trsm=8 potrf=1
+  |     R1_unroll_sep              4172.4 us    2.64x   trsm=10 potrf=1
+  |     R1_vmap                    3802.0 us    2.89x   trsm=7 potrf=1
+  |     floor_no_likelihood         565.4 us   19.46x
+  |   --- (n_det=3, n_analyze=1024, n_modes=8)  k=32 ---
+  |     current                   21743.4 us    1.00x   trsm=66 potrf=3
+  |     R1_unroll_concat          10115.4 us    2.15x   trsm=10 potrf=1
+  |     R1_unroll_sep             10865.9 us    2.00x   trsm=13 potrf=1
+  |     R1_vmap                    9620.1 us    2.26x   trsm=7 potrf=1
+  |     floor_no_likelihood        1807.4 us   12.03x
+  |
+  | === LEG cpu-f64 DONE in 87.6 s -> /mnt/home/misi/src/ringdown/h100_bench/results_6969321.cpu_f64.json ===
+  |   (leg wall 88.4 s, exit 0)
+
+------------------------------------------------------------------------------
+=== LEG: host CPU float64, chain scaling with numpyro.set_host_device_count(4) -- the production CPU configuration ===
+  $ /mnt/home/misi/src/ringdown/.venv/bin/python /mnt/home/misi/src/ringdown/h100_bench/bench.py --no-sub --out /mnt/home/misi/src/ringdown/h100_bench/results_6969321.cpu_f64_chains.json --platform cpu --sections env,chains --deadline 200
+  |
+  | === ENVIRONMENT [leg cpu-f64] ===
+  |   hostname             workergpu162
+  |   jax_backend          cpu
+  |   jax_devices          ['cpu:0', 'cpu:1', 'cpu:2', 'cpu:3']
+  |   jax_device_kinds     ['cpu', 'cpu', 'cpu', 'cpu']
+  |   jax_enable_x64       True
+  |   dtype                float64
+  |   cpu_model            Intel(R) Xeon(R) Platinum 8362 CPU @ 2.80GHz
+  |   cpu_affinity_count   16
+  |   nvidia_smi           NVIDIA H100 PCIe, 580.178.04, 81559 MiB, 9.0, 1755 MHz
+  |   threads              {'OMP_NUM_THREADS': '16', 'MKL_NUM_THREADS': '16', 'OPENBLAS_NUM_THREADS': '16', 'XLA_FLAGS': '--xla_force_host_platform_device_count=4', 'JAX_PLATFORMS': 'cpu'}
+  |   versions             jax=0.11.1 jaxlib=0.11.1 numpyro=0.21.0 cublas=12.9.2.10 cusolver=11.7.5.82
+  |
+  | === VECTORIZED-CHAIN SCALING [cpu-f64], point (2, 205, 2), 250+250 per chain ===
+  |   variant            method      chains    wall_s    s/chain   vs_1chain ms/chain-iter
+  |   current            vectorized       1      9.46      9.455       1.00x        18.910
+  |   current            default          4     11.93      2.982                    5.965
+  |   R1_unroll_sep      vectorized       1      2.73      2.730       1.00x         5.460
+  |   R1_unroll_sep      default          4      5.33      1.332                    2.663
+  |   R1_vmap            vectorized       1      2.93      2.927       1.00x         5.855
+  |   R1_vmap            default          4      7.53      1.882                    3.764
+  |
+  | === LEG cpu-f64 DONE in 43.0 s -> /mnt/home/misi/src/ringdown/h100_bench/results_6969321.cpu_f64_chains.json ===
+  |   (leg wall 43.8 s, exit 0)
+
+------------------------------------------------------------------------------
+=== LEG: host CPU float64, OMP_NUM_THREADS=1 (production CLI setting), production point only ===
+  $ /mnt/home/misi/src/ringdown/.venv/bin/python /mnt/home/misi/src/ringdown/h100_bench/bench.py --no-sub --out /mnt/home/misi/src/ringdown/h100_bench/results_6969321.cpu_f64_omp1.json --platform cpu --omp 1 --sections env,devtime --configs 2,205,2 --deadline 240
+  |
+  | === ENVIRONMENT [leg cpu-f64] ===
+  |   hostname             workergpu162
+  |   jax_backend          cpu
+  |   jax_devices          ['cpu:0']
+  |   jax_device_kinds     ['cpu']
+  |   jax_enable_x64       True
+  |   dtype                float64
+  |   cpu_model            Intel(R) Xeon(R) Platinum 8362 CPU @ 2.80GHz
+  |   cpu_affinity_count   16
+  |   nvidia_smi           NVIDIA H100 PCIe, 580.178.04, 81559 MiB, 9.0, 1755 MHz
+  |   threads              {'OMP_NUM_THREADS': '1', 'MKL_NUM_THREADS': '1', 'OPENBLAS_NUM_THREADS': '1', 'XLA_FLAGS': None, 'JAX_PLATFORMS': 'cpu'}
+  |   versions             jax=0.11.1 jaxlib=0.11.1 numpyro=0.21.0 cublas=12.9.2.10 cusolver=11.7.5.82
+  |
+  | === PER-GRADIENT DEVICE TIME (us/grad) [leg cpu-f64] ===
+  |   --- (n_det=2, n_analyze=205, n_modes=2)  k=8 ---
+  |     current                     782.2 us    1.00x   trsm=42 potrf=2
+  |     whiten_seq                  333.5 us    2.35x   trsm=18 potrf=2
+  |     R1_unroll_concat            293.5 us    2.67x   trsm=8 potrf=1
+  |     R1_unroll_sep               310.8 us    2.52x   trsm=10 potrf=1
+  |     R1_vmap                     305.0 us    2.56x   trsm=7 potrf=1
+  |     floor_no_likelihood          51.8 us   15.11x
+  |
+  | === LEG cpu-f64 DONE in 27.7 s -> /mnt/home/misi/src/ringdown/h100_bench/results_6969321.cpu_f64_omp1.json ===
+  |   (leg wall 28.3 s, exit 0)
+
+=== LEG gpu-f64 DONE in 817.8 s -> /mnt/home/misi/src/ringdown/h100_bench/results_6969321.json ===
+Next:  python /mnt/home/misi/src/ringdown/h100_bench/analyze.py /mnt/home/misi/src/ringdown/h100_bench/results_6969321.json
+==============================================================
+bench.py exit code: 0
+results: /mnt/home/misi/src/ringdown/h100_bench/results_6969321.json
+now run:  /mnt/home/misi/src/ringdown/.venv/bin/python /mnt/home/misi/src/ringdown/h100_bench/analyze.py /mnt/home/misi/src/ringdown/h100_bench/results_6969321.json
+(side files: <out>.gpu_f32.json / .cpu_f64.json / .cpu_f64_chains.json /
+ .cpu_f64_omp1.json / .f64ref.npz -- analyze.py needs only the main file,
+ which embeds them all)
+==============================================================
