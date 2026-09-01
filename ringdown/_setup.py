@@ -39,7 +39,7 @@ def setup(
 
         import ringdown as rd
         rd.setup()                    # CPU, float64, 4 host devices
-        rd.setup(platform='gpu')      # GPU, float32, 1 device
+        rd.setup(platform='gpu')      # GPU, float32, visible devices
 
     All of these settings freeze when jax initializes its backends (at
     the first jax operation) and fail silently afterwards, so this
@@ -75,9 +75,10 @@ def setup(
         value passed here cannot re-thread libraries that are already
         loaded: it only affects whatever reads the environment
         afterwards, such as XLA at backend initialization or spawned
-        subprocesses. A late (post-initialization) call that matches
-        the active configuration returns before writing the
-        environment, so it never changes threading.
+        subprocesses. A late (post-initialization) call never writes
+        the environment: if the requested thread count differs from
+        the active ``OMP_NUM_THREADS`` it raises like any other
+        mismatch, since it could no longer take effect.
     """
     import jax
     import numpyro
@@ -125,6 +126,9 @@ def setup(
 
     if _backends_are_initialized():
         active_platform = jax.default_backend()
+        # if the variable was unset since import there is nothing to
+        # compare against, so treat the thread count as matching
+        active_threads = os.environ.get("OMP_NUM_THREADS", str(num_threads))
         matches = (
             (active_platform in _GPU_ALIASES) == is_gpu
             and (is_gpu or active_platform == platform)
@@ -132,6 +136,9 @@ def setup(
             # can a mismatch mean a stale configuration
             and (not is_cpu or jax.local_device_count() == num_devices)
             and bool(jax.config.jax_enable_x64) == bool(x64)
+            # already-loaded libraries keep their thread pools, so a
+            # different thread count could not take effect either
+            and str(num_threads) == active_threads
         )
         if matches:
             logger.info(
@@ -145,8 +152,10 @@ def setup(
             "operation, right after importing ringdown. Active "
             f"configuration: platform={active_platform}, "
             f"num_devices={jax.local_device_count()}, "
-            f"x64={bool(jax.config.jax_enable_x64)}; requested: "
-            f"platform={platform}, num_devices={num_devices}, x64={x64}."
+            f"x64={bool(jax.config.jax_enable_x64)}, "
+            f"OMP_NUM_THREADS={active_threads}; requested: "
+            f"platform={platform}, num_devices={num_devices}, x64={x64}, "
+            f"num_threads={num_threads}."
         )
 
     os.environ["OMP_NUM_THREADS"] = str(num_threads)

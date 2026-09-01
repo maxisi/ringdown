@@ -6,11 +6,16 @@ import warnings
 
 
 def _warn_if_omp_default_is_moot():
-    """Warn if the OMP_NUM_THREADS=1 default below can no longer take
-    effect: the variable is unset and jax has already initialized its
-    backends. Peeks at sys.modules only, without importing jax (which
-    would itself defeat the default); merely-imported-but-idle jax is
-    fine, since backend initialization is lazy."""
+    """Warn if the OMP_NUM_THREADS=1 default below can no longer cap the
+    sampling thread pools: the variable is unset and jax has already
+    initialized its backends. Libraries loaded even earlier (e.g., a
+    numpy imported before ringdown) keep the thread pools they already
+    built either way; backend initialization is the condition checked
+    here because XLA reads the variable then, and its pools are the ones
+    parallel chains multiply. Peeks at sys.modules only, without
+    importing jax (which would itself defeat the default);
+    merely-imported-but-idle jax is fine, since backend initialization
+    is lazy."""
     if "OMP_NUM_THREADS" in os.environ:
         return
     xb = sys.modules.get("jax._src.xla_bridge")
@@ -34,9 +39,10 @@ def _warn_if_omp_default_is_moot():
 
 _warn_if_omp_default_is_moot()
 
-# Cap BLAS/OpenMP threading before numpy/jax load it (the setting is frozen
-# at library load): one thread per chain is the right default when running
-# parallel chains. Export OMP_NUM_THREADS yourself, or call
+# Cap BLAS/OpenMP threading before numpy/jax load it (each library freezes
+# the setting when it loads, so anything imported before ringdown keeps the
+# thread pool it already built): one thread per chain is the right default
+# when running parallel chains. Export OMP_NUM_THREADS yourself, or call
 # ringdown.setup(num_threads=...), to override. The imports below must stay
 # after this line, hence the noqa markers.
 os.environ.setdefault("OMP_NUM_THREADS", "1")

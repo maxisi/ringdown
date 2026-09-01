@@ -17,10 +17,12 @@ To run on a GPU with single precision instead:
    import ringdown as rd
    rd.setup(platform='gpu')
 
-:func:`ringdown.setup` sets the platform (``numpyro.set_platform``), the device
-count (``numpyro.set_host_device_count``; the ``num_devices`` argument defaults
-to the ``RINGDOWN_DEVICE_COUNT`` environment variable, or 4 on CPU and 1 on
-GPU) and the precision (``x64`` defaults to true on CPU and false on GPU). All
+:func:`ringdown.setup` sets the platform (``numpyro.set_platform``), the CPU
+host device count (``numpyro.set_host_device_count``; the ``num_devices``
+argument defaults to the ``RINGDOWN_DEVICE_COUNT`` environment variable, or 4
+— on GPU/TPU the device count is not controlled here: visible devices are
+selected through the environment, e.g., ``CUDA_VISIBLE_DEVICES``) and the
+precision (``x64`` defaults to true on CPU and false on GPU). All
 of these settings freeze as soon as jax initializes its backends, and jax and
 numpyro silently ignore later changes — so call it right after importing
 *ringdown*, before any jax operation; ``setup`` raises if called too late with

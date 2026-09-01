@@ -126,6 +126,31 @@ def test_late_call_with_matching_config_is_noop(calls, monkeypatch):
     assert calls["config"] == []
 
 
+def test_late_call_with_different_threads_raises(calls, monkeypatch):
+    # already-loaded libraries keep their thread pools, so a late thread
+    # change cannot take effect: it must raise, not silently no-op
+    monkeypatch.setattr(_setup, "_backends_are_initialized", lambda: True)
+    monkeypatch.setattr(jax, "default_backend", lambda: "cpu")
+    monkeypatch.setattr(jax, "local_device_count", lambda: 4)
+    with pytest.raises(RuntimeError, match="before any jax operation"):
+        rd.setup(x64=bool(jax.config.jax_enable_x64), num_threads=8)
+    # nothing may have been reconfigured, the environment included
+    assert os.environ["OMP_NUM_THREADS"] == "1"
+    assert calls["platform"] == []
+    assert calls["devices"] == []
+    assert calls["config"] == []
+
+
+def test_late_call_with_matching_threads_is_noop(calls, monkeypatch):
+    monkeypatch.setattr(_setup, "_backends_are_initialized", lambda: True)
+    monkeypatch.setattr(jax, "default_backend", lambda: "cpu")
+    monkeypatch.setattr(jax, "local_device_count", lambda: 4)
+    rd.setup(x64=bool(jax.config.jax_enable_x64), num_threads=1)
+    assert calls["platform"] == []
+    assert calls["devices"] == []
+    assert calls["config"] == []
+
+
 def test_late_call_on_multi_gpu_machine_is_noop(calls, monkeypatch):
     # re-running setup(platform='gpu') on a 2-GPU machine must not raise:
     # the device count is not controlled on accelerators, so it plays no
