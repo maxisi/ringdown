@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=rd-h100-bench
-#SBATCH --output=/mnt/home/misi/src/ringdown/benchmarks/h100/slurm-%j.out
-#SBATCH --error=/mnt/home/misi/src/ringdown/benchmarks/h100/slurm-%j.err
+#SBATCH --output=benchmarks/h100/slurm-%j.out
+#SBATCH --error=benchmarks/h100/slurm-%j.err
 #SBATCH --time=01:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
