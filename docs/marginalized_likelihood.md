@@ -10,7 +10,7 @@ algebraically identical to the sequential per-detector scheme it replaced.*
 
 `ringdown` fits a sum of damped sinusoids to post-merger strain data. The model is *linear*
 in the sinusoid amplitudes and *nonlinear* in everything else (the black-hole mass and spin,
-frequency and damping-rate deviations, the inclination). Because the noise is modelled as
+frequency and damping-rate deviations, the inclination). Because the noise is modeled as
 Gaussian and the amplitude prior is Gaussian, the amplitudes can be integrated out
 analytically, leaving a much lower-dimensional and much better-conditioned sampling problem
 for the nonlinear parameters. This note derives that marginalization from scratch.
@@ -31,12 +31,12 @@ $$
 plus a single Cholesky factorization. Every symbol is defined below. This note is concerned
 only with showing that the two are the same function of the parameters.
 
-> **On the empirical case.** The per-gradient device-time benchmarks on CPU, an RTX A6000 and
-> an H100, the independent adversarial re-verification, and the measurements behind rejecting
-> the `vmap`/`scan`, backend-dispatch, concatenated-solve and $\Lambda = S^2$ variants were
-> recorded in a set of development reports that are not part of the package. See the pull
-> request that introduced this note for that record; the conclusions are summarized inline
-> below, and the equivalence claims are pinned by `tests/test_model.py`.
+> **In practice.** The closed form is about $2.5\times$ faster per gradient than the sequential
+> scheme. For well-conditioned covariances they agree to machine precision in the log-likelihood
+> and every gradient component; residual disagreement grows with the conditioning of the noise covariance. Benchmarks
+> across CPU and GPU, and the reasoning behind the implementation choices noted in §7.4, are
+> recorded in `docs/dev/model_optimization_study.md`, which is development documentation and
+> not part of the installed package.
 
 ### 0.1 Notational warning: $A$ versus $A^{-1}$
 
@@ -54,10 +54,8 @@ only with showing that the two are the same function of the parameters.
 >
 > Where this note departs from arXiv:2005.14199: that paper treats a single data stream, so it
 > has no detector index; we add $i$. It also does not need the whitened variables of §5, which
-> are introduced here. Finally, some of the development reports referred to above used the
-> *opposite* convention, calling the precision $A$; **this note supersedes them
-> notationally**, and where they disagree the convention here — which is the code's and the
-> paper's — is the one to use.
+> are introduced here. Be aware that the opposite convention — calling the *precision* $A$ — is
+> also in circulation; this note does not use it.
 
 ---
 
@@ -276,7 +274,7 @@ $$
 ### 1.8 The data and the noise model
 
 Let $y_i \in \mathbb{R}^{n_t}$ be the (conditioned, whitening-free) strain data of detector $i$.
-The noise is modelled as a zero-mean, stationary, Gaussian process, so its statistics are
+The noise is modeled as a zero-mean, stationary, Gaussian process, so its statistics are
 captured entirely by the autocovariance function, assembled into the symmetric positive-definite
 **noise covariance matrix**
 
@@ -825,31 +823,24 @@ regularizing the problem, and it holds equally for the sequential and one-shot f
 the final $[A^{(n_{\rm det})}]^{-1}$ of the recursion *is* the one-shot $A^{-1}$, by Lemma 1, so
 the two schemes factorize the same matrix and inherit the same conditioning. Its condition
 number grows as the amplitude scales $\sigma_m$ grow or as two modes become degenerate
-(nearly parallel columns of $M_i$); numerical experiments confirm that, **in double
-precision**, the two forms lose accuracy at identical rates. `tests/test_model.py` exercises
-exactly that regime: with nearly coincident modes on top of an aLIGO-like covariance
-($\operatorname{cond}(C)\sim10^{9}$) the two forms' gradients separate by $\sim10^{-8}$
-relative, which is $\operatorname{cond}(A^{-1})$ times machine epsilon and is shared roundoff
-in both, while with a white covariance the same near-degenerate points agree to
-$\sim3\times10^{-15}$.
+(nearly parallel columns of $M_i$), and in double precision the two forms lose accuracy at the
+same rate — the residual disagreement between them tracks
+$\operatorname{cond}(C)\cdot\epsilon$ and is shared roundoff, not a bias in either.
 
-That last equivalence is specific to float64. In single precision the two forms do *not* fail
-together: the sequential recursion returns NaN in regimes where the one-shot form still returns
-a finite value. The controlling variable is dynamic range rather than conditioning. The
-sequential form builds $C_i^{-1}M_i$ and $C_i^{-1}r_i$ explicitly, and for strain data at its
-natural scale ($L_i\sim10^{-22}$, so $C_i^{-1}\sim10^{44}$) those intermediates reach
-$10^{26}$–$10^{44}$ and overflow the float32 ceiling of $3.4\times10^{38}$ — even where
-$\operatorname{cond}(A^{-1})$ is of order ten and the final contractions are $O(1)$. Whitening
-once keeps $W_i$ and $z_i$ of order unity, so no such intermediate is ever formed. This
-attribution is measured, not inferred; an earlier account that located the failure at
-$\operatorname{cond}(A)\gtrsim5\times10^{6}$ and ascribed it to accumulated rounding across
-the repeated `cho_solve` chain was superseded by the later and more direct measurement. Two
-caveats keep this in proportion: remaining finite is not the same as
-remaining accurate — at high conditioning the one-shot form's float32 gradient is already
-$O(1)$ in relative error, and at $\operatorname{cond}(A)\sim10^{13}$ it too returns NaN — and
-none of this is an argument for running in single precision, which changes the numerics and is
-out of scope here. It bears only on which formulation would be the prerequisite if that were
-ever attempted.
+That equivalence is specific to float64. In single precision the two do *not* fail together,
+and the controlling variable is dynamic range rather than conditioning. The sequential form
+builds $C_i^{-1}M_i$ and $C_i^{-1}r_i$ explicitly, and for strain at its natural scale
+($L_i\sim10^{-22}$, so $C_i^{-1}\sim10^{44}$) those intermediates reach $10^{26}$–$10^{44}$ and
+overflow the float32 ceiling of $3.4\times10^{38}$ — even where $\operatorname{cond}(A^{-1})$
+is of order ten and the final contractions are $O(1)$. Whitening once keeps $W_i$ and $z_i$ of
+order unity, so no such intermediate is ever formed, and the closed form is correspondingly
+more robust: it returns finite values in regimes where the sequential recursion returns NaN.
+This is mitigated in practice by `strain_scale="auto"`, which rescales the data away from
+$10^{-22}$ before the likelihood sees it. Two caveats keep it in proportion: remaining finite
+is not the same as remaining accurate — at high conditioning the closed form's float32 gradient
+is already $O(1)$ in relative error, and at $\operatorname{cond}(A)\sim10^{13}$ it too returns
+NaN — and none of this is an argument for running in single precision, which changes the
+numerics and is out of scope here.
 
 Forming $A^{-1}$ as $W_i^\top W_i$ rather than $M_i^\top(C_i^{-1}M_i)$ is also the numerically
 preferable choice: it is a Gram matrix of the whitened design, so its condition number is the
@@ -930,9 +921,8 @@ h_+ - i\,h_\times = \tfrac12\mathcal{A}\,e^{-\gamma t}
 \qquad \varphi_p = \varphi - \vartheta,\ \ \varphi_m = -(\varphi+\vartheta),
 $$
 
-with $\varphi_R = \varphi_p$ and $\varphi_L = \varphi_m$. (I verified this inverse relation both
-symbolically and numerically against the implementation of Eq. (8) in
-`ringdown/waveforms/ringdown.py:32`; agreement to $5\times10^{-15}$.) For the two-quadrature
+with $\varphi_R = \varphi_p$ and $\varphi_L = \varphi_m$, matching the implementation of Eq. (8)
+in `Ringdown.complex_mode` (`ringdown/waveforms/ringdown.py`). For the two-quadrature
 models the reduction is simpler: $\mathcal{A} = \sigma_m\sqrt{(a^x)^2+(a^y)^2}$ and
 $\varphi = \operatorname{atan2}(a^y, a^x)$, with $\vartheta = 0$ and $\epsilon$ set by the
 inclination rather than fitted.
@@ -1032,7 +1022,9 @@ Implemented in `get_quad_derived_quantities`:
 
 ### 7.4 Before and after
 
-**Before**, condensed and annotated:
+**Before** — the sequential scheme of §3, condensed and annotated. This is the formulation the
+closed form replaced; it is reproduced here because it is what §§4–5 prove the equivalence
+*against*.
 
 ```python
 mu = jnp.zeros(k)                    # mu^(0) = 0
@@ -1057,8 +1049,8 @@ for i in range(n_det):
     mu, Lambda_inv, Lambda_inv_chol = a, A_inv, A_inv_chol      # (3.3)
 ```
 
-**After** — the same number, computed via (5.1), and what `ringdown.model.make_model` now
-does:
+**After** — the same number, computed via (5.1), and what `ringdown.model.make_model` does
+today (implemented in `b6e30b9`):
 
 ```python
 st = lambda X, Y: solve_triangular(X, Y, lower=True)
@@ -1085,39 +1077,33 @@ quads = solve(R.T, u + unit_quads)          # a = R^-T (u + xi),  Section 6
 
 replacing `mu + solve(Lambda_inv_chol.T, unit_quads)`, which by Lemma 1 is the same vector.
 
-Two implementation remarks, both settled empirically rather than mathematically. First, $W_i$ and
-$z_i$ may equivalently be obtained from a *single* solve against the concatenated
-$[\,M_i \mid y_i\,]$, an $n_t\times(k+1)$ right-hand side; that is algebraically identical and was
-the form originally proposed here, but it has been retired. On CPU it saves exactly one LAPACK
-dispatch and no arithmetic, while on GPU in float64 cuBLAS switches to a markedly slower kernel
-once the right-hand side has $\gtrsim 17$ columns (exact powers of two being fast outliers), so
-the concatenation can cost up to $\sim 2\times$ for $n_{\rm mode}\gtrsim 4$ while gaining at most
-$\sim10\%$ elsewhere. Two separate solves are therefore used, as a single backend- and
-dtype-independent code path. For the same reason the detector loop is left unrolled rather
-than expressed with `vmap` or `scan`: unrolling won or tied on CPU, an RTX A6000 and an H100,
-so there is no configuration in which a dispatch would pay for itself.
+Two implementation remarks, both settled by measurement rather than by mathematics. First,
+$W_i$ and $z_i$ could equivalently be obtained from a *single* solve against the concatenated
+$[\,M_i \mid y_i\,]$, an $n_t\times(k+1)$ right-hand side. That is algebraically identical, but
+two separate solves are used instead: on GPU in float64 cuBLAS switches to a markedly slower
+kernel once the right-hand side has $\gtrsim 17$ columns, which would cost up to $\sim2\times$
+for $n_{\rm mode}\gtrsim 4$, against a gain of at most $\sim10\%$ elsewhere. For the same
+reason the detector loop is left unrolled rather than expressed with `vmap` or `scan`:
+unrolling wins or ties on every backend and precision measured. One code path serves all of
+them.
 
 Second, $z_i$, $Q$ and $\sum_i\sum_t\log[L_i]_{tt}$ are independent of $\theta$ (§5.1) and so
 carry no gradient, but they are *not* removed by the compiler: on XLA:CPU the triangular solve
 lowers to an opaque `lapack_dtrsm_ffi` custom call, which the constant folder cannot evaluate,
 so $z_i$ is genuinely recomputed on every call even though $L_i$ and $y_i$ are compile-time
-constants. Precomputing them and passing them in as model arguments
-was measured and found to be worth nothing end-to-end, so they are simply computed in the model
-body; they are $O(n_t^2)$ against the $O(n_t^2 k)$ of the $W_i$ solve, and gradient-free.
+constants. Precomputing them and passing them in as model arguments is worth nothing
+end-to-end, so they are simply computed in the model body; they are $O(n_t^2)$ against the
+$O(n_t^2 k)$ of the $W_i$ solve, and gradient-free.
 
-Sections 4 and 5 prove these compute the same real number. Numerically, the two forms agree to
-$\sim10^{-15}$ in both the log-likelihood and every gradient component for well-conditioned test
-covariances; under a realistically conditioned aLIGO-like noise covariance the agreement
-degrades, as shared roundoff amplified by $\operatorname{cond}(C)$ rather than as a bias in
-either form — a central finite-difference check cannot tell which is more accurate — and stays
-far below anything HMC can resolve. `tests/test_model.py` pins this against a frozen copy of
-the sequential scheme: at $\operatorname{cond}(C)$ of a few times $10^{9}$ the potential energy
-and every gradient component agree to $\le 4\times10^{-13}$ relative over
-$(n_{\rm det}, n_t, n_{\rm mode}) \in \{(1,205,1),(2,205,2),(3,205,3),(2,410,2)\}$. The
-predictive draw of §6 is additionally *pointwise* identical given the same $\xi$, not merely
-equal in distribution, with all twelve derived quantities agreeing to the same tolerance.
+Sections 4 and 5 prove these compute the same real number. Numerically the two forms agree to
+$\sim10^{-15}$ in both the log-likelihood and every gradient component for well-conditioned
+noise covariances, degrading to $\sim10^{-13}$ for a realistically conditioned aLIGO-like one —
+shared roundoff amplified by $\operatorname{cond}(C)$ rather than a bias in either form, and
+far below anything HMC can resolve. The predictive draw of §6 is *pointwise* identical given
+the same $\xi$, not merely equal in distribution, with all twelve derived quantities agreeing
+to the same tolerance.
 
-### 7.5 One behavioural difference
+### 7.5 One behavioral difference
 
 The sequential scheme emits $n_{\rm det}$ separate factor sites `logl_0`, `logl_1`, …; the
 one-shot scheme emits one. The individual $\ell_i = \log p(y_i\mid y_{<i},\theta)$ are

@@ -1,0 +1,146 @@
+{
+  "schema": 2,
+  "leg": "cpu-f64",
+  "argv": [
+    "/mnt/home/misi/src/ringdown/h100_bench/bench.py",
+    "--no-sub",
+    "--out",
+    "/mnt/home/misi/src/ringdown/h100_bench/results_6969321.cpu_f64_chains.json",
+    "--platform",
+    "cpu",
+    "--sections",
+    "env,chains",
+    "--deadline",
+    "200"
+  ],
+  "tag": "",
+  "env": {
+    "leg": "cpu-f64",
+    "hostname": "workergpu162",
+    "platform_requested": "cpu",
+    "jax_backend": "cpu",
+    "jax_devices": [
+      "cpu:0",
+      "cpu:1",
+      "cpu:2",
+      "cpu:3"
+    ],
+    "jax_device_kinds": [
+      "cpu",
+      "cpu",
+      "cpu",
+      "cpu"
+    ],
+    "jax_device_count": 4,
+    "jax_enable_x64": true,
+    "dtype": "float64",
+    "python": "3.13.0",
+    "uname": "Linux-5.14.0-687.41.1.el9_8.x86_64-x86_64-with-glibc2.34",
+    "smoke": false,
+    "configs": [
+      [
+        2,
+        205,
+        2
+      ],
+      [
+        2,
+        1024,
+        4
+      ],
+      [
+        3,
+        1024,
+        8
+      ]
+    ],
+    "cpu_model": "Intel(R) Xeon(R) Platinum 8362 CPU @ 2.80GHz",
+    "cpu_logical_count": 64,
+    "cpu_affinity_count": 16,
+    "thread_env": {
+      "OMP_NUM_THREADS": "16",
+      "MKL_NUM_THREADS": "16",
+      "OPENBLAS_NUM_THREADS": "16",
+      "XLA_FLAGS": "--xla_force_host_platform_device_count=4",
+      "JAX_PLATFORMS": "cpu"
+    },
+    "slurm": {
+      "SLURM_CPUS_ON_NODE": "16",
+      "SLURM_CPUS_PER_TASK": "16",
+      "SLURM_GPUS_ON_NODE": "1",
+      "SLURM_JOB_GPUS": "1",
+      "SLURM_JOB_ID": "6969321",
+      "SLURM_JOB_NUM_NODES": "1",
+      "SLURM_JOB_PARTITION": "gpu",
+      "SLURM_MEM_PER_NODE": "65536",
+      "SLURM_NNODES": "1",
+      "SLURM_NODELIST": "workergpu162"
+    },
+    "nvidia_smi": "NVIDIA H100 PCIe, 580.178.04, 81559 MiB, 9.0, 1755 MHz",
+    "packages": {
+      "jax": "0.11.1",
+      "jaxlib": "0.11.1",
+      "numpyro": "0.21.0",
+      "numpy": "2.5.2",
+      "scipy": "1.18.1",
+      "jax-cuda12-plugin": "0.11.1",
+      "jax-cuda12-pjrt": "0.11.1",
+      "nvidia-cublas-cu12": "12.9.2.10",
+      "nvidia-cusolver-cu12": "11.7.5.82",
+      "nvidia-cuda-runtime-cu12": "12.9.79",
+      "ringdown": "1.1.1.dev32+g7bc480a"
+    },
+    "contention_before": {}
+  },
+  "chains": {
+    "current": {
+      "1": {
+        "wall_s": 9.455095800047275,
+        "num_steps": 2918,
+        "throughput_vs_1chain": 1.0,
+        "us_per_leapfrog_incl_compile": 3240.2658670484147,
+        "ms_per_chain_iteration": 18.91019160009455,
+        "warnings": []
+      },
+      "4_default": {
+        "wall_s": 11.929961042944342,
+        "num_steps": 9070,
+        "warnings": [],
+        "ms_per_chain_iteration": 5.964980521472171
+      }
+    },
+    "R1_unroll_sep": {
+      "1": {
+        "wall_s": 2.7299037209595554,
+        "num_steps": 2066,
+        "throughput_vs_1chain": 1.0,
+        "us_per_leapfrog_incl_compile": 1321.3473963986232,
+        "ms_per_chain_iteration": 5.459807441919111,
+        "warnings": []
+      },
+      "4_default": {
+        "wall_s": 5.326332708995324,
+        "num_steps": 8324,
+        "warnings": [],
+        "ms_per_chain_iteration": 2.663166354497662
+      }
+    },
+    "R1_vmap": {
+      "1": {
+        "wall_s": 2.9273558969725855,
+        "num_steps": 1886,
+        "throughput_vs_1chain": 1.0,
+        "us_per_leapfrog_incl_compile": 1552.1505286174895,
+        "ms_per_chain_iteration": 5.854711793945171,
+        "warnings": []
+      },
+      "4_default": {
+        "wall_s": 7.528630377026275,
+        "num_steps": 9458,
+        "warnings": [],
+        "ms_per_chain_iteration": 3.7643151885131374
+      }
+    }
+  },
+  "t_total_s": 42.99663710594177
+}

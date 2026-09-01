@@ -1,0 +1,170 @@
+{
+  "schema": 2,
+  "leg": "cpu-f64",
+  "argv": [
+    "/mnt/home/misi/src/ringdown/h100_bench/bench.py",
+    "--no-sub",
+    "--out",
+    "/mnt/home/misi/src/ringdown/h100_bench/results_6969321.cpu_f64_omp1.json",
+    "--platform",
+    "cpu",
+    "--omp",
+    "1",
+    "--sections",
+    "env,devtime",
+    "--configs",
+    "2,205,2",
+    "--deadline",
+    "240"
+  ],
+  "tag": "",
+  "env": {
+    "leg": "cpu-f64",
+    "hostname": "workergpu162",
+    "platform_requested": "cpu",
+    "jax_backend": "cpu",
+    "jax_devices": [
+      "cpu:0"
+    ],
+    "jax_device_kinds": [
+      "cpu"
+    ],
+    "jax_device_count": 1,
+    "jax_enable_x64": true,
+    "dtype": "float64",
+    "python": "3.13.0",
+    "uname": "Linux-5.14.0-687.41.1.el9_8.x86_64-x86_64-with-glibc2.34",
+    "smoke": false,
+    "configs": [
+      [
+        2,
+        205,
+        2
+      ]
+    ],
+    "cpu_model": "Intel(R) Xeon(R) Platinum 8362 CPU @ 2.80GHz",
+    "cpu_logical_count": 64,
+    "cpu_affinity_count": 16,
+    "thread_env": {
+      "OMP_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "XLA_FLAGS": null,
+      "JAX_PLATFORMS": "cpu"
+    },
+    "slurm": {
+      "SLURM_CPUS_ON_NODE": "16",
+      "SLURM_CPUS_PER_TASK": "16",
+      "SLURM_GPUS_ON_NODE": "1",
+      "SLURM_JOB_GPUS": "1",
+      "SLURM_JOB_ID": "6969321",
+      "SLURM_JOB_NUM_NODES": "1",
+      "SLURM_JOB_PARTITION": "gpu",
+      "SLURM_MEM_PER_NODE": "65536",
+      "SLURM_NNODES": "1",
+      "SLURM_NODELIST": "workergpu162"
+    },
+    "nvidia_smi": "NVIDIA H100 PCIe, 580.178.04, 81559 MiB, 9.0, 1755 MHz",
+    "packages": {
+      "jax": "0.11.1",
+      "jaxlib": "0.11.1",
+      "numpyro": "0.21.0",
+      "numpy": "2.5.2",
+      "scipy": "1.18.1",
+      "jax-cuda12-plugin": "0.11.1",
+      "jax-cuda12-pjrt": "0.11.1",
+      "nvidia-cublas-cu12": "12.9.2.10",
+      "nvidia-cusolver-cu12": "11.7.5.82",
+      "nvidia-cuda-runtime-cu12": "12.9.79",
+      "ringdown": "1.1.1.dev32+g7bc480a"
+    },
+    "contention_before": {}
+  },
+  "devtime": {
+    "2,205,2": {
+      "current": {
+        "us_per_grad": 782.2389144214532,
+        "speedup_vs_current": 1.0,
+        "R": [
+          152,
+          456
+        ],
+        "compile_s": 0.33948336803587154,
+        "custom_calls": {
+          "trsm": 42,
+          "potrf": 2,
+          "hlo_lines": 2264
+        }
+      },
+      "whiten_seq": {
+        "us_per_grad": 333.4637830347573,
+        "speedup_vs_current": 2.3457987170376446,
+        "R": [
+          288,
+          864
+        ],
+        "compile_s": 0.3169000560301356,
+        "custom_calls": {
+          "trsm": 18,
+          "potrf": 2,
+          "hlo_lines": 1991
+        }
+      },
+      "R1_unroll_concat": {
+        "us_per_grad": 293.52097239585726,
+        "speedup_vs_current": 2.6650188163266444,
+        "R": [
+          399,
+          1197
+        ],
+        "compile_s": 0.28549213794758543,
+        "custom_calls": {
+          "trsm": 8,
+          "potrf": 1,
+          "hlo_lines": 1713
+        }
+      },
+      "R1_unroll_sep": {
+        "us_per_grad": 310.80041808795715,
+        "speedup_vs_current": 2.516852838338454,
+        "R": [
+          299,
+          897
+        ],
+        "compile_s": 0.28430082596605644,
+        "custom_calls": {
+          "trsm": 10,
+          "potrf": 1,
+          "hlo_lines": 1620
+        }
+      },
+      "R1_vmap": {
+        "us_per_grad": 305.03123470892507,
+        "speedup_vs_current": 2.5644551292194775,
+        "R": [
+          375,
+          1125
+        ],
+        "compile_s": 0.2767241789842956,
+        "custom_calls": {
+          "trsm": 7,
+          "potrf": 1,
+          "hlo_lines": 1556
+        }
+      },
+      "floor_no_likelihood": {
+        "us_per_grad": 51.775582469417714,
+        "speedup_vs_current": 15.108259088799208,
+        "R": [
+          400,
+          1200
+        ],
+        "compile_s": 0.18308654002612457,
+        "custom_calls": {
+          "hlo_lines": 1208
+        }
+      }
+    }
+  },
+  "t_total_s": 27.70683455467224
+}

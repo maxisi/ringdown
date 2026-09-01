@@ -1,0 +1,8 @@
+[flake8]
+# `benchmarks/` is a self-contained measurement kit, not library code: it is
+# archival (the committed scripts must keep matching the committed results),
+# it is never imported by `ringdown`, and it is not exercised by CI.  Holding
+# it to the package's style rules produces churn that invalidates the archive.
+# `extend-exclude` rather than `exclude` so flake8 keeps its own defaults
+# (.git, __pycache__, .tox, .venv, build, dist ...).
+extend-exclude = benchmarks
