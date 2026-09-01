@@ -72,6 +72,8 @@ _P.add_argument("--configs", default="",
                 help="restrict the size sweep, e.g. '2,205,2;3,1024,8'")
 _P.add_argument("--omp", default="",
                 help="set OMP/MKL/OPENBLAS_NUM_THREADS before jax import")
+_P.add_argument("--parent-pid", type=int, default=0,
+                help="GPU parent PID to ignore when counting foreign processes")
 _P.add_argument("--tag", default="",
                 help="free-form label recorded in the JSON")
 ARGS = _P.parse_args()
@@ -538,18 +540,22 @@ def count_custom_calls(gradfn, p):
 # ---------------------------------------------------------------------------
 # SECTION: environment / contention
 # ---------------------------------------------------------------------------
-def gpu_contention():
+def gpu_contention(parent_pid=None):
     """Who else is on this card?  The A6000 reference numbers were taken on a
     verified-idle card; any comparison must know whether this one was."""
     info = {}
+    ignore = {str(os.getpid())}
+    if parent_pid:
+        ignore.add(str(parent_pid))
     try:
         r = subprocess.run(["nvidia-smi", "--query-compute-apps=pid,process_name,"
-                            "used_gpu_memory", "--format=csv,noheader"],
+                           "used_gpu_memory", "--format=csv,noheader"],
                            capture_output=True, text=True, timeout=60)
         procs = [ln for ln in r.stdout.strip().splitlines() if ln.strip()]
         info["compute_apps"] = procs
         info["n_foreign_compute_apps"] = sum(
-            1 for ln in procs if str(os.getpid()) != ln.split(",")[0].strip())
+            1 for ln in procs
+            if ln.split(",")[0].strip() not in ignore)
     except Exception as e:
         info["compute_apps"] = "unavailable: %r" % e
     try:
@@ -617,7 +623,7 @@ def section_env():
         except Exception:
             pkgs[p] = None
     env["packages"] = pkgs
-    env["contention_before"] = gpu_contention() if _IS_GPU else {}
+    env["contention_before"] = gpu_contention(ARGS.parent_pid or None) if _IS_GPU else {}
     print("\n=== ENVIRONMENT [leg %s] ===" % LEG)
     for k in ("hostname", "jax_backend", "jax_devices", "jax_device_kinds",
               "jax_enable_x64", "dtype", "cpu_model", "cpu_affinity_count",
@@ -1115,9 +1121,10 @@ def section_f32acc(ref_path):
 # ---------------------------------------------------------------------------
 def _spawn(tag, extra_argv, out_path, timeout=2400):
     cmd = [sys.executable, os.path.abspath(__file__),
-           "--no-sub", "--out", out_path] + extra_argv
-    if ARGS.smoke:
-        cmd.append("--smoke")
+           "--no-sub", "--out", out_path,
+           "--parent-pid", str(os.getpid())] + extra_argv
+if ARGS.smoke:
+    cmd.append("--smoke")
     print("\n" + "-" * 78)
     print("=== LEG: %s ===\n  $ %s" % (tag, " ".join(cmd)), flush=True)
     t0 = time.perf_counter()
@@ -1206,7 +1213,7 @@ def main():
             base + ".cpu_f64_omp1.json")
 
     if _IS_GPU:
-        out["contention_after"] = gpu_contention()
+        out["contention_after"] = gpu_contention(ARGS.parent_pid or None)
     out["t_total_s"] = time.time() - T_START
     with open(ARGS.out, "w") as fh:
         json.dump(out, fh, indent=1, default=str)
