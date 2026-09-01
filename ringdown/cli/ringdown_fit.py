@@ -53,8 +53,12 @@ def get_parser():
         "--device-count",
         type=int,
         default=None,
-        help="number of devices to use (default: determined from "
-             "RINGDOWN_DEVICE_COUNT environment variable, or 1 for GPU, 4 for CPU)."
+        help="number of CPU host devices for parallel chains; CPU only "
+             "(default: RINGDOWN_DEVICE_COUNT environment variable, or 4; "
+             "clamped to the number of available CPUs). On GPU/TPU the "
+             "device count is not controlled here (visible devices are set "
+             "through the environment, e.g., CUDA_VISIBLE_DEVICES) and an "
+             "explicit value is ignored with a warning.",
     )
     p.add_argument(
         "--force",

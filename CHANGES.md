@@ -6,8 +6,10 @@ Notable user-facing changes to `ringdown`. For a full history, see the
 ## Unreleased
 
 - Added `ringdown.setup()`, a one-call replacement for the jax/numpyro
-  configuration boilerplate: it sets the platform, device count (honoring
-  `RINGDOWN_DEVICE_COUNT`, with the CPU clamp), and precision (`x64` defaults
+  configuration boilerplate: it sets the platform, CPU host device count
+  (honoring `RINGDOWN_DEVICE_COUNT`, defaulting to 4 and clamped to the CPU
+  count; on GPU/TPU the device count is not controlled here, and an explicit
+  `num_devices` is ignored with a warning), and precision (`x64` defaults
   to true on CPU, false on GPU), and raises if called after jax has already
   initialized its backends, where jax and numpyro would silently ignore the
   settings. Both CLIs and the example notebooks now use it.
