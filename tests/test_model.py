@@ -458,10 +458,10 @@ def _deterministic_values(trace):
     "n_det,n_t,n_modes,white",
     [
         # a single detector sees both polarizations through proportional
-        # design-matrix columns, so its quadrature posterior is exactly
-        # degenerate; that case is checked against a benign covariance,
-        # since with an ill-conditioned one the shared roundoff in the
-        # posterior *mean* along the flat direction reaches ~1e-8
+        # design-matrix columns, so its likelihood is exactly degenerate
+        # along one quadrature direction; that case is checked against a
+        # benign covariance, since with an ill-conditioned one roundoff in
+        # the posterior mean along that likelihood-flat direction reaches ~1e-8
         (1, 205, 1, True),
         (2, 205, 2, True),
         (2, 205, 2, False),
