@@ -115,7 +115,7 @@ Precision
    to. On CPU, always use ``float64``.
 
 Threads
-   The ``OMP_NUM_THREADS=1`` setting shown above measured roughly 1.5x slower per gradient
+   The ``OMP_NUM_THREADS=1`` setting set automatically by ``ringdown.setup`` measured roughly 1.5x slower per gradient
    than leaving threading unrestricted, since a single chain no longer spreads across
    cores. In exchange it lets ``numpyro.set_host_device_count`` run the chains in parallel
    without oversubscribing the machine, which is the better trade at the default four
