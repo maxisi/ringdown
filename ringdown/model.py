@@ -776,149 +776,107 @@ def make_model(
 
             n_quad_n_modes = dms.shape[2]
 
-            # initialize prior mean and variance for the linear quadratures
-            # this is just a zero-mean unit Gaussian: N(mu, Lambda) with
-            # mean mu = 0 and covariance Lambda = I
-            # (note that the scale of the quadratures has been absorbed into
-            # the design matrix, otherwise we would write
-            # Lambda = a_scale**2 I)
-            mu = jnp.zeros(n_quad_n_modes)
-            Lambda_inv = jnp.eye(n_quad_n_modes)
-            Lambda_inv_chol = jnp.eye(n_quad_n_modes)
+            # Marginalize analytically over the linear quadrature
+            # amplitudes. Their prior is a zero-mean unit Gaussian,
+            # N(0, Lambda) with Lambda = I (the scale of the quadratures has
+            # been absorbed into the design matrix, otherwise we would write
+            # Lambda = a_scale**2 I).
+            #
+            # Marginalizing over all detectors at once has a closed form.
+            # With the whitened design matrix W_i = L_i^-1 M_i and whitened
+            # data z_i = L_i^-1 y_i for detector i (so that C_i^-1 never has
+            # to be formed, since C_i = L_i L_i^T),
+            #
+            #   A_inv = Lambda^-1 + sum_i W_i^T W_i = I + sum_i W_i^T W_i
+            #   v     = sum_i W_i^T z_i
+            #   Q     = sum_i |z_i|^2
+            #   A_inv = R R^T  (Cholesky),   u = R^-1 v
+            #
+            # and the total marginal log likelihood is
+            #
+            #   logl = -Q/2 + |u|^2/2
+            #          - sum_i sum_t log[L_i]_tt - sum_j log R_jj
+            #
+            # The two log-determinant terms come from the Gaussian
+            # refactorization |Lambda| |C| = |A| |B|, i.e.
+            #   log|B| = log|C| + log|Lambda| - log|A|
+            # with log|Lambda| = 0 and log|A| = -log|A_inv| = -2 sum_j log
+            # R_jj (note that it is the *logs* that flip sign, not the
+            # determinants); as usual, the parameter-independent
+            # -0.5*n*log(2pi) is dropped.
+            #
+            # This is exactly the sum of the per-detector conditional log
+            # likelihoods that a sequential scheme -- marginalizing one
+            # detector at a time and using its posterior as the next
+            # detector's prior -- would accumulate; the recursion telescopes
+            # onto the expression above. See docs/marginalized_likelihood.md
+            # for the derivation and the proof.
+            #
+            # Q and sum_i sum_t log[L_i]_tt carry no dependence on the
+            # sampled parameters and could be dropped, but they are retained
+            # so that the reported log likelihood keeps its usual numerical
+            # value rather than being offset by a constant.
+
+            # accumulators over detectors; A_inv starts from the prior
+            # precision Lambda^-1 = I
+            A_inv = jnp.eye(n_quad_n_modes)
+            v = jnp.zeros(n_quad_n_modes)
+            Q = 0.0
+            logdetL = 0.0
 
             if not prior:
-                # iterate over detectors, computing a (marginal) posterior at
-                # each step to serve as the prior for the next step; after
-                # iterating over all detectors, we have turned the prior into
-                # the posterior
-
+                # unrolled at trace time: n_det is a small Python int
                 for i in range(n_det):
-                    # select the design matrix (M), the Cholesky factor (L),
-                    # and the strain (y) for the current detector
-                    # (ndet, ntime, nquads*nmode) => (i, ntime, nquads*nmode)
+                    # the design matrix M takes us from the space of
+                    # quadratures to the space of the data for this detector
+                    # (M is ntime x nquads*nmode), while L whitens its noise,
+                    # taking it from N(0, C) to N(0, I) (L is ntime x ntime)
                     M = dms[i, :, :]
                     L = ls[i, :, :]
                     y = strains[i, :]
 
-                    # M acts as a coordinate transformation matrix, taking us
-                    # from the space of quadratures to the space of the data,
-                    # while M^T takes us from data space to quadrature space
-                    # (M is ntime x nquads*nmode)
+                    # whiten the design matrix and the data with one forward
+                    # substitution each
+                    W = jsp.linalg.solve_triangular(L, M, lower=True)
+                    z = jsp.linalg.solve_triangular(L, y, lower=True)
 
-                    # L whitens the noise in the detector, taking it from
-                    # N(0, C) to N(0, I) (L is ntime x ntime)
+                    A_inv = A_inv + jnp.dot(W.T, W)
+                    v = v + jnp.dot(W.T, z)
+                    Q = Q + jnp.dot(z, z)
+                    logdetL = logdetL + jnp.sum(jnp.log(jnp.diag(L)))
 
-                    # we can use M and L to compute the precision (A_inv) of
-                    # the marginal posterior on the quadratures (conditioned on
-                    # the current data and nonlinear parameters), which is just
-                    # the sum of the prior precision (Lambda_inv) and the
-                    # likelihood precision (M^T C^-1 M):
-                    #   A_inv = Lambda_inv + M^T C^-1 M
-                    # so that A and A_inv are (nquads*nmode, nquads*nmode)
-                    A_inv = Lambda_inv + jnp.dot(
-                        M.T, jsp.linalg.cho_solve((L, True), M)
-                    )
-                    A_inv_chol = jsp.linalg.cholesky(A_inv, lower=True)
+            # A_inv_chol is R above. It is computed unconditionally so that
+            # the predictive draw below has a single code path: when
+            # prior=True the accumulators keep their initial values, so
+            # R = chol(I) = I and u = 0, and the draw reduces to the unit
+            # Gaussian prior.
+            A_inv_chol = jsp.linalg.cholesky(A_inv, lower=True)
+            u = jsp.linalg.solve_triangular(A_inv_chol, v, lower=True)
 
-                    # we can also compute the marginal-posterior mean (a),
-                    # which is the precision-weighted sum of the prior mean
-                    # (mu) and the likelihood mean (M^T C^-1 y):
-                    #   a = A_inv (Lambda_inv mu + M^T C^-1 y)
-                    # so that a is (nquads*nmode,)
-                    a = jsp.linalg.cho_solve(
-                        (A_inv_chol, True),
-                        jnp.dot(Lambda_inv, mu)
-                        + jnp.dot(M.T, jsp.linalg.cho_solve((L, True), y)),
-                    )
-
-                    # the mean (b) of the marginal likelihood p(y|b, B),
-                    # i.e., the likelihood obtained after integrating out
-                    # the quadratures, is simply the value of the strain y
-                    # corresponding to the mean quadratures, i.e., mu after
-                    # a coordinate transformation:
-                    #   b = M mu
-                    # so that b is (ntime,)
-                    b = jnp.dot(M, mu)
-
-                    # the (co)variance of the marginal likelihood (B) is the
-                    # sum of the variance from the noise (C) and the variance
-                    # from the quadrature prior (Lambda):
-                    #   B = C + M Lambda M^T
-                    # this is (ntime, ntime), which is large; but, to compute
-                    # the marginal likelihood, we need the inverse covariance
-                    # B^-1, so we can use the Woodbury identity to write:
-                    # B^-1 = C^-1 - C^-1 M (Lambda^-1 + M^T C^-1 M)^-1 M^T C^-1
-                    #      = C^-1 - C^-1 M A M^T C^-1
-                    # where A = A_inv^-1 per the above; this way we avoid
-                    # inverting the large matrix B directly and take advantage
-                    # of the precomputed Cholesky factor L to get C^-1
-
-                    # with the residual r = y - b, the marginal log-likelihood
-                    # becomes
-                    #   logl = -0.5 r^T B^-1 r - 0.5 log |2pi B|
-                    # where |2pi B| is the determinant of 2pi*B and we can
-                    # ignore the 2pi factor since it introduces a term like
-                    # - 0.5*ntime*log(2pi), which is constant
-                    r = y - b
-                    Cinv_r = jsp.linalg.cho_solve((L, True), r)
-
-                    M_A_Mt_Cinv_r = jnp.dot(
-                        M,
-                        jsp.linalg.cho_solve(
-                            (A_inv_chol, True), jnp.dot(M.T, Cinv_r)
-                        ),
-                    )
-
-                    Cinv_M_A_Mt_Cinv_r = jsp.linalg.cho_solve(
-                        (L, True), M_A_Mt_Cinv_r
-                    )
-
-                    # now all we have left to compute is the log determinant
-                    # term, 0.5*log|B|; from the Gaussian refactorization, we
-                    # have that
-                    #   |Lambda| |C| = |A| |B|
-                    # and therefore
-                    #   log|B| = log|C| + log|Lambda| - log|A|
-                    # furthermore, since |C| = |L|^2, we can write
-                    #   0.5 log|C| = log|L|
-                    # and |L| is the product of the diagonal entries of L;
-                    # writing similarly for |A| and |Lambda|, we thus have
-                    # that log_sqrt_det_B = 0.5 log|B| is
-                    # (note that |A| = -|A_inv|)
-                    log_sqrt_det_B = (
-                        jnp.sum(jnp.log(jnp.diag(L)))
-                        - jnp.sum(jnp.log(jnp.diag(Lambda_inv_chol)))
-                        + jnp.sum(jnp.log(jnp.diag(A_inv_chol)))
-                    )
-
-                    # putting it all together we can get the contribution
-                    # to the log likelihood from this detector
-                    logl = (
-                        -0.5 * jnp.dot(r, Cinv_r - Cinv_M_A_Mt_Cinv_r)
-                        - log_sqrt_det_B
-                    )
-
-                    numpyro.factor(f"logl_{i}", logl)
-
-                    # update the prior mean and precision for the next detector
-                    mu = a
-                    Lambda_inv = A_inv
-                    Lambda_inv_chol = A_inv_chol
+            if not prior:
+                numpyro.factor(
+                    "logl_total",
+                    -0.5 * Q
+                    + 0.5 * jnp.dot(u, u)
+                    - logdetL
+                    - jnp.sum(jnp.log(jnp.diag(A_inv_chol))),
+                )
 
             if predictive:
                 # Generate the actual quadrature amplitudes by taking a draw
-                # from the marginal likelihood N(a, A)
+                # from the marginal posterior N(A v, A), with A = A_inv^-1
+                # the covariance and A v its mean.
 
-                # Lambda_inv_chol.T:
-                # Lambda_inv = Lambda_inv_chol*Lambda_inv_chol.T,
-                # so Lambda = (Lambda_inv_chol.T)^{-1} Lambda_inv_chol^{-1}
-                # to achieve the desired covariance, we can *right multiply*
-                # iid N(0,1) variables by Lambda_inv_chol^{-1}, so that
-                # y = x Lambda_inv_chol^{-1} has covariance
-                # < y^T y >
-                # = (Lambda_inv_chol^{-1}).T < x^T x > Lambda_inv_chol^{-1}
-                # = (Lambda_inv_chol^{-1}).T I Lambda_inv_chol^{-1}
-                # = Lambda.
+                # A_inv = A_inv_chol A_inv_chol.T = R R^T, so that
+                # A = R^{-T} R^{-1}; to achieve the desired covariance we can
+                # left-multiply iid N(0,1) variables xi by R^{-T}, since
+                # < (R^{-T} xi)(R^{-T} xi)^T > = R^{-T} I R^{-1} = A.
+                # The mean is A v = R^{-T} R^{-1} v = R^{-T} u with
+                # u = R^{-1} v as computed above, so mean and fluctuation
+                # can be obtained together with a single back substitution:
+                #   quads = R^{-T} (u + xi)
+                # When prior=True this is R = I, u = 0 and hence quads = xi,
+                # i.e. a draw from the unit Gaussian prior, as intended.
                 if swsh or single_polarization:
                     ax_unit = numpyro.sample(
                         "ax_unit", dist.Normal(0, 1), sample_shape=(n_modes,)
@@ -944,7 +902,7 @@ def make_model(
                         (apx_unit, apy_unit, acx_unit, acy_unit)
                     )
 
-                quads = mu + jsp.linalg.solve(Lambda_inv_chol.T, unit_quads)
+                quads = jsp.linalg.solve(A_inv_chol.T, u + unit_quads)
                 get_quad_derived_quantities(
                     n_modes,
                     dms,

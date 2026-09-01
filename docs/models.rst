@@ -125,3 +125,22 @@ where :math:`Y^{+/\times}_{\ell |m| n}(\cos\iota)` are given in Eq. (31) of
 are analogous to those in the generic mass-spin configuration.
 
 |:point_right:| **See this model in action!** :doc:`examples/GW150914`.
+
+Amplitude marginalization
+-------------------------
+
+In all three configurations the model is *linear* in the cosine and sine
+quadratures of each mode and *nonlinear* in everything else (mass and spin, or
+frequencies and damping rates; the amplitude scales; the inclination). With
+Gaussian noise and the default Gaussian prior on the quadratures, the
+quadratures can therefore be integrated out analytically, leaving the sampler
+a much smaller and much better conditioned problem in the nonlinear parameters
+alone. This is what the ``marginalized`` option does, and it is on by default;
+the quadratures are then recovered afterwards by drawing from their conditional
+posterior at each sampled point, so amplitudes, phases and ellipticities are
+still reported.
+
+|:point_right:| The derivation, the closed form the code evaluates and the
+proof that it is exactly equivalent to marginalizing one detector at a time
+are written up in ``docs/marginalized_likelihood.md`` in the source
+repository.

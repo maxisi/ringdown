@@ -5,6 +5,19 @@ Notable user-facing changes to `ringdown`. For a full history, see the
 
 ## Unreleased
 
+- Rewrote the marginalized likelihood as a single closed-form Gaussian
+  marginalization over all detectors, replacing the sequential per-detector
+  recursion. This is an exact algebraic identity - the log-likelihood value,
+  the priors and the sampled parameterization are unchanged - and makes the
+  model substantially faster per gradient. The mathematics is documented in
+  the new methods note at `docs/marginalized_likelihood.md`.
+  - The per-detector `logl_0`, `logl_1`, ... factor sites are replaced by a
+    single `logl_total` site, so `Result.log_likelihood` and
+    `Result.observed_data` now carry one variable instead of one per detector.
+    `Result.draw_sample(map=True)`, `Result.loo` and the whitened pointwise
+    log-likelihood are unaffected. The old per-detector values were
+    order-dependent conditionals log p(y_i | y_<i), never an independent
+    per-detector decomposition.
 - On accelerators (GPU/TPU), `chain_method` now defaults to `'vectorized'`
   whenever there are fewer devices than chains, rather than letting NumPyro
   fall back to drawing chains sequentially. Pass `chain_method` explicitly
