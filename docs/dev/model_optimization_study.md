@@ -300,7 +300,7 @@ rather than 1:32 FP64:FP32 ratio. Correctness: all variants within $2.6\times10^
 miss is in the same direction — the H100 is *faster than predicted*, typically by 1.1–1.9× —
 i.e. the intervals were anchored too closely to the A6000. One falsification test fired: **F2**,
 the claim that the dispatch-free launch floor is not silicon (correction 10). The substantive
-predictions all held: P5 (GPU/CPU best-to-best), P6 (CPU wins at production size), P11 (GPU f32
+predictions all held: P5 (CPU wins at production size), P6 (GPU wins for large analyses), P11 (GPU f32
 vs CPU f64) and P11b (chain crossover) are all HITs. Net: a better card narrows the
 production-size gap from 3.3–4.0× to 1.7–2.4× but does not close it; it confirms the GPU as the
 right device for large analyses; and it settles the `vmap` question against branching.
