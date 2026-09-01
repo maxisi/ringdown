@@ -18,7 +18,7 @@ the results against it.
 ## What you run
 
 ```bash
-cd /mnt/home/misi/src/ringdown
+cd /path/to/ringdown
 sbatch benchmarks/h100/submit.sbatch
 ```
 
