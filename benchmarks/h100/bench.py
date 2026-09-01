@@ -1141,8 +1141,8 @@ def _spawn(tag, extra_argv, out_path, timeout=2400):
     cmd = [sys.executable, os.path.abspath(__file__),
            "--no-sub", "--out", out_path,
            "--parent-pid", str(os.getpid())] + extra_argv
-if ARGS.smoke:
-    cmd.append("--smoke")
+    if ARGS.smoke:
+        cmd.append("--smoke")
     print("\n" + "-" * 78)
     print("=== LEG: %s ===\n  $ %s" % (tag, " ".join(cmd)), flush=True)
     t0 = time.perf_counter()
