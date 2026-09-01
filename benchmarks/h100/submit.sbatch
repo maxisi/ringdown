@@ -51,6 +51,14 @@ set -uo pipefail   # NOT -e: we want the trailing summary even on failure
 # (`cd /path/to/ringdown && sbatch benchmarks/h100/submit.sbatch`), and Slurm
 # records that directory as SLURM_SUBMIT_DIR; $PWD is the fallback for a plain
 # `bash` invocation.  Override either by exporting REPO/VENV before submitting.
+#
+# CAVEAT if you use that override from a directory other than the repo root:
+# the #SBATCH --output/--error paths at the top of this file are read by Slurm
+# before any of this runs, so they resolve against the SUBMISSION directory,
+# not against REPO.  Slurm cannot create missing parent directories, so the
+# job will fail to start unless <submission-dir>/benchmarks/h100/ exists.
+# Either submit from the repo root (the documented path) or edit those two
+# #SBATCH lines to an absolute directory that exists.
 REPO="${REPO:-${SLURM_SUBMIT_DIR:-$PWD}}"
 VENV="${VENV:-$REPO/.venv}"
 cd "$REPO" || { echo "FATAL: cannot cd to REPO=$REPO"; exit 2; }
