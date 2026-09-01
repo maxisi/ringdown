@@ -12,23 +12,45 @@ on:
 
 jobs:
   claude:
+    # Two conditions, both required: the comment mentions @claude, AND its
+    # author is trusted.  The author check exists because this job holds
+    # `contents: write` (see below) on a PUBLIC repo, where `issue_comment`
+    # fires for any GitHub user.  Without it, anyone who can type a comment
+    # could make the bot push to this repository.  OWNER/MEMBER/COLLABORATOR
+    # are exactly the associations that already imply write access.
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      (github.event_name == 'issue_comment' &&
+       contains(github.event.comment.body, '@claude') &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)) ||
+      (github.event_name == 'pull_request_review_comment' &&
+       contains(github.event.comment.body, '@claude') &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)) ||
+      (github.event_name == 'pull_request_review' &&
+       contains(github.event.review.body, '@claude') &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)) ||
+      (github.event_name == 'issues' &&
+       (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association))
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pull-requests: read
-      issues: read
+      # `contents: write` lets Claude push the fixes it is asked to make.  With
+      # `contents: read` it would do the work and then die on
+      # "Permission to <repo> denied to github-actions[bot] ... 403", stranding
+      # the commit in the runner (this is what happened on PR #165).
+      # Mirrors the permissions claude-docs-sync.yml already uses.
+      contents: write
+      pull-requests: write
+      issues: write
       id-token: write
       actions: read # Required for Claude to read CI results on PRs
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 1
+          # Full history, not a depth-1 shallow clone: pushing a new commit
+          # from a shallow checkout is unreliable, and Claude is now expected
+          # to push.  claude-docs-sync.yml uses 0 for the same reason.
+          fetch-depth: 0
 
       - name: Run Claude Code
         id: claude
