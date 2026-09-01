@@ -492,6 +492,24 @@ def test_predictive_draw_matches_reference(n_det, n_t, n_modes, white):
         assert dev < RTOL, f"{key} differs by {dev:.3g}"
 
 
+def test_single_logl_site_replaces_per_detector_sites():
+    """One merged factor site, still matching the ``logl_`` prefix."""
+    n_det, n_t, n_modes = 3, 205, 2
+    args = _make_data(n_det, n_t, n_modes)
+    values = _fixed_values(n_modes)
+
+    new = _traced(_make_production_model(n_modes), args, values)
+    assert [k for k in new if k.startswith("logl")] == ["logl_total"]
+    assert new["logl_total"]["is_observed"]
+
+    ref = _traced(_make_reference_model(n_modes), args, values)
+    ref_sites = [k for k in ref if k.startswith("logl_")]
+    assert len(ref_sites) == n_det
+    ref_total = sum(float(ref[k]["fn"].log_factor) for k in ref_sites)
+    total = float(new["logl_total"]["fn"].log_factor)
+    assert abs(total - ref_total) / abs(ref_total) < RTOL
+
+
 # -----------------------------------------------------------------------
 # (c) prior mode
 # -----------------------------------------------------------------------
