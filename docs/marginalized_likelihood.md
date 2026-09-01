@@ -32,8 +32,8 @@ plus a single Cholesky factorization. Every symbol is defined below. This note i
 only with showing that the two are the same function of the parameters.
 
 > **In practice.** The closed form is about $2.5\times$ faster per gradient than the sequential
-> scheme, and the two agree to $\sim10^{-14}$ in both the log-likelihood and every gradient
-> component, degrading gracefully with the conditioning of the noise covariance. Benchmarks
+> scheme. For well-conditioned covariances they agree to machine precision in the log-likelihood
+> and every gradient component; residual disagreement grows with the conditioning of the noise covariance. Benchmarks
 > across CPU and GPU, and the reasoning behind the implementation choices noted in §7.4, are
 > recorded in `docs/dev/model_optimization_study.md`, which is development documentation and
 > not part of the installed package.
