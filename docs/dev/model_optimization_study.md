@@ -332,18 +332,33 @@ vectorized chains**, the A6000 16–64. Inner detector batching and outer chain 
 **compose** — the `vmap`/unrolled ratio is flat to within noise across a 64× change in chain
 count — so the inner decision needs no chain-count axis.
 
-> **Provisional: the CPU chain baseline was measured under thread
-> oversubscription.** In Slurm job 6969321 the `cpu_f64_chains` leg inherited
+> **Settled by the rerun: the CPU baseline was 1.44× too slow, the crossover
+> stands.** In Slurm job 6969321 the `cpu_f64_chains` leg inherited
 > `OMP_NUM_THREADS=16` from `submit.sbatch` while creating 4 host devices, so
 > those 4 devices contended for the job's 16 cores at 4× oversubscription
-> (`results_6969321.cpu_f64_chains.json` still records the `16`). `bench.py`
-> now pins that leg to `--omp 1`, matching production, but the run has not been
-> repeated. The **2.66 ms/chain-iteration** CPU figure above and the
-> **≥ 16 vectorized chains** H100 crossover derived from it are therefore
-> provisional and, if anything, flattering to the GPU: an uncontended CPU
-> baseline can only be faster, which pushes the crossover to *more* chains.
-> The GPU-side throughput ratios are unaffected — they are internal to the GPU
-> legs, which never spawned host devices. Rerun the kit to settle it.
+> (`results_6969321.cpu_f64_chains.json` records the `16`). `bench.py` now
+> pins that leg to `--omp 1`, matching production, and **job 6972367** is the
+> repeat: same node (`workergpu162`), same CPU, zero foreign GPU processes in
+> both, so the two differ in the threading fix and little else.
+>
+> The uncontended CPU 4-chain baseline is **1.85 ms/chain-iteration**
+> (`R1_unroll_sep`), against the **2.66 ms** measured under contention — the
+> old figure was 1.44× too slow, in exactly the direction the contention
+> predicted. The **≥ 16 vectorized chains** H100 crossover is *unchanged*:
+> a faster CPU baseline pushes the threshold up, but not far enough to cross
+> the next measured point. The conclusion survives its own correction.
+>
+> The per-chain-count signature confirms the mechanism rather than just the
+> direction. Every 4-chain number improved (`current` 5.97 → 3.77,
+> `R1_unroll_sep` 2.66 → 1.85, `R1_vmap` 3.76 → 1.92 ms/chain-iteration) while
+> the 1-chain numbers got slightly *worse* (`R1_unroll_sep` 5.46 → 6.03). That
+> is what removing 4× oversubscription looks like: the 4-device case stops
+> fighting itself, and the single-device case pays a small price for losing
+> its BLAS threads. A general node-speed difference would have moved both.
+>
+> Numbers in §3.3 above still come from 6969321 and are unaffected: the GPU
+> legs never spawned host devices. Job 6972367 is a full uncontended rerun of
+> every leg and is archived alongside it, so the two are directly comparable.
 
 ### 3.6 Benchmarking pitfalls, recorded because they bit
 

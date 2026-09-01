@@ -1,0 +1,324 @@
+{
+ "schema": 2,
+ "leg": "cpu-f64",
+ "argv": [
+  "/mnt/home/misi/src/ringdown-bench/benchmarks/h100/bench.py",
+  "--no-sub",
+  "--out",
+  "/mnt/home/misi/src/ringdown-bench/benchmarks/h100/results_6972367.cpu_f64.json",
+  "--parent-pid",
+  "1722821",
+  "--platform",
+  "cpu",
+  "--sections",
+  "env,devtime",
+  "--deadline",
+  "300"
+ ],
+ "tag": "",
+ "env": {
+  "leg": "cpu-f64",
+  "hostname": "workergpu162",
+  "platform_requested": "cpu",
+  "jax_backend": "cpu",
+  "jax_devices": [
+   "cpu:0"
+  ],
+  "jax_device_kinds": [
+   "cpu"
+  ],
+  "jax_device_count": 1,
+  "jax_enable_x64": true,
+  "dtype": "float64",
+  "python": "3.13.0",
+  "uname": "Linux-5.14.0-687.41.1.el9_8.x86_64-x86_64-with-glibc2.34",
+  "smoke": false,
+  "configs": [
+   [
+    2,
+    205,
+    2
+   ],
+   [
+    2,
+    1024,
+    4
+   ],
+   [
+    3,
+    1024,
+    8
+   ]
+  ],
+  "cpu_model": "Intel(R) Xeon(R) Platinum 8362 CPU @ 2.80GHz",
+  "cpu_logical_count": 64,
+  "cpu_affinity_count": 16,
+  "thread_env": {
+   "OMP_NUM_THREADS": "16",
+   "MKL_NUM_THREADS": "16",
+   "OPENBLAS_NUM_THREADS": "16",
+   "XLA_FLAGS": null,
+   "JAX_PLATFORMS": "cpu"
+  },
+  "ringdown_path": "/mnt/home/misi/src/ringdown-bench/ringdown/__init__.py",
+  "ringdown_root": "/mnt/home/misi/src/ringdown-bench",
+  "kit_root": "/mnt/home/misi/src/ringdown-bench",
+  "ringdown_matches_kit": true,
+  "ringdown_git": "v1.1.0-46-gd85a0d6",
+  "slurm": {
+   "SLURM_CPUS_ON_NODE": "16",
+   "SLURM_CPUS_PER_TASK": "16",
+   "SLURM_GPUS_ON_NODE": "1",
+   "SLURM_JOBID": "6972367",
+   "SLURM_JOB_GPUS": "5",
+   "SLURM_JOB_ID": "6972367",
+   "SLURM_JOB_NUM_NODES": "1",
+   "SLURM_JOB_PARTITION": "gpu",
+   "SLURM_MEM_PER_NODE": "65536",
+   "SLURM_NNODES": "1",
+   "SLURM_NODELIST": "workergpu162"
+  },
+  "nvidia_smi": "NVIDIA H100 PCIe, 580.178.04, 81559 MiB, 9.0, 1755 MHz",
+  "packages": {
+   "jax": "0.11.1",
+   "jaxlib": "0.11.1",
+   "numpyro": "0.21.0",
+   "numpy": "2.5.2",
+   "scipy": "1.18.1",
+   "jax-cuda12-plugin": "0.11.1",
+   "jax-cuda12-pjrt": "0.11.1",
+   "nvidia-cublas-cu12": "12.9.2.10",
+   "nvidia-cusolver-cu12": "11.7.5.82",
+   "nvidia-cuda-runtime-cu12": "12.9.79",
+   "ringdown": "1.1.1.dev32+g7bc480a"
+  },
+  "contention_before": {}
+ },
+ "devtime": {
+  "2,205,2": {
+   "current": {
+    "us_per_grad": 596.0720713205991,
+    "speedup_vs_current": 1.0,
+    "R": [
+     210,
+     630
+    ],
+    "compile_s": 0.34348634409252554,
+    "custom_calls": {
+     "trsm": 42,
+     "potrf": 2,
+     "hlo_lines": 2264
+    }
+   },
+   "whiten_seq": {
+    "us_per_grad": 228.10939757619053,
+    "speedup_vs_current": 2.6130973894729865,
+    "R": [
+     400,
+     1200
+    ],
+    "compile_s": 0.31718537700362504,
+    "custom_calls": {
+     "trsm": 18,
+     "potrf": 2,
+     "hlo_lines": 1991
+    }
+   },
+   "R1_unroll_concat": {
+    "us_per_grad": 199.00272498489358,
+    "speedup_vs_current": 2.9952960260511374,
+    "R": [
+     400,
+     1200
+    ],
+    "compile_s": 0.28581654094159603,
+    "custom_calls": {
+     "trsm": 8,
+     "potrf": 1,
+     "hlo_lines": 1713
+    }
+   },
+   "R1_unroll_sep": {
+    "us_per_grad": 230.3028601454571,
+    "speedup_vs_current": 2.5882095903807953,
+    "R": [
+     400,
+     1200
+    ],
+    "compile_s": 0.27424983005039394,
+    "custom_calls": {
+     "trsm": 10,
+     "potrf": 1,
+     "hlo_lines": 1620
+    }
+   },
+   "R1_vmap": {
+    "us_per_grad": 251.57457494060506,
+    "speedup_vs_current": 2.3693653122988576,
+    "R": [
+     400,
+     1200
+    ],
+    "compile_s": 0.2729947459883988,
+    "custom_calls": {
+     "trsm": 7,
+     "potrf": 1,
+     "hlo_lines": 1556
+    }
+   },
+   "floor_no_likelihood": {
+    "us_per_grad": 51.33901504450478,
+    "speedup_vs_current": 11.610508514896049,
+    "R": [
+     400,
+     1200
+    ],
+    "compile_s": 0.17742340301629156,
+    "custom_calls": {
+     "hlo_lines": 1208
+    }
+   }
+  },
+  "2,1024,4": {
+   "current": {
+    "us_per_grad": 10795.619692474316,
+    "speedup_vs_current": 1.0,
+    "R": [
+     13,
+     39
+    ],
+    "compile_s": 0.4921900250483304,
+    "custom_calls": {
+     "trsm": 42,
+     "potrf": 2,
+     "hlo_lines": 2171
+    }
+   },
+   "R1_unroll_concat": {
+    "us_per_grad": 3511.0581283723673,
+    "speedup_vs_current": 3.074748209161344,
+    "R": [
+     35,
+     105
+    ],
+    "compile_s": 0.5923449220135808,
+    "custom_calls": {
+     "trsm": 8,
+     "potrf": 1,
+     "hlo_lines": 1620
+    }
+   },
+   "R1_unroll_sep": {
+    "us_per_grad": 3850.8604710740556,
+    "speedup_vs_current": 2.8034304991225185,
+    "R": [
+     36,
+     108
+    ],
+    "compile_s": 0.4110030890442431,
+    "custom_calls": {
+     "trsm": 10,
+     "potrf": 1,
+     "hlo_lines": 1527
+    }
+   },
+   "R1_vmap": {
+    "us_per_grad": 3739.689368932672,
+    "speedup_vs_current": 2.886769094288557,
+    "R": [
+     34,
+     102
+    ],
+    "compile_s": 0.3981997970258817,
+    "custom_calls": {
+     "trsm": 7,
+     "potrf": 1,
+     "hlo_lines": 1459
+    }
+   },
+   "floor_no_likelihood": {
+    "us_per_grad": 561.4752534459881,
+    "speedup_vs_current": 19.2272404281711,
+    "R": [
+     235,
+     705
+    ],
+    "compile_s": 0.18410629290156066,
+    "custom_calls": {
+     "hlo_lines": 1125
+    }
+   }
+  },
+  "3,1024,8": {
+   "current": {
+    "us_per_grad": 23386.652930639684,
+    "speedup_vs_current": 1.0,
+    "R": [
+     8,
+     24
+    ],
+    "compile_s": 0.5958034980576485,
+    "custom_calls": {
+     "trsm": 66,
+     "potrf": 3,
+     "hlo_lines": 2738
+    }
+   },
+   "R1_unroll_concat": {
+    "us_per_grad": 10316.33016730969,
+    "speedup_vs_current": 2.266954677812381,
+    "R": [
+     15,
+     45
+    ],
+    "compile_s": 0.513478843960911,
+    "custom_calls": {
+     "trsm": 10,
+     "potrf": 1,
+     "hlo_lines": 1750
+    }
+   },
+   "R1_unroll_sep": {
+    "us_per_grad": 10875.964998766514,
+    "speedup_vs_current": 2.150306012688718,
+    "R": [
+     14,
+     42
+    ],
+    "compile_s": 0.4970982930390164,
+    "custom_calls": {
+     "trsm": 13,
+     "potrf": 1,
+     "hlo_lines": 1613
+    }
+   },
+   "R1_vmap": {
+    "us_per_grad": 9764.206763493883,
+    "speedup_vs_current": 2.3951411002557816,
+    "R": [
+     17,
+     51
+    ],
+    "compile_s": 0.460348536958918,
+    "custom_calls": {
+     "trsm": 7,
+     "potrf": 1,
+     "hlo_lines": 1461
+    }
+   },
+   "floor_no_likelihood": {
+    "us_per_grad": 1811.7222368202515,
+    "speedup_vs_current": 12.908520111606915,
+    "R": [
+     76,
+     228
+    ],
+    "compile_s": 0.18465096806176007,
+    "custom_calls": {
+     "hlo_lines": 1125
+    }
+   }
+  }
+ },
+ "t_total_s": 88.94629168510437
+}
