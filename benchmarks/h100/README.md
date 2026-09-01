@@ -242,7 +242,7 @@ Nothing that carries a numbered prediction was trimmed.
 | `analyze.py` | ingests the JSON, prints comparisons and the prediction scorecard |
 | `PREDICTIONS.md` | the a-priori analysis, numbered predictions, falsifiers |
 | `README.md` | this file |
-| `smoke.json`, `smoke.log` | the A6000 validation run described above; `analyze.py smoke.json` reproduces the transcript |
+| `smoke.json` | the A6000 validation run described above; `analyze.py smoke.json` reproduces the transcript |
 
 `bench.py --help` documents every flag; `--smoke` reproduces the reduced local
 validation run in ~6 minutes.

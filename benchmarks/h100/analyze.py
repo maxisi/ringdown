@@ -33,8 +33,12 @@ A6000_F64_EST = {"2,1024,4": {"current": 15000.0, "R1_unroll_sep": 6800.0,
 
 # RTX A6000, float32, us/gradient (GPU_BENCHMARKS.md B.9, throughput harness --
 # which agreed with the device harness to 0.2% at these sizes)
+# R1_unroll_sep at (2,205,2) is from this kit's own A6000 re-measurement
+# (PREDICTIONS.md section 2b), not from B.9, which never ran that variant in
+# f32; it is the best f32 variant on that card, beating R1_vmap by 1.22x.
 A6000_F32 = {
-    "2,205,2":  {"current": 1101.5, "R1_unroll_concat": 403.2, "R1_vmap": 429.5},
+    "2,205,2":  {"current": 1101.5, "R1_unroll_concat": 403.2, "R1_vmap": 429.5,
+                 "R1_unroll_sep": 352.2},
     "3,1024,8": {"current": 7295.7, "R1_unroll_concat": 2072.7, "R1_vmap": 2511.1},
 }
 A6000_F32_OVER_F64 = {"2,205,2": {"current": 2.73, "R1_unroll_concat": 2.94,
@@ -54,6 +58,19 @@ WS_CPU_F64 = {
 # verifier, OMP_NUM_THREADS=1, isolated kernel, (2,205,2): R1 sep 356 us
 WS_CPU_OMP1_KERNEL = {"current": 1520.7, "R1_unroll_concat": 540.5,
                       "R1_unroll_sep": 356.0, "R1_vmap": 753.2}
+
+# The candidate implementations.  `floor_no_likelihood` is deliberately absent:
+# it is a no-likelihood timing floor, not something anyone can run, so it must
+# never win a "best variant" comparison.
+VARIANTS = ("current", "whiten_seq", "R1_unroll_concat", "R1_unroll_sep",
+            "R1_vmap")
+
+
+def best_of(row):
+    """Fastest real variant in a reference row, ignoring the timing floor."""
+    vals = [v for k, v in row.items() if k in VARIANTS and v is not None]
+    return min(vals) if vals else None
+
 
 # A6000 chain scaling, R1 vmap, f64, 250+250 (GPU_BENCHMARKS.md B.8)
 A6000_CHAINS = {
@@ -322,9 +339,7 @@ def main():
     cfg = "2,205,2"
 
     def best(d, c):
-        vals = {v: ug(d, c, v) for v in
-                ("current", "whiten_seq", "R1_unroll_concat", "R1_unroll_sep",
-                 "R1_vmap") if ug(d, c, v) is not None}
+        vals = {v: ug(d, c, v) for v in VARIANTS if ug(d, c, v) is not None}
         if not vals:
             return None, None
         k = min(vals, key=vals.get)
@@ -359,7 +374,8 @@ def main():
           "(OMP=1 kernel: %.1f), A6000 f64 best %.1f us, A6000 f32 best %.1f us."
           % (WS_CPU_F64["2,205,2"]["R1_unroll_sep"],
              WS_CPU_OMP1_KERNEL["R1_unroll_sep"],
-             A6000_F64["2,205,2"]["R1_vmap"], A6000_F32["2,205,2"]["R1_vmap"]))
+             best_of(A6000_F64["2,205,2"]),
+             best_of(A6000_F32["2,205,2"])))
 
     # big config
     for cfg2 in ("3,1024,8", "2,1024,4"):

@@ -332,6 +332,19 @@ vectorized chains**, the A6000 16–64. Inner detector batching and outer chain 
 **compose** — the `vmap`/unrolled ratio is flat to within noise across a 64× change in chain
 count — so the inner decision needs no chain-count axis.
 
+> **Provisional: the CPU chain baseline was measured under thread
+> oversubscription.** In Slurm job 6969321 the `cpu_f64_chains` leg inherited
+> `OMP_NUM_THREADS=16` from `submit.sbatch` while creating 4 host devices, so
+> those 4 devices contended for the job's 16 cores at 4× oversubscription
+> (`results_6969321.cpu_f64_chains.json` still records the `16`). `bench.py`
+> now pins that leg to `--omp 1`, matching production, but the run has not been
+> repeated. The **2.66 ms/chain-iteration** CPU figure above and the
+> **≥ 16 vectorized chains** H100 crossover derived from it are therefore
+> provisional and, if anything, flattering to the GPU: an uncontended CPU
+> baseline can only be faster, which pushes the crossover to *more* chains.
+> The GPU-side throughput ratios are unaffected — they are internal to the GPU
+> legs, which never spawned host devices. Rerun the kit to settle it.
+
 ### 3.6 Benchmarking pitfalls, recorded because they bit
 
 **`ms/iteration` is not a valid cross-variant metric.** The formulations differ at

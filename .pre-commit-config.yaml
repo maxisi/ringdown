@@ -1,4 +1,7 @@
-exclude: ^ringdown/cli/ringdown_pp_pipe\.py$
+# benchmarks/ is an archival measurement kit: the committed scripts must keep
+# matching the committed results, so autopep8 and the whitespace fixers must
+# not touch it.  Kept in sync with .flake8 and [tool.ruff] in pyproject.toml.
+exclude: ^(ringdown/cli/ringdown_pp_pipe\.py|benchmarks/)
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

@@ -88,6 +88,11 @@ git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--mat
 
 [tool.ruff]
 line-length = 80
+# Keep in sync with `extend-exclude` in .flake8 and the `exclude` regex in
+# .pre-commit-config.yaml: benchmarks/ is an archival measurement kit, not
+# library code, and reformatting it would desynchronize the committed scripts
+# from the committed results.
+extend-exclude = ["benchmarks"]
 
 [tool.ruff.lint]
 select = ["E", "W"]

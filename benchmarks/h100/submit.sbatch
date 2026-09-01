@@ -46,9 +46,20 @@
 
 set -uo pipefail   # NOT -e: we want the trailing summary even on failure
 
-VENV=/mnt/home/misi/src/ringdown/.venv
-REPO=/mnt/home/misi/src/ringdown
-cd "$REPO"
+# Resolve the repo from wherever the job was submitted, so the kit runs from
+# any clone.  The README tells you to submit from the repo root
+# (`cd /path/to/ringdown && sbatch benchmarks/h100/submit.sbatch`), and Slurm
+# records that directory as SLURM_SUBMIT_DIR; $PWD is the fallback for a plain
+# `bash` invocation.  Override either by exporting REPO/VENV before submitting.
+REPO="${REPO:-${SLURM_SUBMIT_DIR:-$PWD}}"
+VENV="${VENV:-$REPO/.venv}"
+cd "$REPO" || { echo "FATAL: cannot cd to REPO=$REPO"; exit 2; }
+[ -f "$REPO/benchmarks/h100/bench.py" ] || {
+    echo "FATAL: REPO=$REPO does not look like a ringdown clone (no"
+    echo "       benchmarks/h100/bench.py).  Submit from the repo root, or"
+    echo "       export REPO=/path/to/ringdown first."
+    exit 2
+}
 
 echo "=============================================================="
 echo "host        : $(hostname)"

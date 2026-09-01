@@ -1217,10 +1217,17 @@ def main():
             ["--platform", "cpu", "--sections", "env,devtime",
              "--deadline", budget(300)],
             base + ".cpu_f64.json")
+        # --omp 1 is required, not cosmetic.  This leg creates 4 host devices,
+        # and submit.sbatch exports OMP_NUM_THREADS=<cpus-per-task>; without
+        # the override each device would spin up that many threads on the same
+        # allocation (16 cores -> 4x oversubscription) and the chain-scaling
+        # numbers would measure thread contention rather than the model.  One
+        # thread per device also matches production: ringdown_fit.py sets
+        # OMP_NUM_THREADS=1 before numpyro.set_host_device_count().
         out["cpu_f64_chains"] = _spawn(
             "host CPU float64, chain scaling with numpyro.set_host_device_count"
-            "(4) -- the production CPU configuration",
-            ["--platform", "cpu", "--sections", "env,chains",
+            "(4), OMP_NUM_THREADS=1 -- the production CPU configuration",
+            ["--platform", "cpu", "--omp", "1", "--sections", "env,chains",
              "--deadline", budget(200)],
             base + ".cpu_f64_chains.json")
         out["cpu_f64_omp1"] = _spawn(
