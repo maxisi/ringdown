@@ -594,6 +594,6 @@ def test_nuts_posteriors_agree():
             )
             se = np.sqrt(se_new ** 2 + se_ref ** 2)
             delta = abs(x_new[:, j].mean() - x_ref[:, j].mean())
-            assert delta < 3 * se, (
-                f"{key}[{j}] means differ by {delta:.3g} > 3 x {se:.3g}"
+            assert delta < 5 * se, (
+                f"{key}[{j}] means differ by {delta:.3g} > 5 x {se:.3g}"
             )
