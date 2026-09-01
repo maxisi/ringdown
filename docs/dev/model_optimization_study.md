@@ -360,6 +360,17 @@ traps: setting `JAX_PLATFORMS` *after* `import jax` silently does nothing (one "
 review was in fact a GPU run), and `compiled.cost_analysis()['flops']` under-reports by ~10×
 because the solves are FFI custom calls invisible to it.
 
+**The kit can benchmark a different checkout than the one it lives in.** `submit.sbatch` runs
+`python /abs/path/bench.py`, and Python puts the *script's* directory on `sys.path` — not the
+repo root and not the cwd. So if the venv holds an editable install of some other clone, that
+clone is what `import ringdown` resolves to, and the run measures it while reporting nothing
+unusual. This does not affect job 6969321, whose `REPO` and editable install were the same
+tree, but it becomes live the moment anyone uses the kit from a second clone — exactly what
+the portable-`REPO` support invites. `submit.sbatch` now exports `PYTHONPATH="$REPO"`, and
+`bench.py` records `ringdown_path`/`ringdown_git` in the env section and prints a loud warning
+when the imported package is not the tree the kit lives in. Results from before this change do
+not record which tree they measured.
+
 ### 3.7 End-to-end confirmation on a real fit (post-implementation)
 
 Everything above is a microbenchmark or a device-time measurement. After R1 landed in PR #164 it was A/B'd on the real `tests/test_fit_config.sh` fit — GW150914, 4 chains × (1000 + 1000),

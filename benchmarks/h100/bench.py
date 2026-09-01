@@ -623,6 +623,30 @@ def section_env():
     env["thread_env"] = {k: os.environ.get(k) for k in
                          ("OMP_NUM_THREADS", "MKL_NUM_THREADS",
                           "OPENBLAS_NUM_THREADS", "XLA_FLAGS", "JAX_PLATFORMS")}
+
+    # WHICH ringdown did we actually measure?  `python /abs/path/bench.py` puts
+    # the SCRIPT's directory on sys.path, not the caller's cwd, so an editable
+    # install elsewhere in the venv silently wins over the tree this file lives
+    # in.  That is a benchmark that measures the wrong checkout and says
+    # nothing about it, so record the resolved path and flag the mismatch.
+    # submit.sbatch exports PYTHONPATH="$REPO" to make the repo's copy win.
+    import ringdown as _rd
+    _rd_dir = os.path.dirname(os.path.dirname(os.path.abspath(_rd.__file__)))
+    # bench.py lives at <repo>/benchmarks/h100/bench.py -- three levels up.
+    _kit_repo = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
+    env["ringdown_path"] = os.path.abspath(_rd.__file__)
+    env["ringdown_root"] = _rd_dir
+    env["kit_root"] = _kit_repo
+    env["ringdown_matches_kit"] = os.path.realpath(_rd_dir) == \
+        os.path.realpath(_kit_repo)
+    try:
+        _g = subprocess.run(["git", "-C", _rd_dir, "describe", "--always",
+                             "--dirty", "--tags"],
+                            capture_output=True, text=True, timeout=30)
+        env["ringdown_git"] = _g.stdout.strip() or None
+    except Exception:
+        env["ringdown_git"] = None
     env["slurm"] = _slurm_env()
     try:
         r = subprocess.run(["nvidia-smi", "--query-gpu=name,driver_version,"
@@ -648,6 +672,15 @@ def section_env():
               "nvidia_smi"):
         print("  %-20s %s" % (k, env.get(k)))
     print("  %-20s %s" % ("threads", env["thread_env"]))
+    print("  %-20s %s (%s)"
+          % ("ringdown", env["ringdown_root"], env["ringdown_git"]))
+    if not env["ringdown_matches_kit"]:
+        print("  *** WARNING: the imported ringdown is NOT the tree this kit "
+              "lives in. ***")
+        print("  ***   measuring : %s" % env["ringdown_root"])
+        print("  ***   kit is in : %s" % env["kit_root"])
+        print("  *** These results describe the FORMER.  Set "
+              "PYTHONPATH=<kit root> to measure the latter. ***")
     print("  %-20s jax=%s jaxlib=%s numpyro=%s cublas=%s cusolver=%s"
           % ("versions", pkgs.get("jax"), pkgs.get("jaxlib"), pkgs.get("numpyro"),
              pkgs.get("nvidia-cublas-cu12"), pkgs.get("nvidia-cusolver-cu12")))

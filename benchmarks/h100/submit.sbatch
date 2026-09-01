@@ -86,6 +86,14 @@ echo "=============================================================="
 # >= 525.60.13; anything on rusty's H100 nodes is far newer.  Nothing needs to
 # be module-loaded, and nothing must be installed.
 
+# Measure the ringdown in $REPO, not whatever the venv has installed.
+# bench.py is launched as `python /abs/path/bench.py`, which puts the SCRIPT's
+# directory on sys.path -- NOT $REPO and not the cwd -- so a venv holding an
+# editable install of some other clone would import that other clone instead,
+# and the run would benchmark the wrong checkout without saying so.  bench.py
+# records the resolved path and warns on a mismatch; this makes it correct.
+export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
+
 # Let JAX/XLA and any BLAS see the cores Slurm actually gave us.
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-16}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-16}"
