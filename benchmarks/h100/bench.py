@@ -605,6 +605,13 @@ def section_env():
         "jax_enable_x64": bool(jax.config.jax_enable_x64),
         "dtype": str(np.dtype(DT)),
         "python": sys.version.split()[0],
+        # WHICH interpreter produced these numbers.  An interpreter that lacks
+        # the stack dies in the import guard above and is self-announcing; the
+        # quiet failure is a *different* environment that happens to have jax
+        # and numpyro, which runs fine and measures something else entirely.
+        # Recorded so the JSON can be checked after the fact.
+        "executable": sys.executable,
+        "sys_prefix": sys.prefix,
         "uname": platform.platform(),
         "smoke": ARGS.smoke,
         "configs": [list(c) for c in CONFIGS],
@@ -674,6 +681,7 @@ def section_env():
     print("  %-20s %s" % ("threads", env["thread_env"]))
     print("  %-20s %s (%s)"
           % ("ringdown", env["ringdown_root"], env["ringdown_git"]))
+    print("  %-20s %s" % ("interpreter", env["executable"]))
     if not env["ringdown_matches_kit"]:
         print("  *** WARNING: the imported ringdown is NOT the tree this kit "
               "lives in. ***")

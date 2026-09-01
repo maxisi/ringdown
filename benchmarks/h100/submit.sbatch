@@ -61,6 +61,14 @@ set -uo pipefail   # NOT -e: we want the trailing summary even on failure
 # #SBATCH lines to an absolute directory that exists.
 REPO="${REPO:-${SLURM_SUBMIT_DIR:-$PWD}}"
 VENV="${VENV:-$REPO/.venv}"
+# The interpreter is named explicitly and never looked up on PATH.  `env
+# python` is not more portable here, it is less: on a cluster login node it
+# resolves to the system python (3.9 with a stale user-site jax, on the machine
+# this kit was written for), and a benchmark whose numbers depend on an ambient
+# PATH lookup is not reproducible.  PYTHON= overrides for setups that are not
+# venv-shaped -- a conda env, or an Lmod-provided python:
+#     PYTHON=/path/to/bin/python sbatch benchmarks/h100/submit.sbatch
+PYTHON="${PYTHON:-$VENV/bin/python}"
 cd "$REPO" || { echo "FATAL: cannot cd to REPO=$REPO"; exit 2; }
 [ -f "$REPO/benchmarks/h100/bench.py" ] || {
     echo "FATAL: REPO=$REPO does not look like a ringdown clone (no"
@@ -102,7 +110,12 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
 OUT="$REPO/benchmarks/h100/results_${SLURM_JOB_ID:-manual}.json"
 
-[ -x "$VENV/bin/python" ] || { echo "FATAL: no python at $VENV/bin/python"; exit 4; }
+[ -x "$PYTHON" ] || {
+    echo "FATAL: no usable interpreter at PYTHON=$PYTHON"
+    echo "       (default is \$VENV/bin/python, VENV=$VENV).  Set PYTHON= or"
+    echo "       VENV= to point at the environment holding jax and numpyro."
+    exit 4
+}
 
 # One GPU, both precisions, plus the same-node CPU baseline.  bench.py fans out
 # into its own subprocess legs (GPU f32, CPU f64 devtime, CPU f64 chains, CPU
@@ -112,14 +125,14 @@ OUT="$REPO/benchmarks/h100/results_${SLURM_JOB_ID:-manual}.json"
 # own children, and some Slurm configurations bind an srun step to one CPU
 # unless -c is repeated, which would silently cripple the CPU baseline.  The
 # sbatch script already runs inside the job's full allocation.
-"$VENV/bin/python" -u "$REPO/benchmarks/h100/bench.py" \
+"$PYTHON" -u "$REPO/benchmarks/h100/bench.py" \
     --platform gpu --out "$OUT" --tag "rusty-h100 job ${SLURM_JOB_ID:-manual}"
 rc=$?
 
 echo "=============================================================="
 echo "bench.py exit code: $rc"
 echo "results: $OUT"
-echo "now run:  $VENV/bin/python $REPO/benchmarks/h100/analyze.py $OUT"
+echo "now run:  $PYTHON $REPO/benchmarks/h100/analyze.py $OUT"
 echo "(side files: <out>.gpu_f32.json / .cpu_f64.json / .cpu_f64_chains.json /"
 echo " .cpu_f64_omp1.json / .f64ref.npz -- analyze.py needs only the main file,"
 echo " which embeds them all)"
