@@ -1,6 +1,38 @@
 __all__ = []
 
 import os
+import sys
+import warnings
+
+
+def _warn_if_omp_default_is_moot():
+    """Warn if the OMP_NUM_THREADS=1 default below can no longer take
+    effect: the variable is unset and jax has already initialized its
+    backends. Peeks at sys.modules only, without importing jax (which
+    would itself defeat the default); merely-imported-but-idle jax is
+    fine, since backend initialization is lazy."""
+    if "OMP_NUM_THREADS" in os.environ:
+        return
+    xb = sys.modules.get("jax._src.xla_bridge")
+    if xb is None:
+        return
+    try:
+        initialized = xb.backends_are_initialized()
+    except AttributeError:
+        # private API: if a future jax moves it, treat as not initialized
+        return
+    if initialized:
+        warnings.warn(
+            "jax already initialized its backends before ringdown was "
+            "imported, so the default OMP_NUM_THREADS=1 cannot take "
+            "effect; running parallel chains may oversubscribe the "
+            "machine. Import ringdown (or set OMP_NUM_THREADS) before "
+            "the first jax operation.",
+            RuntimeWarning,
+        )
+
+
+_warn_if_omp_default_is_moot()
 
 # Cap BLAS/OpenMP threading before numpy/jax load it (the setting is frozen
 # at library load): one thread per chain is the right default when running
