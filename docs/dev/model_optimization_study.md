@@ -327,8 +327,9 @@ appeared as a headline — correction 4). R1 compounds with it: R1 + vectorized 
 than the current model run the way the shipped defaults would have run it. Chain throughput
 relative to one chain, production point, 250+250, R1 `vmap`: **3.39× / 8.68× / 22.68×** on the
 A6000 and **2.66× / 7.13× / 20.98×** on the H100 f64, at 4 / 16 / 64 chains. Crossover against
-the same node's best 4-chain CPU run (2.66 ms/chain-iteration): the H100 needs **≥ 16
-vectorized chains**, the A6000 16–64. Inner detector batching and outer chain batching
+the same node's best 4-chain CPU run (**1.85 ms/chain-iteration**, job 6972367; job 6969321's
+2.66 ms was measured under the thread oversubscription described in the note below): the H100
+needs **≥ 16 vectorized chains**, the A6000 16–64. Inner detector batching and outer chain batching
 **compose** — the `vmap`/unrolled ratio is flat to within noise across a 64× change in chain
 count — so the inner decision needs no chain-count axis.
 
