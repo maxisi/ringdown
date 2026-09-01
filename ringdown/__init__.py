@@ -1,15 +1,63 @@
 __all__ = []
 
-from .data import *
-from .fit import *
-from .result import *
-from .waveforms import *
-from .imr import IMRResult
-from . import qnms
-from . import model
-from . import utils
+import os
+import sys
+import warnings
 
-from importlib.metadata import version
+
+def _warn_if_omp_default_is_moot():
+    """Warn if the OMP_NUM_THREADS=1 default below can no longer cap the
+    sampling thread pools: the variable is unset and jax has already
+    initialized its backends. Libraries loaded even earlier (e.g., a
+    numpy imported before ringdown) keep the thread pools they already
+    built either way; backend initialization is the condition checked
+    here because XLA reads the variable then, and its pools are the ones
+    parallel chains multiply. Peeks at sys.modules only, without
+    importing jax (which would itself defeat the default);
+    merely-imported-but-idle jax is fine, since backend initialization
+    is lazy."""
+    if "OMP_NUM_THREADS" in os.environ:
+        return
+    xb = sys.modules.get("jax._src.xla_bridge")
+    if xb is None:
+        return
+    try:
+        initialized = xb.backends_are_initialized()
+    except AttributeError:
+        # private API: if a future jax moves it, treat as not initialized
+        return
+    if initialized:
+        warnings.warn(
+            "jax already initialized its backends before ringdown was "
+            "imported, so the default OMP_NUM_THREADS=1 cannot take "
+            "effect; running parallel chains may oversubscribe the "
+            "machine. Import ringdown (or set OMP_NUM_THREADS) before "
+            "the first jax operation.",
+            RuntimeWarning,
+        )
+
+
+_warn_if_omp_default_is_moot()
+
+# Cap BLAS/OpenMP threading before numpy/jax load it (each library freezes
+# the setting when it loads, so anything imported before ringdown keeps the
+# thread pool it already built): one thread per chain is the right default
+# when running parallel chains. Export OMP_NUM_THREADS yourself, or call
+# ringdown.setup(num_threads=...), to override. The imports below must stay
+# after this line, hence the noqa markers.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+
+from .data import *  # noqa: E402
+from .fit import *  # noqa: E402
+from .result import *  # noqa: E402
+from .waveforms import *  # noqa: E402
+from .imr import IMRResult  # noqa: E402
+from . import qnms  # noqa: E402
+from . import model  # noqa: E402
+from . import utils  # noqa: E402
+from ._setup import setup  # noqa: E402
+
+from importlib.metadata import version  # noqa: E402
 __version__ = version("ringdown")
 
 # ############################################################################

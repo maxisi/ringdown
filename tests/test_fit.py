@@ -55,8 +55,8 @@ def test_explicit_chain_method_is_respected(monkeypatch, kws):
     assert sampler_kws["chain_method"] == "sequential"
 
 
-def test_cpu_device_count_is_clamped(monkeypatch, tmp_path):
-    device_counts = []
+def test_cli_delegates_configuration_to_setup(monkeypatch, tmp_path):
+    setup_calls = []
 
     class Fit:
         result = type("Result", (), {"to_netcdf": lambda *_: None})()
@@ -65,21 +65,21 @@ def test_cpu_device_count_is_clamped(monkeypatch, tmp_path):
         def run(self, **kwargs):
             pass
 
-    monkeypatch.setattr(ringdown_fit.os, "cpu_count", lambda: 2)
     monkeypatch.setattr(
         ringdown_fit.rd.utils, "load_config", lambda _: ConfigParser()
     )
     monkeypatch.setattr(
         ringdown_fit.rd.Fit, "from_config", lambda _: Fit()
     )
-    monkeypatch.setattr(ringdown_fit.numpyro, "set_platform", lambda _: None)
     monkeypatch.setattr(
-        ringdown_fit.numpyro, "set_host_device_count", device_counts.append
+        ringdown_fit.rd, "setup", lambda **kws: setup_calls.append(kws)
     )
-    monkeypatch.setattr(ringdown_fit.jax_config, "update", lambda *_: None)
 
     ringdown_fit.main([
-        "--device-count", "4", "--output", str(tmp_path / "fit.nc"), "input.ini"
+        "--device-count", "4", "--output", str(
+            tmp_path / "fit.nc"), "input.ini"
     ])
 
-    assert device_counts == [2]
+    # device clamping etc. are tested in test_setup.py; here we only check
+    # that the CLI hands its arguments through
+    assert setup_calls == [{"platform": "cpu", "num_devices": 4, "x64": True}]

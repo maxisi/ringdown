@@ -1,37 +1,40 @@
 Configuration
 =============
 
-In order to run Jax on a CPU with four cores and use double precision, you can do the following:
+*ringdown* configures jax and numpyro for you through a single call. To run on a
+CPU with four host devices (so chains can sample in parallel) and double
+precision:
 
 .. code-block:: python
 
-   # disable numpy multithreading to avoid conflicts
-   # with jax multiprocessing in numpyro
-   import os
-   os.environ["OMP_NUM_THREADS"] = "1"
+   import ringdown as rd
+   rd.setup()
 
-   # import jax and set it up to use double precision
-   from jax import config
-   config.update("jax_enable_x64", True)
-
-   # import numpyro and set it up to use 4 CPU devices
-   import numpyro
-   numpyro.set_host_device_count(4)
-   numpyro.set_platform('cpu')
-
-
-To run on a GPU with single precision you can instead do:
+To run on a GPU with single precision instead:
 
 .. code-block:: python
 
-   # set jax to use single precision
-   # (this is the default so no need to run the lines below)
-   # from jax import config
-   # config.update("jax_enable_x64", False)
+   import ringdown as rd
+   rd.setup(platform='gpu')
 
-   # import numpyro and set it up to use the GPU
-   import numpyro
-   numpyro.set_platform('gpu')
+:func:`ringdown.setup` sets the platform (``numpyro.set_platform``), the CPU
+host device count (``numpyro.set_host_device_count``; the ``num_devices``
+argument defaults to the ``RINGDOWN_DEVICE_COUNT`` environment variable, or 4
+— on GPU/TPU the device count is not controlled here: visible devices are
+selected through the environment, e.g., ``CUDA_VISIBLE_DEVICES``) and the
+precision (``x64`` defaults to true on CPU and false on GPU). All
+of these settings freeze as soon as jax initializes its backends, and jax and
+numpyro silently ignore later changes — so call it right after importing
+*ringdown*, before any jax operation; ``setup`` raises if called too late with
+a configuration different from the active one.
+
+In addition, importing *ringdown* caps BLAS/OpenMP threading by setting
+``OMP_NUM_THREADS=1`` (unless the variable is already set), so that parallel
+chains do not oversubscribe the machine with one thread pool per core each. To
+override, export ``OMP_NUM_THREADS`` before importing *ringdown*, or pass
+``num_threads`` to ``setup``.
+
+.. autofunction:: ringdown.setup
 
 
 The best choice of hardware and precision depends on the size of your analysis; see
