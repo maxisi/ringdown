@@ -1,598 +1,567 @@
 {
- "schema": 2,
- "leg": "gpu-f32",
- "argv": [
-  "/mnt/home/misi/src/ringdown/h100_bench/bench.py",
-  "--no-sub",
-  "--out",
-  "/mnt/home/misi/src/ringdown/h100_bench/results_6969321.gpu_f32.json",
-  "--platform",
-  "gpu",
-  "--x64",
-  "0",
-  "--ref",
-  "/mnt/home/misi/src/ringdown/h100_bench/results_6969321.f64ref.npz",
-  "--sections",
-  "env,f32acc,devtime,rhs,compile,chains",
-  "--deadline",
-  "600"
- ],
- "tag": "",
- "env": {
+  "schema": 2,
   "leg": "gpu-f32",
-  "hostname": "workergpu162",
-  "platform_requested": "gpu",
-  "jax_backend": "gpu",
-  "jax_devices": [
-   "cuda:0"
+  "argv": [
+    "/mnt/home/misi/src/ringdown/h100_bench/bench.py",
+    "--no-sub",
+    "--out",
+    "/mnt/home/misi/src/ringdown/h100_bench/results_6969321.gpu_f32.json",
+    "--platform",
+    "gpu",
+    "--x64",
+    "0",
+    "--ref",
+    "/mnt/home/misi/src/ringdown/h100_bench/results_6969321.f64ref.npz",
+    "--sections",
+    "env,f32acc,devtime,rhs,compile,chains",
+    "--deadline",
+    "600"
   ],
-  "jax_device_kinds": [
-   "NVIDIA H100 PCIe"
-  ],
-  "jax_device_count": 1,
-  "jax_enable_x64": false,
-  "dtype": "float32",
-  "python": "3.13.0",
-  "uname": "Linux-5.14.0-687.41.1.el9_8.x86_64-x86_64-with-glibc2.34",
-  "smoke": false,
-  "configs": [
-   [
-    2,
-    205,
-    2
-   ],
-   [
-    2,
-    1024,
-    4
-   ],
-   [
-    3,
-    1024,
-    8
-   ]
-  ],
-  "cpu_model": "Intel(R) Xeon(R) Platinum 8362 CPU @ 2.80GHz",
-  "cpu_logical_count": 64,
-  "cpu_affinity_count": 16,
-  "thread_env": {
-   "OMP_NUM_THREADS": "16",
-   "MKL_NUM_THREADS": "16",
-   "OPENBLAS_NUM_THREADS": "16",
-   "XLA_FLAGS": null,
-   "JAX_PLATFORMS": "cuda"
+  "tag": "",
+  "env": {
+    "leg": "gpu-f32",
+    "hostname": "workergpu162",
+    "platform_requested": "gpu",
+    "jax_backend": "gpu",
+    "jax_devices": [
+      "cuda:0"
+    ],
+    "jax_device_kinds": [
+      "NVIDIA H100 PCIe"
+    ],
+    "jax_device_count": 1,
+    "jax_enable_x64": false,
+    "dtype": "float32",
+    "python": "3.13.0",
+    "uname": "Linux-5.14.0-687.41.1.el9_8.x86_64-x86_64-with-glibc2.34",
+    "smoke": false,
+    "configs": [
+      [
+        2,
+        205,
+        2
+      ],
+      [
+        2,
+        1024,
+        4
+      ],
+      [
+        3,
+        1024,
+        8
+      ]
+    ],
+    "cpu_model": "Intel(R) Xeon(R) Platinum 8362 CPU @ 2.80GHz",
+    "cpu_logical_count": 64,
+    "cpu_affinity_count": 16,
+    "thread_env": {
+      "OMP_NUM_THREADS": "16",
+      "MKL_NUM_THREADS": "16",
+      "OPENBLAS_NUM_THREADS": "16",
+      "XLA_FLAGS": null,
+      "JAX_PLATFORMS": "cuda"
+    },
+    "slurm": {
+      "SLURM_CPUS_ON_NODE": "16",
+      "SLURM_CPUS_PER_TASK": "16",
+      "SLURM_GPUS_ON_NODE": "1",
+      "SLURM_JOB_GPUS": "1",
+      "SLURM_JOB_ID": "6969321",
+      "SLURM_JOB_NUM_NODES": "1",
+      "SLURM_JOB_PARTITION": "gpu",
+      "SLURM_MEM_PER_NODE": "65536",
+      "SLURM_NNODES": "1",
+      "SLURM_NODELIST": "workergpu162"
+    },
+    "nvidia_smi": "NVIDIA H100 PCIe, 580.178.04, 81559 MiB, 9.0, 1755 MHz",
+    "packages": {
+      "jax": "0.11.1",
+      "jaxlib": "0.11.1",
+      "numpyro": "0.21.0",
+      "numpy": "2.5.2",
+      "scipy": "1.18.1",
+      "jax-cuda12-plugin": "0.11.1",
+      "jax-cuda12-pjrt": "0.11.1",
+      "nvidia-cublas-cu12": "12.9.2.10",
+      "nvidia-cusolver-cu12": "11.7.5.82",
+      "nvidia-cuda-runtime-cu12": "12.9.79",
+      "ringdown": "1.1.1.dev32+g7bc480a"
+    },
+    "contention_before": {
+      "compute_apps": [
+        "447409, /mnt/home/misi/src/ringdown/.venv/bin/python, 1126 MiB",
+        "480829, /mnt/home/misi/src/ringdown/.venv/bin/python, 460 MiB"
+      ],
+      "n_foreign_compute_apps": 1,
+      "gpu_state": "4 %, 1755 MHz, 1755 MHz, 37, 75.38 W, 1597 MiB",
+      "loadavg": "6.62 6.81 5.31 6/2547 481166"
+    }
   },
-  "slurm": {
-   "SLURM_JOB_USER": "misi",
-   "SLURM_TASKS_PER_NODE": "1",
-   "SLURM_JOB_UID": "1835",
-   "SLURM_TASK_PID": "447393",
-   "SLURM_JOB_GPUS": "1",
-   "SLURM_LOCALID": "0",
-   "SLURM_SUBMIT_DIR": "/mnt/home/misi/src/ringdown",
-   "SLURM_JOB_START_TIME": "1788218794",
-   "SLURM_CLUSTER_NAME": "rusty",
-   "SLURM_JOB_END_TIME": "1788222394",
-   "SLURM_CPUS_ON_NODE": "16",
-   "SLURM_JOB_CPUS_PER_NODE": "16",
-   "SLURM_GPUS_ON_NODE": "1",
-   "SLURM_GTIDS": "0",
-   "SLURM_JOB_PARTITION": "gpu",
-   "SLURM_TRES_PER_TASK": "cpu=16",
-   "SLURM_OOM_KILL_STEP": "0",
-   "SLURM_JOB_NUM_NODES": "1",
-   "SLURM_JOBID": "6969321",
-   "SLURM_JOB_QOS": "gen",
-   "SLURM_JOB_EXCLUSIVE": "NO",
-   "SLURM_PROCID": "0",
-   "SLURM_CPUS_PER_TASK": "16",
-   "SLURM_NTASKS": "1",
-   "SLURM_TOPOLOGY_ADDR": "workergpu162",
-   "SLURM_TOPOLOGY_ADDR_PATTERN": "node",
-   "SLURM_SCRIPT_CONTEXT": "prolog_task",
-   "SLURM_MEM_PER_NODE": "65536",
-   "SLURM_NODELIST": "workergpu162",
-   "SLURM_JOB_ACCOUNT": "cca",
-   "SLURM_PRIO_PROCESS": "5",
-   "SLURM_NPROCS": "1",
-   "SLURM_NNODES": "1",
-   "SLURM_SUBMIT_HOST": "ccalin016.flatironinstitute.org",
-   "SLURM_JOB_ID": "6969321",
-   "SLURM_NODEID": "0",
-   "SLURM_JOB_OVERSUBSCRIBE": "NO",
-   "SLURM_CONF": "/etc/slurm/slurm.conf",
-   "SLURM_JOB_NAME": "rd-h100-bench",
-   "SLURM_JOB_GID": "1835",
-   "SLURM_JOB_NODELIST": "workergpu162"
+  "f32acc": {
+    "220_221|1e-20": {
+      "current": {
+        "rel_err_U": 5.894197471860739e-08,
+        "rel_err_grad": 9.718207696118265e-07,
+        "all_finite": true
+      },
+      "R1_unroll_sep": {
+        "rel_err_U": 3.997432335281561e-08,
+        "rel_err_grad": 9.718207696118265e-07,
+        "all_finite": true
+      },
+      "R1_vmap": {
+        "rel_err_U": 1.5120981365298995e-07,
+        "rel_err_grad": 9.718207696118265e-07,
+        "all_finite": true
+      }
+    },
+    "220_221|1": {
+      "current": {
+        "rel_err_U": 2.9359362837441326e-06,
+        "rel_err_grad": 0.00048750707959549055,
+        "all_finite": true
+      },
+      "R1_unroll_sep": {
+        "rel_err_U": 1.5525871689780667e-07,
+        "rel_err_grad": 0.000962802936591973,
+        "all_finite": true
+      },
+      "R1_vmap": {
+        "rel_err_U": 2.981151883265687e-07,
+        "rel_err_grad": 0.0009638150974697666,
+        "all_finite": true
+      }
+    },
+    "220_221|1000": {
+      "current": {
+        "rel_err_U": NaN,
+        "rel_err_grad": NaN,
+        "all_finite": false
+      },
+      "R1_unroll_sep": {
+        "rel_err_U": 7.010044586651051e-05,
+        "rel_err_grad": 45.04968374541847,
+        "all_finite": true
+      },
+      "R1_vmap": {
+        "rel_err_U": 6.81596091808684e-05,
+        "rel_err_grad": 12.603590502960536,
+        "all_finite": true
+      }
+    },
+    "220_221|1e+06": {
+      "current": {
+        "rel_err_U": NaN,
+        "rel_err_grad": NaN,
+        "all_finite": false
+      },
+      "R1_unroll_sep": {
+        "rel_err_U": 1.2336106543166408e-05,
+        "rel_err_grad": 1.7397156140891912,
+        "all_finite": true
+      },
+      "R1_vmap": {
+        "rel_err_U": 1.3451181270302581e-05,
+        "rel_err_grad": 1.7191386601249505,
+        "all_finite": true
+      }
+    },
+    "degenerate|1": {
+      "current": {
+        "rel_err_U": 2.104351323588322e-06,
+        "rel_err_grad": 0.01427504097601463,
+        "all_finite": true
+      },
+      "R1_unroll_sep": {
+        "rel_err_U": 1.23327876778305e-06,
+        "rel_err_grad": 0.0030411585084204502,
+        "all_finite": true
+      },
+      "R1_vmap": {
+        "rel_err_U": 1.375890204598834e-06,
+        "rel_err_grad": 0.0030320574926104827,
+        "all_finite": true
+      }
+    },
+    "degenerate|1000": {
+      "current": {
+        "rel_err_U": NaN,
+        "rel_err_grad": NaN,
+        "all_finite": false
+      },
+      "R1_unroll_sep": {
+        "rel_err_U": 0.006162902056681613,
+        "rel_err_grad": 355.89264736638575,
+        "all_finite": true
+      },
+      "R1_vmap": {
+        "rel_err_U": 0.006319474116957405,
+        "rel_err_grad": 234.648446637699,
+        "all_finite": true
+      }
+    }
   },
-  "nvidia_smi": "NVIDIA H100 PCIe, 580.178.04, 81559 MiB, 9.0, 1755 MHz",
-  "packages": {
-   "jax": "0.11.1",
-   "jaxlib": "0.11.1",
-   "numpyro": "0.21.0",
-   "numpy": "2.5.2",
-   "scipy": "1.18.1",
-   "jax-cuda12-plugin": "0.11.1",
-   "jax-cuda12-pjrt": "0.11.1",
-   "nvidia-cublas-cu12": "12.9.2.10",
-   "nvidia-cusolver-cu12": "11.7.5.82",
-   "nvidia-cuda-runtime-cu12": "12.9.79",
-   "ringdown": "1.1.1.dev32+g7bc480a"
+  "devtime": {
+    "2,205,2": {
+      "current": {
+        "us_per_grad": 1060.6630668172422,
+        "speedup_vs_current": 1.0,
+        "R": [
+          127,
+          381
+        ],
+        "compile_s": 0.8329117989633232,
+        "custom_calls": {
+          "trsm": 42,
+          "potrf": 2,
+          "hlo_lines": 1968
+        }
+      },
+      "whiten_seq": {
+        "us_per_grad": 438.36341767354935,
+        "speedup_vs_current": 2.4195975851413802,
+        "R": [
+          249,
+          747
+        ],
+        "compile_s": 0.7873667319654487,
+        "custom_calls": {
+          "trsm": 18,
+          "potrf": 2,
+          "hlo_lines": 1764
+        }
+      },
+      "R1_unroll_concat": {
+        "us_per_grad": 375.3294068394517,
+        "speedup_vs_current": 2.8259524766492494,
+        "R": [
+          317,
+          951
+        ],
+        "compile_s": 0.6062405050033703,
+        "custom_calls": {
+          "trsm": 8,
+          "potrf": 1,
+          "hlo_lines": 1530
+        }
+      },
+      "R1_unroll_sep": {
+        "us_per_grad": 341.266836782431,
+        "speedup_vs_current": 3.1080168141079887,
+        "R": [
+          337,
+          1011
+        ],
+        "compile_s": 0.5128728900454007,
+        "custom_calls": {
+          "trsm": 10,
+          "potrf": 1,
+          "hlo_lines": 1428
+        }
+      },
+      "R1_vmap": {
+        "us_per_grad": 462.3060382749186,
+        "speedup_vs_current": 2.2942877206948786,
+        "R": [
+          261,
+          783
+        ],
+        "compile_s": 0.6121109450468794,
+        "custom_calls": {
+          "trsm": 7,
+          "potrf": 1,
+          "hlo_lines": 1354
+        }
+      },
+      "floor_no_likelihood": {
+        "us_per_grad": 24.042500008363277,
+        "speedup_vs_current": 44.11617204734476,
+        "R": [
+          400,
+          1200
+        ],
+        "compile_s": 0.38129555498017,
+        "custom_calls": {
+          "hlo_lines": 1125
+        }
+      }
+    },
+    "2,1024,4": {
+      "current": {
+        "us_per_grad": 5272.357760178339,
+        "speedup_vs_current": 1.0,
+        "R": [
+          27,
+          81
+        ],
+        "compile_s": 0.9293606560095213,
+        "custom_calls": {
+          "trsm": 42,
+          "potrf": 2,
+          "hlo_lines": 2164
+        }
+      },
+      "R1_unroll_concat": {
+        "us_per_grad": 1554.3922497373487,
+        "speedup_vs_current": 3.3919094495415996,
+        "R": [
+          90,
+          270
+        ],
+        "compile_s": 0.6953951260074973,
+        "custom_calls": {
+          "trsm": 8,
+          "potrf": 1,
+          "hlo_lines": 1821
+        }
+      },
+      "R1_unroll_sep": {
+        "us_per_grad": 1680.063777350742,
+        "speedup_vs_current": 3.138189056425115,
+        "R": [
+          83,
+          249
+        ],
+        "compile_s": 0.6320659560151398,
+        "custom_calls": {
+          "trsm": 10,
+          "potrf": 1,
+          "hlo_lines": 1667
+        }
+      },
+      "R1_vmap": {
+        "us_per_grad": 2053.8647719042597,
+        "speedup_vs_current": 2.567042305949882,
+        "R": [
+          68,
+          204
+        ],
+        "compile_s": 0.6718611000105739,
+        "custom_calls": {
+          "trsm": 7,
+          "potrf": 1,
+          "hlo_lines": 1520
+        }
+      },
+      "floor_no_likelihood": {
+        "us_per_grad": 24.066959958872758,
+        "speedup_vs_current": 219.0703673911495,
+        "R": [
+          400,
+          1200
+        ],
+        "compile_s": 0.30220286699477583,
+        "custom_calls": {
+          "hlo_lines": 1134
+        }
+      }
+    },
+    "3,1024,8": {
+      "current": {
+        "us_per_grad": 8119.585472741164,
+        "speedup_vs_current": 1.0,
+        "R": [
+          18,
+          54
+        ],
+        "compile_s": 1.1590824509621598,
+        "custom_calls": {
+          "trsm": 66,
+          "potrf": 3,
+          "hlo_lines": 2600
+        }
+      },
+      "R1_unroll_concat": {
+        "us_per_grad": 2304.6163865552853,
+        "speedup_vs_current": 3.523183085961445,
+        "R": [
+          62,
+          186
+        ],
+        "compile_s": 0.8557702150428668,
+        "custom_calls": {
+          "trsm": 10,
+          "potrf": 1,
+          "hlo_lines": 1752
+        }
+      },
+      "R1_unroll_sep": {
+        "us_per_grad": 2508.5552280008988,
+        "speedup_vs_current": 3.236757709022723,
+        "R": [
+          57,
+          171
+        ],
+        "compile_s": 0.6626447800081223,
+        "custom_calls": {
+          "trsm": 13,
+          "potrf": 1,
+          "hlo_lines": 1566
+        }
+      },
+      "R1_vmap": {
+        "us_per_grad": 2174.5746928410463,
+        "speedup_vs_current": 3.7338728807392947,
+        "R": [
+          65,
+          195
+        ],
+        "compile_s": 0.8155630899709649,
+        "custom_calls": {
+          "trsm": 7,
+          "potrf": 1,
+          "hlo_lines": 1404
+        }
+      },
+      "floor_no_likelihood": {
+        "us_per_grad": 31.96910249243956,
+        "speedup_vs_current": 253.98227787787854,
+        "R": [
+          400,
+          1200
+        ],
+        "compile_s": 0.2848579330020584,
+        "custom_calls": {
+          "hlo_lines": 1045
+        }
+      }
+    }
   },
-  "contention_before": {
-   "compute_apps": [
-    "447409, /mnt/home/misi/src/ringdown/.venv/bin/python, 1126 MiB",
-    "480829, /mnt/home/misi/src/ringdown/.venv/bin/python, 460 MiB"
-   ],
-   "n_foreign_compute_apps": 1,
-   "gpu_state": "4 %, 1755 MHz, 1755 MHz, 37, 75.38 W, 1597 MiB",
-   "loadavg": "6.62 6.81 5.31 6/2547 481166"
-  }
- },
- "f32acc": {
-  "220_221|1e-20": {
-   "current": {
-    "rel_err_U": 5.894197471860739e-08,
-    "rel_err_grad": 9.718207696118265e-07,
-    "all_finite": true
-   },
-   "R1_unroll_sep": {
-    "rel_err_U": 3.997432335281561e-08,
-    "rel_err_grad": 9.718207696118265e-07,
-    "all_finite": true
-   },
-   "R1_vmap": {
-    "rel_err_U": 1.5120981365298995e-07,
-    "rel_err_grad": 9.718207696118265e-07,
-    "all_finite": true
-   }
+  "chains": {
+    "current": {
+      "1": {
+        "wall_s": 9.8805889050127,
+        "num_steps": 2138,
+        "throughput_vs_1chain": 1.0,
+        "us_per_leapfrog_incl_compile": 4621.416700193031,
+        "ms_per_chain_iteration": 19.7611778100254,
+        "warnings": []
+      },
+      "4_default": {
+        "wall_s": 33.97300354397157,
+        "num_steps": 8272,
+        "warnings": [
+          "There are not enough devices to run parallel chains: expected 4 but got 1. Chains will be drawn sequ"
+        ],
+        "ms_per_chain_iteration": 16.986501771985786
+      }
+    },
+    "R1_unroll_sep": {
+      "1": {
+        "wall_s": 4.320480397029314,
+        "num_steps": 1642,
+        "throughput_vs_1chain": 1.0,
+        "us_per_leapfrog_incl_compile": 2631.2304488607274,
+        "ms_per_chain_iteration": 8.640960794058628,
+        "warnings": []
+      },
+      "16": {
+        "wall_s": 15.074104948027525,
+        "num_steps": 34656,
+        "throughput_vs_1chain": 4.58585677828351,
+        "us_per_leapfrog_incl_compile": 434.9637854347739,
+        "ms_per_chain_iteration": 1.8842631185034406,
+        "warnings": []
+      },
+      "64": {
+        "wall_s": 19.174681889999192,
+        "num_steps": 134384,
+        "throughput_vs_1chain": 14.420617092693147,
+        "us_per_leapfrog_incl_compile": 142.68575046135842,
+        "ms_per_chain_iteration": 0.5992088090624748,
+        "warnings": []
+      }
+    },
+    "R1_vmap": {
+      "1": {
+        "wall_s": 5.34155800199369,
+        "num_steps": 2602,
+        "throughput_vs_1chain": 1.0,
+        "us_per_leapfrog_incl_compile": 2052.86625749181,
+        "ms_per_chain_iteration": 10.68311600398738,
+        "warnings": []
+      },
+      "4": {
+        "wall_s": 12.771966468018945,
+        "num_steps": 9250,
+        "throughput_vs_1chain": 1.672900728441144,
+        "us_per_leapfrog_incl_compile": 1380.7531316777238,
+        "ms_per_chain_iteration": 6.385983234009473,
+        "warnings": []
+      },
+      "16": {
+        "wall_s": 12.319721717038192,
+        "num_steps": 35902,
+        "throughput_vs_1chain": 6.937245012093165,
+        "us_per_leapfrog_incl_compile": 343.148618935942,
+        "ms_per_chain_iteration": 1.539965214629774,
+        "warnings": []
+      },
+      "64": {
+        "wall_s": 17.29557812801795,
+        "num_steps": 137930,
+        "throughput_vs_1chain": 19.765729112795654,
+        "us_per_leapfrog_incl_compile": 125.39388188224427,
+        "ms_per_chain_iteration": 0.540486816500561,
+        "warnings": []
+      }
+    }
   },
-  "220_221|1": {
-   "current": {
-    "rel_err_U": 2.9359362837441326e-06,
-    "rel_err_grad": 0.00048750707959549055,
-    "all_finite": true
-   },
-   "R1_unroll_sep": {
-    "rel_err_U": 1.5525871689780667e-07,
-    "rel_err_grad": 0.000962802936591973,
-    "all_finite": true
-   },
-   "R1_vmap": {
-    "rel_err_U": 2.981151883265687e-07,
-    "rel_err_grad": 0.0009638150974697666,
-    "all_finite": true
-   }
+  "rhs_sweep": {
+    "205": {
+      "8": 51.56715982593596,
+      "9": 80.52871911786497,
+      "12": 78.589339973405,
+      "14": 78.7849398329854,
+      "16": 78.25196022167802,
+      "17": 79.23759985715151,
+      "18": 79.8702402971685,
+      "20": 79.68595949932933,
+      "24": 79.10105981864035,
+      "28": 78.56709999032319,
+      "32": 78.2598799560219,
+      "33": 79.52508050948381,
+      "36": 81.07783971354365,
+      "40": 81.12516021355987,
+      "_max_step": {
+        "from": 8,
+        "to": 9,
+        "ratio": 1.5616279700043252
+      }
+    }
   },
-  "220_221|1000": {
-   "current": {
-    "rel_err_U": NaN,
-    "rel_err_grad": NaN,
-    "all_finite": false
-   },
-   "R1_unroll_sep": {
-    "rel_err_U": 7.010044586651051e-05,
-    "rel_err_grad": 45.04968374541847,
-    "all_finite": true
-   },
-   "R1_vmap": {
-    "rel_err_U": 6.81596091808684e-05,
-    "rel_err_grad": 12.603590502960536,
-    "all_finite": true
-   }
+  "compile": {
+    "isolated_grad": {
+      "2,205,2": {
+        "current": 0.5081609039916657,
+        "whiten_seq": 0.5178098329924978,
+        "R1_unroll_concat": 0.47587878903141245,
+        "R1_unroll_sep": 0.4501215490163304,
+        "R1_vmap": 0.43550793500617146,
+        "floor_no_likelihood": 0.38988419802626595
+      }
+    },
+    "mcmc": {
+      "R1_vmap": {
+        "wall_250": 5.43493629200384,
+        "wall_1000": 13.053440440970007,
+        "steps_250": 2602,
+        "steps_1000": 7070,
+        "ms_per_iter": 5.079002765977445,
+        "compile_setup_s": 2.8954349090151177,
+        "us_per_leapfrog": 1705.12626431651
+      }
+    }
   },
-  "220_221|1e+06": {
-   "current": {
-    "rel_err_U": NaN,
-    "rel_err_grad": NaN,
-    "all_finite": false
-   },
-   "R1_unroll_sep": {
-    "rel_err_U": 1.2336106543166408e-05,
-    "rel_err_grad": 1.7397156140891912,
-    "all_finite": true
-   },
-   "R1_vmap": {
-    "rel_err_U": 1.3451181270302581e-05,
-    "rel_err_grad": 1.7191386601249505,
-    "all_finite": true
-   }
+  "contention_after": {
+    "compute_apps": [
+      "447409, /mnt/home/misi/src/ringdown/.venv/bin/python, 1126 MiB",
+      "480829, /mnt/home/misi/src/ringdown/.venv/bin/python, 1120 MiB"
+    ],
+    "n_foreign_compute_apps": 1,
+    "gpu_state": "0 %, 1755 MHz, 1755 MHz, 37, 79.94 W, 2257 MiB",
+    "loadavg": "6.46 6.64 5.63 6/2580 506069"
   },
-  "degenerate|1": {
-   "current": {
-    "rel_err_U": 2.104351323588322e-06,
-    "rel_err_grad": 0.01427504097601463,
-    "all_finite": true
-   },
-   "R1_unroll_sep": {
-    "rel_err_U": 1.23327876778305e-06,
-    "rel_err_grad": 0.0030411585084204502,
-    "all_finite": true
-   },
-   "R1_vmap": {
-    "rel_err_U": 1.375890204598834e-06,
-    "rel_err_grad": 0.0030320574926104827,
-    "all_finite": true
-   }
-  },
-  "degenerate|1000": {
-   "current": {
-    "rel_err_U": NaN,
-    "rel_err_grad": NaN,
-    "all_finite": false
-   },
-   "R1_unroll_sep": {
-    "rel_err_U": 0.006162902056681613,
-    "rel_err_grad": 355.89264736638575,
-    "all_finite": true
-   },
-   "R1_vmap": {
-    "rel_err_U": 0.006319474116957405,
-    "rel_err_grad": 234.648446637699,
-    "all_finite": true
-   }
-  }
- },
- "devtime": {
-  "2,205,2": {
-   "current": {
-    "us_per_grad": 1060.6630668172422,
-    "speedup_vs_current": 1.0,
-    "R": [
-     127,
-     381
-    ],
-    "compile_s": 0.8329117989633232,
-    "custom_calls": {
-     "trsm": 42,
-     "potrf": 2,
-     "hlo_lines": 1968
-    }
-   },
-   "whiten_seq": {
-    "us_per_grad": 438.36341767354935,
-    "speedup_vs_current": 2.4195975851413802,
-    "R": [
-     249,
-     747
-    ],
-    "compile_s": 0.7873667319654487,
-    "custom_calls": {
-     "trsm": 18,
-     "potrf": 2,
-     "hlo_lines": 1764
-    }
-   },
-   "R1_unroll_concat": {
-    "us_per_grad": 375.3294068394517,
-    "speedup_vs_current": 2.8259524766492494,
-    "R": [
-     317,
-     951
-    ],
-    "compile_s": 0.6062405050033703,
-    "custom_calls": {
-     "trsm": 8,
-     "potrf": 1,
-     "hlo_lines": 1530
-    }
-   },
-   "R1_unroll_sep": {
-    "us_per_grad": 341.266836782431,
-    "speedup_vs_current": 3.1080168141079887,
-    "R": [
-     337,
-     1011
-    ],
-    "compile_s": 0.5128728900454007,
-    "custom_calls": {
-     "trsm": 10,
-     "potrf": 1,
-     "hlo_lines": 1428
-    }
-   },
-   "R1_vmap": {
-    "us_per_grad": 462.3060382749186,
-    "speedup_vs_current": 2.2942877206948786,
-    "R": [
-     261,
-     783
-    ],
-    "compile_s": 0.6121109450468794,
-    "custom_calls": {
-     "trsm": 7,
-     "potrf": 1,
-     "hlo_lines": 1354
-    }
-   },
-   "floor_no_likelihood": {
-    "us_per_grad": 24.042500008363277,
-    "speedup_vs_current": 44.11617204734476,
-    "R": [
-     400,
-     1200
-    ],
-    "compile_s": 0.38129555498017,
-    "custom_calls": {
-     "hlo_lines": 1125
-    }
-   }
-  },
-  "2,1024,4": {
-   "current": {
-    "us_per_grad": 5272.357760178339,
-    "speedup_vs_current": 1.0,
-    "R": [
-     27,
-     81
-    ],
-    "compile_s": 0.9293606560095213,
-    "custom_calls": {
-     "trsm": 42,
-     "potrf": 2,
-     "hlo_lines": 2164
-    }
-   },
-   "R1_unroll_concat": {
-    "us_per_grad": 1554.3922497373487,
-    "speedup_vs_current": 3.3919094495415996,
-    "R": [
-     90,
-     270
-    ],
-    "compile_s": 0.6953951260074973,
-    "custom_calls": {
-     "trsm": 8,
-     "potrf": 1,
-     "hlo_lines": 1821
-    }
-   },
-   "R1_unroll_sep": {
-    "us_per_grad": 1680.063777350742,
-    "speedup_vs_current": 3.138189056425115,
-    "R": [
-     83,
-     249
-    ],
-    "compile_s": 0.6320659560151398,
-    "custom_calls": {
-     "trsm": 10,
-     "potrf": 1,
-     "hlo_lines": 1667
-    }
-   },
-   "R1_vmap": {
-    "us_per_grad": 2053.8647719042597,
-    "speedup_vs_current": 2.567042305949882,
-    "R": [
-     68,
-     204
-    ],
-    "compile_s": 0.6718611000105739,
-    "custom_calls": {
-     "trsm": 7,
-     "potrf": 1,
-     "hlo_lines": 1520
-    }
-   },
-   "floor_no_likelihood": {
-    "us_per_grad": 24.066959958872758,
-    "speedup_vs_current": 219.0703673911495,
-    "R": [
-     400,
-     1200
-    ],
-    "compile_s": 0.30220286699477583,
-    "custom_calls": {
-     "hlo_lines": 1134
-    }
-   }
-  },
-  "3,1024,8": {
-   "current": {
-    "us_per_grad": 8119.585472741164,
-    "speedup_vs_current": 1.0,
-    "R": [
-     18,
-     54
-    ],
-    "compile_s": 1.1590824509621598,
-    "custom_calls": {
-     "trsm": 66,
-     "potrf": 3,
-     "hlo_lines": 2600
-    }
-   },
-   "R1_unroll_concat": {
-    "us_per_grad": 2304.6163865552853,
-    "speedup_vs_current": 3.523183085961445,
-    "R": [
-     62,
-     186
-    ],
-    "compile_s": 0.8557702150428668,
-    "custom_calls": {
-     "trsm": 10,
-     "potrf": 1,
-     "hlo_lines": 1752
-    }
-   },
-   "R1_unroll_sep": {
-    "us_per_grad": 2508.5552280008988,
-    "speedup_vs_current": 3.236757709022723,
-    "R": [
-     57,
-     171
-    ],
-    "compile_s": 0.6626447800081223,
-    "custom_calls": {
-     "trsm": 13,
-     "potrf": 1,
-     "hlo_lines": 1566
-    }
-   },
-   "R1_vmap": {
-    "us_per_grad": 2174.5746928410463,
-    "speedup_vs_current": 3.7338728807392947,
-    "R": [
-     65,
-     195
-    ],
-    "compile_s": 0.8155630899709649,
-    "custom_calls": {
-     "trsm": 7,
-     "potrf": 1,
-     "hlo_lines": 1404
-    }
-   },
-   "floor_no_likelihood": {
-    "us_per_grad": 31.96910249243956,
-    "speedup_vs_current": 253.98227787787854,
-    "R": [
-     400,
-     1200
-    ],
-    "compile_s": 0.2848579330020584,
-    "custom_calls": {
-     "hlo_lines": 1045
-    }
-   }
-  }
- },
- "chains": {
-  "current": {
-   "1": {
-    "wall_s": 9.8805889050127,
-    "num_steps": 2138,
-    "throughput_vs_1chain": 1.0,
-    "us_per_leapfrog_incl_compile": 4621.416700193031,
-    "ms_per_chain_iteration": 19.7611778100254,
-    "warnings": []
-   },
-   "4_default": {
-    "wall_s": 33.97300354397157,
-    "num_steps": 8272,
-    "warnings": [
-     "There are not enough devices to run parallel chains: expected 4 but got 1. Chains will be drawn sequ"
-    ],
-    "ms_per_chain_iteration": 16.986501771985786
-   }
-  },
-  "R1_unroll_sep": {
-   "1": {
-    "wall_s": 4.320480397029314,
-    "num_steps": 1642,
-    "throughput_vs_1chain": 1.0,
-    "us_per_leapfrog_incl_compile": 2631.2304488607274,
-    "ms_per_chain_iteration": 8.640960794058628,
-    "warnings": []
-   },
-   "16": {
-    "wall_s": 15.074104948027525,
-    "num_steps": 34656,
-    "throughput_vs_1chain": 4.58585677828351,
-    "us_per_leapfrog_incl_compile": 434.9637854347739,
-    "ms_per_chain_iteration": 1.8842631185034406,
-    "warnings": []
-   },
-   "64": {
-    "wall_s": 19.174681889999192,
-    "num_steps": 134384,
-    "throughput_vs_1chain": 14.420617092693147,
-    "us_per_leapfrog_incl_compile": 142.68575046135842,
-    "ms_per_chain_iteration": 0.5992088090624748,
-    "warnings": []
-   }
-  },
-  "R1_vmap": {
-   "1": {
-    "wall_s": 5.34155800199369,
-    "num_steps": 2602,
-    "throughput_vs_1chain": 1.0,
-    "us_per_leapfrog_incl_compile": 2052.86625749181,
-    "ms_per_chain_iteration": 10.68311600398738,
-    "warnings": []
-   },
-   "4": {
-    "wall_s": 12.771966468018945,
-    "num_steps": 9250,
-    "throughput_vs_1chain": 1.672900728441144,
-    "us_per_leapfrog_incl_compile": 1380.7531316777238,
-    "ms_per_chain_iteration": 6.385983234009473,
-    "warnings": []
-   },
-   "16": {
-    "wall_s": 12.319721717038192,
-    "num_steps": 35902,
-    "throughput_vs_1chain": 6.937245012093165,
-    "us_per_leapfrog_incl_compile": 343.148618935942,
-    "ms_per_chain_iteration": 1.539965214629774,
-    "warnings": []
-   },
-   "64": {
-    "wall_s": 17.29557812801795,
-    "num_steps": 137930,
-    "throughput_vs_1chain": 19.765729112795654,
-    "us_per_leapfrog_incl_compile": 125.39388188224427,
-    "ms_per_chain_iteration": 0.540486816500561,
-    "warnings": []
-   }
-  }
- },
- "rhs_sweep": {
-  "205": {
-   "8": 51.56715982593596,
-   "9": 80.52871911786497,
-   "12": 78.589339973405,
-   "14": 78.7849398329854,
-   "16": 78.25196022167802,
-   "17": 79.23759985715151,
-   "18": 79.8702402971685,
-   "20": 79.68595949932933,
-   "24": 79.10105981864035,
-   "28": 78.56709999032319,
-   "32": 78.2598799560219,
-   "33": 79.52508050948381,
-   "36": 81.07783971354365,
-   "40": 81.12516021355987,
-   "_max_step": {
-    "from": 8,
-    "to": 9,
-    "ratio": 1.5616279700043252
-   }
-  }
- },
- "compile": {
-  "isolated_grad": {
-   "2,205,2": {
-    "current": 0.5081609039916657,
-    "whiten_seq": 0.5178098329924978,
-    "R1_unroll_concat": 0.47587878903141245,
-    "R1_unroll_sep": 0.4501215490163304,
-    "R1_vmap": 0.43550793500617146,
-    "floor_no_likelihood": 0.38988419802626595
-   }
-  },
-  "mcmc": {
-   "R1_vmap": {
-    "wall_250": 5.43493629200384,
-    "wall_1000": 13.053440440970007,
-    "steps_250": 2602,
-    "steps_1000": 7070,
-    "ms_per_iter": 5.079002765977445,
-    "compile_setup_s": 2.8954349090151177,
-    "us_per_leapfrog": 1705.12626431651
-   }
-  }
- },
- "contention_after": {
-  "compute_apps": [
-   "447409, /mnt/home/misi/src/ringdown/.venv/bin/python, 1126 MiB",
-   "480829, /mnt/home/misi/src/ringdown/.venv/bin/python, 1120 MiB"
-  ],
-  "n_foreign_compute_apps": 1,
-  "gpu_state": "0 %, 1755 MHz, 1755 MHz, 37, 79.94 W, 2257 MiB",
-  "loadavg": "6.46 6.64 5.63 6/2580 506069"
- },
- "t_total_s": 277.9539566040039
+  "t_total_s": 277.9539566040039
 }

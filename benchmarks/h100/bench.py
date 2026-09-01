@@ -102,6 +102,26 @@ import time          # noqa: E402
 import traceback     # noqa: E402
 import warnings      # noqa: E402
 
+SLURM_ENV_ALLOWLIST = {
+    "SLURM_CPUS_ON_NODE",
+    "SLURM_CPUS_PER_TASK",
+    "SLURM_GPUS_ON_NODE",
+    "SLURM_JOB_GPUS",
+    "SLURM_JOB_ID",
+    "SLURM_JOBID",
+    "SLURM_JOB_NUM_NODES",
+    "SLURM_JOB_PARTITION",
+    "SLURM_MEM_PER_NODE",
+    "SLURM_NODELIST",
+    "SLURM_NNODES",
+}
+
+
+def _slurm_env():
+    return {k: os.environ[k] for k in sorted(SLURM_ENV_ALLOWLIST)
+            if k in os.environ}
+
+
 T_START = time.time()
 LEG = "%s-f%d" % (ARGS.platform, 64 if ARGS.x64 else 32)
 
@@ -121,9 +141,8 @@ def _diagnostics():
            "hostname    : %s" % socket.gethostname(),
            "JAX_PLATFORMS = %r" % os.environ.get("JAX_PLATFORMS"),
            "CUDA_VISIBLE_DEVICES = %r" % os.environ.get("CUDA_VISIBLE_DEVICES")]
-    for k in sorted(os.environ):
-        if k.startswith("SLURM_"):
-            out.append("%-26s = %s" % (k, os.environ[k]))
+    for k, v in _slurm_env().items():
+        out.append("%-26s = %s" % (k, v))
     for cmd in (["nvidia-smi"],
                 ["nvidia-smi", "--query-gpu=name,driver_version,memory.total,"
                  "compute_cap", "--format=csv"]):
@@ -604,8 +623,7 @@ def section_env():
     env["thread_env"] = {k: os.environ.get(k) for k in
                          ("OMP_NUM_THREADS", "MKL_NUM_THREADS",
                           "OPENBLAS_NUM_THREADS", "XLA_FLAGS", "JAX_PLATFORMS")}
-    env["slurm"] = {k: v for k, v in os.environ.items()
-                    if k.startswith("SLURM_")}
+    env["slurm"] = _slurm_env()
     try:
         r = subprocess.run(["nvidia-smi", "--query-gpu=name,driver_version,"
                             "memory.total,compute_cap,clocks.max.sm",
