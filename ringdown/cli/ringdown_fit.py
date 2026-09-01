@@ -24,8 +24,6 @@ import argparse
 from ast import literal_eval
 import logging
 import ringdown as rd
-import numpyro
-from jax import config as jax_config
 
 ##############################################################################
 # PARSE INPUT
@@ -74,13 +72,6 @@ def main(args=None, defout=DEFOUT):
     if args.verbose:
         logging.getLogger().setLevel(logging.INFO)
 
-    cpu_count = os.cpu_count()
-
-    # check for numpy threading options
-    if "OMP_NUM_THREADS" not in os.environ:
-        logging.info("Setting OMP_NUM_THREADS to 1.")
-        os.environ["OMP_NUM_THREADS"] = "1"
-
     print(f"Loading: {os.path.abspath(args.config)}")
 
     config = rd.utils.load_config(args.config)
@@ -91,34 +82,15 @@ def main(args=None, defout=DEFOUT):
         run_kws = {}
     run_kws["prior"] = args.prior or run_kws.get("prior", False)
 
-    jax_config.update("jax_enable_x64", not run_kws.pop("float32", False))
+    rd.setup(
+        platform=args.platform,
+        num_devices=args.device_count,
+        x64=not run_kws.pop("float32", False),
+    )
 
     if run_kws["prior"]:
         defout = defout.replace("fit", "prior")
     out = args.output or defout
-
-    numpyro.set_platform(args.platform)
-
-    # Set default device count from environment variable or platform-specific
-    # fallback if not provided
-    if args.device_count is None:
-        if "RINGDOWN_DEVICE_COUNT" in os.environ:
-            args.device_count = int(os.environ["RINGDOWN_DEVICE_COUNT"])
-        elif args.platform == "gpu":
-            args.device_count = 1
-        else:
-            args.device_count = 4
-
-    if args.device_count is not None:
-        if args.platform == "cpu" and args.device_count > cpu_count:
-            logging.warning(
-                f"requested device count ({args.device_count}) "
-                "greater than the number of available CPUs. "
-                "Setting it to the maximum number of CPUs "
-                f"({cpu_count})."
-            )
-            args.device_count = cpu_count
-        numpyro.set_host_device_count(args.device_count)
 
     if os.path.exists(out):
         if args.force:

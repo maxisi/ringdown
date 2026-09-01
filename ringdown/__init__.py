@@ -1,15 +1,25 @@
 __all__ = []
 
-from .data import *
-from .fit import *
-from .result import *
-from .waveforms import *
-from .imr import IMRResult
-from . import qnms
-from . import model
-from . import utils
+import os
 
-from importlib.metadata import version
+# Cap BLAS/OpenMP threading before numpy/jax load it (the setting is frozen
+# at library load): one thread per chain is the right default when running
+# parallel chains. Export OMP_NUM_THREADS yourself, or call
+# ringdown.setup(num_threads=...), to override. The imports below must stay
+# after this line, hence the noqa markers.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+
+from .data import *  # noqa: E402
+from .fit import *  # noqa: E402
+from .result import *  # noqa: E402
+from .waveforms import *  # noqa: E402
+from .imr import IMRResult  # noqa: E402
+from . import qnms  # noqa: E402
+from . import model  # noqa: E402
+from . import utils  # noqa: E402
+from ._setup import setup  # noqa: E402
+
+from importlib.metadata import version  # noqa: E402
 __version__ = version("ringdown")
 
 # ############################################################################

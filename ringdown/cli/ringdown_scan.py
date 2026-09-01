@@ -23,8 +23,6 @@ import os
 import argparse
 from ast import literal_eval
 import logging
-from jax import config as jax_config
-import numpyro
 import ringdown as rd
 from ringdown.config import PIPE_SECTION
 
@@ -79,13 +77,6 @@ def main(args=None):
     if args.verbose:
         logging.getLogger().setLevel(logging.INFO)
 
-    cpu_count = os.cpu_count()
-
-    # check for numpy threading options
-    if "OMP_NUM_THREADS" not in os.environ:
-        logging.info("Setting OMP_NUM_THREADS to 1.")
-        os.environ["OMP_NUM_THREADS"] = "1"
-
     print(f"Loading: {os.path.abspath(args.config)}")
 
     if not os.path.exists(args.config):
@@ -101,33 +92,14 @@ def main(args=None):
         args.individual_progress_bars or args.verbose
     )
 
-    jax_config.update("jax_enable_x64", not run_kws.pop("float32", False))
+    rd.setup(
+        platform=args.platform,
+        num_devices=args.device_count,
+        x64=not run_kws.pop("float32", False),
+    )
 
     out = os.path.abspath(args.output or DEFOUT)
     out = config.get(PIPE_SECTION, "outpath", fallback=out)
-
-    numpyro.set_platform(args.platform)
-
-    # Set default device count from environment variable or platform-specific
-    # fallback if not provided
-    if args.device_count is None:
-        if "RINGDOWN_DEVICE_COUNT" in os.environ:
-            args.device_count = int(os.environ["RINGDOWN_DEVICE_COUNT"])
-        elif args.platform == "gpu":
-            args.device_count = 1
-        else:
-            args.device_count = 4
-
-    if args.device_count is not None:
-        if args.platform == "cpu" and args.device_count > cpu_count:
-            logging.warning(
-                f"requested device count ({args.device_count}) "
-                "greater than the number of available CPUs. "
-                "Setting it to the maximum number of CPUs "
-                f"({cpu_count})."
-            )
-            args.device_count = cpu_count
-        numpyro.set_host_device_count(args.device_count)
 
     ##########################################################################
     # RUN FIT

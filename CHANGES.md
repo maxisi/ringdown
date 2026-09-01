@@ -5,6 +5,19 @@ Notable user-facing changes to `ringdown`. For a full history, see the
 
 ## Unreleased
 
+- Added `ringdown.setup()`, a one-call replacement for the jax/numpyro
+  configuration boilerplate: it sets the platform, device count (honoring
+  `RINGDOWN_DEVICE_COUNT`, with the CPU clamp), and precision (`x64` defaults
+  to true on CPU, false on GPU), and raises if called after jax has already
+  initialized its backends, where jax and numpyro would silently ignore the
+  settings. Both CLIs and the example notebooks now use it.
+- Importing `ringdown` now sets `OMP_NUM_THREADS=1` by default (a pre-set
+  value is respected), so BLAS/OpenMP threading is capped before numpy/jax
+  load it. Previously only the CLIs set this, and they did so too late for
+  numpy. Override with the environment variable or `setup(num_threads=...)`.
+- Fixed `--platform gpu` in the CLIs, which crashed with an `AssertionError`
+  under NumPyro 0.21 (`numpyro.set_platform` accepts `'cuda'` but no longer
+  `'gpu'`); the platform name is now translated automatically.
 - Rewrote the marginalized likelihood as a single closed-form Gaussian
   marginalization over all detectors, replacing the sequential per-detector
   recursion. This is an exact algebraic identity - the log-likelihood value,

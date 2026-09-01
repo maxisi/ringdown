@@ -63,33 +63,19 @@ See the [example gallery](https://ringdown.readthedocs.io/en/latest/gallery.html
 
 ### Performance notes
 
-In order to run Jax on a CPU with four cores and use double precision, you can do the following at the top of your script:
+_ringdown_ configures jax and numpyro for you through a single call. To run on a CPU with four host devices (so chains can sample in parallel) and double precision, do the following at the top of your script:
 ```python
-# disable numpy multithreading to avoid conflicts
-# with jax multiprocessing in numpyro
-import os
-os.environ["OMP_NUM_THREADS"] = "1"
-
-# set jax up to use double precision
-from jax import config
-config.update("jax_enable_x64", True)
-
-# import numpyro and set it up to use 4 CPU devices
-import numpyro
-numpyro.set_host_device_count(4)
-numpyro.set_platform('cpu')
+import ringdown as rd
+rd.setup()
 ```
 
 To run on a GPU with single precision you can instead do:
 ```python
-# set jax to use single precision (this is the default so no need to run the lines below)
-# from jax import config
-# config.update("jax_enable_x64", False)
-
-# import numpyro and set it up to use the GPU
-import numpyro
-numpyro.set_platform('gpu')
+import ringdown as rd
+rd.setup(platform='gpu')
 ```
+
+All of these settings freeze as soon as jax initializes its backends, so call `rd.setup()` right after the import, before any jax operation. Importing _ringdown_ also caps BLAS/OpenMP threading (`OMP_NUM_THREADS=1`, unless already set) so parallel chains do not oversubscribe the machine; see the [configuration docs](https://ringdown.readthedocs.io/en/latest/configuration.html) for the knobs and manual equivalents.
 
 You will see significant performance enhancements when running on a GPU with 32-bit precision. If you have multiple GPUs, `numpyro` can use them in parallel to run different chains, just as with CPUs. Sampling one chain for a GW150914-like system takes O(s) on an Nvidia A100 GPU.
 
