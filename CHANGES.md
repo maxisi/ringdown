@@ -17,6 +17,11 @@ Notable user-facing changes to `ringdown`. For a full history, see the
   value is respected), so BLAS/OpenMP threading is capped before numpy/jax
   load it. Previously only the CLIs set this, and they did so too late for
   numpy. Override with the environment variable or `setup(num_threads=...)`.
+- Importing `ringdown` now suppresses the `Wswiglal-redir-stdio` warning
+  that `lal` emits when first imported under IPython/Jupyter, so notebooks
+  no longer need `warnings.filterwarnings("ignore", "Wswiglal-redir-stdio")`
+  before `import ringdown`. The filter is scoped to that one import and
+  does not alter the interpreter's warning configuration.
 - Fixed `--platform gpu` in the CLIs, which crashed with an `AssertionError`
   under NumPyro 0.21 (`numpyro.set_platform` accepts `'cuda'` but no longer
   `'gpu'`); the platform name is now translated automatically.

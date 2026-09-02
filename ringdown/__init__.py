@@ -47,6 +47,16 @@ _warn_if_omp_default_is_moot()
 # after this line, hence the noqa markers.
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 
+# Import lal first with its Wswiglal-redir-stdio warning suppressed: under
+# IPython, lal warns (once, on first import) that SWIGLAL redirects stdio
+# into the notebook, which is not actionable for ringdown users. The
+# modules below import lal too, but hit the module cache and stay silent.
+# The filter is scoped so ringdown does not alter the interpreter's
+# warning configuration.
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", "Wswiglal-redir-stdio")
+    import lal as _lal  # noqa: E402,F401
+
 from .data import *  # noqa: E402
 from .fit import *  # noqa: E402
 from .result import *  # noqa: E402
