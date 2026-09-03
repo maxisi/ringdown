@@ -1,0 +1,15 @@
+# benchmarks/gs: what is and is not committed
+# inputs: ~6.4 GB of npz (37 files, four of them ~800 MB); regenerate with
+#   PYTHONPATH=$PWD .venv/bin/python benchmarks/gs/prep_inputs.py --out benchmarks/gs/inputs
+inputs/
+# the extended-precision reference dump (~18 MB) and any other npz under results/
+results/*.npz
+results/*.tmp.npz
+# Slurm output of submit_h100.sbatch
+slurm-*.out
+slurm-*.err
+results/slurm-*.out
+results/slurm-*.err
+# the repository ignores *.log globally; the run logs of this kit are small and
+# referenced from README.md, so keep them
+!results/*.log
