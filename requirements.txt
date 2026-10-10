@@ -1,5 +1,5 @@
 numpy==2.5.3
-lalsuite==7.26.15
+lalsuite==7.26.16
 h5py~=3.16
 arviz[matplotlib,h5netcdf]~=1.3
 pandas~=3.0
